@@ -1,1 +1,10 @@
+streamlit>=1.18
+pandas
+python-dotenv
+requests
+transformers
+Pillow
+google-cloud-vision
+pytest
+flake8
 
