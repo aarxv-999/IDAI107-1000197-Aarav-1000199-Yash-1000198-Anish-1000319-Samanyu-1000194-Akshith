@@ -1,26 +1,29 @@
-"""
+'''
 MADE BY: Aarav Agarwal, IBCP CRS: AI, WACP ID: 1000197
 This file will serve as the functionality for the leftovermanagement feature
 
 Packages used: 
 - pandas: to read CSV files
-"""
+- google.generativeai to add gemini APi
+'''
 
 import pandas as pd  
 from typing import List, Optional 
 import random 
+import os
+import google.generativeai as genai  
 
 # primarily used exception handling in this code ! 
 
 def load_leftovers(csv_path: str) -> List[str]:
-    """
+    '''
     ARGUMENT - loading all leftover ingredients from a csv file (if it exists)
     csv_path (str) is the path to the csv file containing the ingredients & should have a column named "ingredients"
     
     RETURN -  List[str]: a list of names of all leftover ingredients
     
     RAISES -  if FileNotFoundError occurs then it means that the csv file does not exist. if "ValueError" occurs then that means thtat the CSV file doesnt have ingredients column
-    """
+    '''
     try:
         df = pd.read_csv(csv_path) # reading the Csv file
         if 'ingredient' not in df.columns: # checking if ingredient column is oresent in the csv
@@ -32,140 +35,74 @@ def load_leftovers(csv_path: str) -> List[str]:
         raise FileNotFoundError(f" CSV file unavailable at: {csv_path}")
     except Exception as e: # consider any other exceptions in loading the csv file. this is a general exception handler in case any other errors are found
         raise Exception(f"Faced error in loading leftovers from CSV: {str(e)}")
+
 def parse_manual_leftovers(input_text: str) -> List[str]: 
-    """
+    '''
     parses the manually entered list 
     
     ARGUMENT - input_text (str), which is the manually entered ingredients with each being separated by a , 
     RETURN - List[str], a list of leftover ingredient names where it is properly organized 
-    """
+    '''
     ingredients = input_text.split(',') #splittingall input texts by a comma. 
     ingredients = [ing.strip() for ing in ingredients if ing.strip()] # imputing empty values and white space in every ingredient of the list 
     return ingredients
+
 def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]:
-    """
+    '''
     this function will suggest recipes based on the leftover ingredients which we got previously
     
     ARGUMENT - 
     leftovers (List[str]), list of the leftover ingredients (whether via the csv file or manually entered)
-    max_suggestions (int, optional): Maximum number of recipe suggestions to return. Defaults to 3.
+    max_suggestions (int, optional): maximum number of recipe suggestions to output
     
-    Returns:
-        List[str]: A list of recipe suggestions.
-    """
-    # Check if we have any leftovers to work with
+    RETURN - List[str] of all recipes
+    '''
+    #first checking if we have any leftovers to work with, if there are no leftovers then anempty list will be returned
     if not leftovers:
-        # If the leftovers list is empty, return an empty list
-        # [] creates an empty list
         return []
     
-    # This is a placeholder for the future AI integration
-    # In a real implementation, this would call an AI API like OpenAI or Gemini
-    # For now, we'll generate some simple suggestions based on the ingredients
-    
-    # Create some example recipe templates
-    # These are f-strings (formatted strings) that allow embedding variables inside strings
-    # The {} syntax is used to insert a variable's value into the string
-    recipe_templates = [
-        "Roasted {0} with {1}",
-        "{0} and {1} Stir Fry",
-        "Creamy {0} Soup with {1} Garnish",
-        "{0} & {1} Salad",
-        "Grilled {0} with {1} Sauce",
-        "{0} and {1} Pasta",
-        "Baked {0} with {1} Topping",
-        "{0} & {1} Tacos",
-        "{0} and {1} Curry",
-        "{0} & {1} Smoothie Bowl"
-    ]
-    
-    suggestions = []
-    
-    # Generate up to max_suggestions recipes
-    # min() returns the smaller of two values - we use it to avoid trying to generate
-    # more suggestions than we have templates
-    for _ in range(min(max_suggestions, len(recipe_templates))):
-        # If we have at least 2 ingredients, randomly select 2 different ones
-        if len(leftovers) >= 2:
-            # Create a copy of the leftovers list to avoid modifying the original
-            # [:] is slice notation that creates a copy of the entire list
-            available_ingredients = leftovers[:]
-            
-            # random.choice() selects a random item from a sequence
-            ingredient1 = random.choice(available_ingredients)
-            
-            # Remove the first selected ingredient to avoid duplicates
-            # .remove() removes the first occurrence of a value from a list
-            available_ingredients.remove(ingredient1)
-            
-            ingredient2 = random.choice(available_ingredients)
-            
-            # Select a random recipe template
-            template = random.choice(recipe_templates)
-            
-            # Format the template with our ingredients
-            # .format() replaces the {} placeholders with the provided values
-            recipe = template.format(ingredient1.capitalize(), ingredient2.capitalize())
-            
-        # If we only have 1 ingredient, create a simpler recipe
-        elif len(leftovers) == 1:
-            ingredient = leftovers[0]
-            simple_templates = [
-                "Roasted {0}",
-                "{0} Soup",
-                "Grilled {0}",
-                "{0} Salad",
-                "Baked {0}"
-            ]
-            template = random.choice(simple_templates)
-            recipe = template.format(ingredient.capitalize())
-        
-        # Add the recipe to our suggestions list
-        # .append() adds an item to the end of a list
-        suggestions.append(recipe)
-        
-        # Remove the used template to avoid duplicates
-        # This ensures each suggestion uses a different template
-        recipe_templates.remove(template)
-        
-        # If we've used all templates, break the loop
-        if not recipe_templates:
-            break
-    
-    # Add a comment to each suggestion explaining the sustainability aspect
-    # This is a list comprehension that adds a sustainability note to each recipe
-    suggestions = [
-        f"{recipe} - A sustainable dish that reduces food waste by using leftover ingredients."
-        for recipe in suggestions
-    ]
-    
-    return suggestions
-
-# This block only executes if this file is run directly (not imported)
-# __name__ is a special variable that is set to "__main__" when the file is run directly
-if __name__ == "__main__":
-    # Example usage of the functions
-    print("Example usage of leftover management functions:")
-    
-    # Try loading from a sample CSV
+    # implementing gemini api for the recipe suggestions
     try:
-        sample_leftovers = load_leftovers("../data/leftover.csv")
-        print(f"Loaded leftovers from CSV: {sample_leftovers}")
-    except Exception as e:
-        print(f"Error loading from CSV: {e}")
-    
-    # Example of manual entry
-    manual_input = "carrots, spinach, quinoa, beets"
-    parsed_leftovers = parse_manual_leftovers(manual_input)
-    print(f"Parsed manual leftovers: {parsed_leftovers}")
-    
-    # Generate and print recipe suggestions
-    recipes = suggest_recipes(parsed_leftovers, 3)
-    print("Recipe suggestions:")
-    for i, recipe in enumerate(recipes, 1):
-        print(f"{i}. {recipe}")
+        api_key = os.environ.get("GEMINI_API_KEY") # searching the environment set by the user to find the variable for the api key 
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY environment variable was not found!")
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-1.5-pro') # initializing gemini 1.5 pro as required by the capstone brief. 
+        
+        ingredients_list = ", ".join(leftovers) 
+        prompt = f'''
+        Here are the leftover ingredients I have: {ingredients_list}.
+        
+        I need you to suggest {max_suggestions} creative and unique recipe ideas that use these ingredients to avoid any food waste
 
-"""
+        For each recipe, provide just the recipe name. Don't include ingredients list or instructions, just keep it very simple and minimalistic in the output
+        Format each recipe as "Recipe Name"
+        Keep the recipes simple and focused on using the leftover ingredients
+        ''' 
+        # used chatgpt to generate prompt, made some changes afterwards as required.
+        
+        response = model.generate_content(prompt) # getting gemini's response from the prompt
+        
+        response_text = response.text # extracting recipes from list
+        recipe_lines = [line.strip() for line in response_text.split('\n') if line.strip()] # splitting the response into cleaning it 
+        
+        # this part of the code is required to turn geminis responses into a proper list which can later be used to properly display it 
+        recipes = [] 
+        for line in recipe_lines:
+            if line[0].isdigit() and line[1:3] in ['. ', '- ', ') ']: # <- this part will remove any kind of numbers from the response. e.g. 1) Recipe-A --> RecipeA
+                line = line[3:].strip()
+            line = line.strip('"\'') # <_ in case there aer any quotes in the response, then that will be stripped. e.g. "RecipeA" --> RecipeA
+            if line and len(recipes) < max_suggestions: # making sure that max suggestions threshold is met 
+                recipes.append(line)
+        
+        # ensuring that only the required number of suggestions are included in the list 
+        recipes = recipes[:max_suggestions]
+        
+    except Exception as e:
+        # If there's an error with the API, fall back to the original template-based approach
+        print(f"Error using Gemini API: {str(e)}.")
+
+'''
 How to use this module:
 
 1. Activate a Python virtual environment:
@@ -173,8 +110,12 @@ How to use this module:
    - On macOS/Linux: source venv/bin/activate
 
 2. Install required packages:
-   pip install pandas
+   pip install pandas google-generativeai
 
-3. Import and use in your code:
+3. Set up your Gemini API key as an environment variable:
+   - On Windows: set GEMINI_API_KEY=your_api_key_here
+   - On macOS/Linux: export GEMINI_API_KEY=your_api_key_here
+
+4. Import and use in your code:
    from modules.leftover import load_leftovers, suggest_recipes
-"""
+'''
