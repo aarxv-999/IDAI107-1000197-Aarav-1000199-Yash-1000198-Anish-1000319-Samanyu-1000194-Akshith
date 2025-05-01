@@ -97,6 +97,7 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
         
         # ensuring that only the required number of suggestions are included in the list 
         recipes = recipes[:max_suggestions]
+        return recipes
         
     except Exception as e:
         # If there's an error with the API, fall back to the original template-based approach
