@@ -5,11 +5,6 @@ from typing import List, Dict, Any, Tuple, Optional
 
 # importing all logic functions from the modules
 from modules.leftover import load_leftovers, parse_manual_leftovers, suggest_recipes
-from modules.event import plan_event
-from modules.promo import generate_promotion
-from modules.recipe import suggest_chef_recipes
-from modules.visual_search import search_visual_menu
-
 
 def leftover_input_csv() -> List[str]:
     """
