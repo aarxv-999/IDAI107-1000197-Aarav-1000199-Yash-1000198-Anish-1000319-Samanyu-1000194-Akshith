@@ -100,7 +100,6 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
         return recipes
         
     except Exception as e:
-        # If there's an error with the API, fall back to the original template-based approach
         print(f"Error using Gemini API: {str(e)}.")
 
 '''
