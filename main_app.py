@@ -40,7 +40,7 @@ def main():
         leftovers = leftovers_csv or leftovers_manual # main leftovers based on what the user picks
 
         if leftovers:
-            max_suggestions = st.slider("How many recipes do you want?", 1, 3, 5)
+            max_suggestions = st.slider("How many recipes do you want?", 1, 5, 3)
             if st.button("Generate Recipes"):
                 suggestions = suggest_recipes(leftovers, max_suggestions)
                 if suggestions:
