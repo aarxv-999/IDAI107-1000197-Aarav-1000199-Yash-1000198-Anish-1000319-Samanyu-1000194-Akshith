@@ -8,4 +8,4 @@ google-cloud-vision
 pytest
 flake8
 google-generativeai
-
+openai
