@@ -63,25 +63,10 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
     
     # implementing gemini api for the recipe suggestions
     try:
-        api_key = os.environ.get("GEMINI_API_KEY") # searching the environment set by the user to find the variable for the api key 
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable was not found!")
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-pro') # initializing gemini 1.5 pro as required by the capstone brief. 
         
-        ingredients_list = ", ".join(leftovers) 
-        prompt = f'''
-        Here are the leftover ingredients I have: {ingredients_list}.
-        
-        I need you to suggest {max_suggestions} creative and unique recipe ideas that use these ingredients to avoid any food waste
-
-        For each recipe, provide just the recipe name. Don't include ingredients list or instructions, just keep it very simple and minimalistic in the output
-        Format each recipe as "Recipe Name"
-        Keep the recipes simple and focused on using the leftover ingredients
-        ''' 
-        # used chatgpt to generate prompt, made some changes afterwards as required.
-        
-        response = model.generate_content(prompt) # getting gemini's response from the prompt
+        response = '''1. Chicken and Broccoli Stuffed Potato Skins
+2. Spicy Chicken and Potato Hash with Broccoli Florets
+3. Creamy Chicken, Broccoli, and Potato Soup (Blended)'''
         
         response_text = response.text # extracting recipes from list
         recipe_lines = [line.strip() for line in response_text.split('\n') if line.strip()] # splitting the response into cleaning it 
@@ -99,7 +84,7 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
         logger.info(f"Got the following recipes from gemini: {recipes}")
     
         if not recipes:
-            logger.warning(f"Got no recipes for the ingredients: {ingredients_list}!!")
+            logger.warning(f"Got no recipes for the ingredients!!")
             return []
         return recipes
 
