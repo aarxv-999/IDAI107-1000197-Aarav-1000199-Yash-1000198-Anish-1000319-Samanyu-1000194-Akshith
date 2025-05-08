@@ -1,4 +1,4 @@
-MADE BY: Aarav Agarwal, IBCP CRS: AI, WACP ID: 1000197
+'''MADE BY: Aarav Agarwal, IBCP CRS: AI, WACP ID: 1000197
 This file will serve as the functionality for the leftovermanagement feature
 
 Packages used: 
@@ -122,4 +122,4 @@ How to use this module:
    - On macOS/Linux: export GEMINI_API_KEY=your_api_key_here
 
 4. Import and use in your code:
-   from modules.leftover import load_leftovers, suggest_recipes
+   from modules.leftover import load_leftovers, suggest_recipes'''
