@@ -8,10 +8,10 @@ Packages used:
 '''
 
 import pandas as pd  
-from typing import List, Optional 
-import random 
+from typing import List, Optional  
 import os
 import google.generativeai as genai  
+import logging # adding on may 8 for debugging. constantly facing issues w code
 
 # primarily used exception handling in this code ! 
 
@@ -47,6 +47,7 @@ def parse_manual_leftovers(input_text: str) -> List[str]:
     ingredients = [ing.strip() for ing in ingredients if ing.strip()] # imputing empty values and white space in every ingredient of the list 
     return ingredients
 
+logger = logging.getLogger()
 def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]:
     '''
     this function will suggest recipes based on the leftover ingredients which we got previously
@@ -94,13 +95,18 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
             line = line.strip('"\'') # <_ in case there aer any quotes in the response, then that will be stripped. e.g. "RecipeA" --> RecipeA
             if line and len(recipes) < max_suggestions: # making sure that max suggestions threshold is met 
                 recipes.append(line)
-        
         # ensuring that only the required number of suggestions are included in the list 
         recipes = recipes[:max_suggestions]
+        logger.info(f"Got the following recipes from gemini: {recipes}")
+    
+        if not recipes:
+            logger.warning(f"Got no recipes for the ingredients: {ingredients_list}!!")
+            return []
         return recipes
-        
+
     except Exception as e:
-        print(f"Error using Gemini API: {str(e)}.")
+            logger.error(f"Error using Gemini API: {str(e)}")
+            return []
 
 '''
 How to use this module:
