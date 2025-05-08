@@ -12,7 +12,7 @@ from typing import List, Optional
 import os
 import google.generativeai as genai  
 import logging # adding on may 8 for debugging. constantly facing issues w code
-import openai
+from openai import OpenAI
 
 # primarily used exception handling in this code ! 
 
@@ -68,7 +68,8 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
         api_key = os.environ.get("OPENAI_API_KEY") # searching the environment set by the user to find the variable for the api key 
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable was not found!")
-        openai.api_key = api_key
+        
+        client = OpenAI(api_key=api_key)
 
         ingredients_list = ", ".join(leftovers) 
         prompt = f'''
@@ -82,11 +83,11 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
         ''' 
         # used chatgpt to generate prompt, made some changes afterwards as required.
         
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}])
 
-        response_text = response['choices'][0]['message']['content']
+        response_text = response.choices[0].messages.content
 
         recipe_lines = [line.strip() for line in response_text.split('\n') if line.strip()] # splitting the response into cleaning it 
         
