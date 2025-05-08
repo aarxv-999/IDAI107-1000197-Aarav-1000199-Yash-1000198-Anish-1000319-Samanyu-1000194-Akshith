@@ -12,6 +12,7 @@ from typing import List, Optional
 import os
 import google.generativeai as genai  
 import logging # adding on may 8 for debugging. constantly facing issues w code
+import openai
 
 # primarily used exception handling in this code ! 
 
@@ -62,14 +63,13 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
     if not leftovers:
         return []
     
-    # implementing gemini api for the recipe suggestions
+    # implementing openai api for the recipe suggestions
     try:
-        api_key = os.environ.get("GEMINI_API_KEY") # searching the environment set by the user to find the variable for the api key 
+        api_key = os.environ.get("OPENAI_API_KEY") # searching the environment set by the user to find the variable for the api key 
         if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable was not found!")
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-pro') # initializing gemini 1.5 pro as required by the capstone brief. 
-        
+            raise ValueError("OPENAI_API_KEY environment variable was not found!")
+        openai.api_key = api_key
+
         ingredients_list = ", ".join(leftovers) 
         prompt = f'''
         Here are the leftover ingredients I have: {ingredients_list}.
@@ -82,9 +82,12 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
         ''' 
         # used chatgpt to generate prompt, made some changes afterwards as required.
         
-        response = model.generate_content(prompt) # getting gemini's response from the prompt
-        
-        response_text = response.text # extracting recipes from list
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}])
+
+        response_text = response['choices'][0]['message']['content']
+
         recipe_lines = [line.strip() for line in response_text.split('\n') if line.strip()] # splitting the response into cleaning it 
         
         # this part of the code is required to turn geminis responses into a proper list which can later be used to properly display it 
@@ -97,7 +100,7 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
                 recipes.append(line)
         # ensuring that only the required number of suggestions are included in the list 
         recipes = recipes[:max_suggestions]
-        logger.info(f"Got the following recipes from gemini: {recipes}")
+        logger.info(f"Got the following recipes from Chatgpt: {recipes}")
     
         if not recipes:
             logger.warning(f"Got no recipes for the ingredients: {ingredients_list}!!")
@@ -105,7 +108,7 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
         return recipes
 
     except Exception as e:
-            logger.error(f"Error using Gemini API: {str(e)}")
+            logger.error(f"Error using OpenAI API: {str(e)}")
             return []
 
 '''
