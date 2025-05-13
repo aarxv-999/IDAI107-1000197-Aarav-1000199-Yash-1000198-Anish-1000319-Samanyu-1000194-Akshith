@@ -67,7 +67,7 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
         if not api_key:
             raise ValueError("GEMINI_API_KEY environment variable was not found!")
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash') # initializing gemini 1.5 pro as required by the capstone brief. 
+        model = genai.GenerativeModel('gemini-1.5-flash') # initializing gemini 1.5 pro as required by the capstone brief. 
         
         ingredients_list = ", ".join(leftovers) 
         prompt = f'''
