@@ -26,8 +26,8 @@ def ensure_user_db_exists():
     os.makedirs(os.path.dirname(USER_DB_PATH), exist_ok=True)
     #creating the database if its not found
     if not os.path.exists(USER_DB_PATH):
-        df.to_csv(USER_DB_PATH, index=False)
         df = pd.DataFrame(columns=['user_id', 'username', 'email', 'password_hash', 'role', 'time'])
+        df.to_csv(USER_DB_PATH, index=False)
         logger.info(f"DEBUGGING: created a user database at {USER_DB_PATH}")
 
 def hash_password(password: str) -> str:
