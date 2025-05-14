@@ -28,7 +28,7 @@ def logout_user():
     st.session_state.show_login = True
     st.session_state.show_register = False
     st.success("You have been logged out successfully!")
-    st.experimental_rerun()
+    st.rerun()
 
 def login_form() -> bool:
     '''
@@ -182,7 +182,7 @@ def is_user_role(required_role: str) -> bool:
         
     RETURN - bool: true if user has role or else False
     '''
-    
+
     user = get_current_user()
     if user and user['role'] == required_role:
         return True
