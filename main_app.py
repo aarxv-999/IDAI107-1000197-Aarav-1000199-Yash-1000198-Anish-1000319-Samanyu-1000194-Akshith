@@ -3,6 +3,10 @@ MAIN APP FILE for the Smart Restaurant Menu Management App
 This combines all UI components and logic functions to create a complete Streamlit interface.
 """
 import streamlit as st
+
+# Set page config must be the first Streamlit command
+st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
+
 from ui.components import (  # Import UI functions
     leftover_input_csv, leftover_input_manual,
 )
@@ -115,8 +119,6 @@ def visual_menu_search():
 
 # Main app function
 def main():
-    st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
-    
     # Initialize Firebase and session state for authentication
     initialize_session_state()
     
