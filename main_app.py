@@ -1,15 +1,16 @@
-'''
+"""
 MAIN APP FILE for the Smart Restaurant Menu Management App
-This combines all UI components and logic functions from all modules to create a complete working Streamlit interface
-'''
+This combines all UI components and logic functions to create a complete Streamlit interface.
+"""
 import streamlit as st
-from ui.components import (  # importing all ui functions from the folder
+from ui.components import (  # Import UI functions
     leftover_input_csv, leftover_input_manual,
 )
 from ui.auth_components import (
     render_auth_ui, initialize_session_state, auth_required, get_current_user, is_user_role
 )
-from modules.leftover import suggest_recipes  # importing all logic functions from the module folder
+from modules.leftover import suggest_recipes  # Import logic functions
+from firebase_init import init_firebase
 import logging
 
 # Set up logging
@@ -18,7 +19,7 @@ logging.basicConfig(level=logging.INFO,
 
 # Page/feature access control
 def check_feature_access(feature_name):
-    '''Check if the current user has access to a specific feature'''
+    """Check if the current user has access to a specific feature"""
     user = get_current_user()
     
     # Public features accessible to all authenticated users
@@ -56,14 +57,14 @@ def leftover_management():
     st.subheader("♻️ Leftover Management")
     
     # Debug UI state
-    leftovers_csv = leftover_input_csv()  # inputting leftovers from csv
+    leftovers_csv = leftover_input_csv()  # Input leftovers from CSV
     logging.info(f"Leftovers from CSV: {leftovers_csv}")
     
-    leftovers_manual = leftover_input_manual()  # inputting leftovers manually
+    leftovers_manual = leftover_input_manual()  # Input leftovers manually
     logging.info(f"Leftovers from manual entry: {leftovers_manual}")
     
     # Use the leftovers from either source
-    leftovers = leftovers_csv or leftovers_manual  # main leftovers based on what the user picks
+    leftovers = leftovers_csv or leftovers_manual  # Main leftovers based on user's choice
     logging.info(f"Final leftovers list: {leftovers}")
     
     if leftovers:
@@ -95,28 +96,28 @@ def leftover_management():
 def event_planning():
     st.subheader("🎉 Event Planning ChatBot")
     st.write("This feature is coming soon!")
-    # Placeholder for the event planning feature
+    # Placeholder for event planning feature
 
 def promotion_generator():
     st.subheader("📣 Promotion Generator")
     st.write("This feature is coming soon!")
-    # Placeholder for the promotion generator feature
+    # Placeholder for promotion generator feature
 
 def chef_recipe_suggestions():
     st.subheader("👨‍🍳 Chef Recipe Suggestions")
     st.write("This feature is coming soon!")
-    # Placeholder for the chef recipe suggestions feature
+    # Placeholder for chef recipe suggestions feature
 
 def visual_menu_search():
     st.subheader("🔍 Visual Menu Search")
     st.write("This feature is coming soon!")
-    # Placeholder for the visual menu search feature
+    # Placeholder for visual menu search feature
 
 # Main app function
 def main():
     st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
     
-    # Initialize session state for authentication
+    # Initialize Firebase and session state for authentication
     initialize_session_state()
     
     # Render authentication UI in sidebar
