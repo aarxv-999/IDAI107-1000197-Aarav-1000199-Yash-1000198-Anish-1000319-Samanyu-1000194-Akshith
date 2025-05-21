@@ -11,9 +11,9 @@ from ui.auth_components import (
 )
 from modules.leftover import suggest_recipes  # Import logic functions
 from firebase_init import init_firebase
-import logging
+init_firebase()
 
-# Set up logging
+import logging
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
