@@ -1,12 +1,18 @@
+"""
+Authentication UI components for the Smart Restaurant Menu Management App.
+Provides Streamlit UI elements for authentication and user management.
+"""
+
 import streamlit as st
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 import logging
 from modules.auth import register_user, authenticate_user
+from firebase_init import init_firebase
 
 logger = logging.getLogger(__name__)
 
 def initialize_session_state():
-    '''Initialize the session state variables if they don't already  exist'''
+    """Initialize the session state variables if they don't already exist"""
     if 'user' not in st.session_state:
         st.session_state.user = None
     if 'is_authenticated' not in st.session_state:
@@ -15,14 +21,18 @@ def initialize_session_state():
         st.session_state.show_login = True  # defaults to showing login form
     if 'show_register' not in st.session_state:
         st.session_state.show_register = False
+    
+    # Initialize Firebase at app startup
+    if 'firebase_initialized' not in st.session_state:
+        st.session_state.firebase_initialized = init_firebase()
 
 def toggle_login_register():
-    '''ability to toggle between login and registration forms'''
+    """Toggle between login and registration forms"""
     st.session_state.show_login = not st.session_state.show_login
     st.session_state.show_register = not st.session_state.show_register
 
 def logout_user():
-    '''log out option for the current user'''
+    """Log out the current user"""
     st.session_state.user = None
     st.session_state.is_authenticated = False
     st.session_state.show_login = True
@@ -31,11 +41,12 @@ def logout_user():
     st.rerun()
 
 def login_form() -> bool:
-    '''
-    create a login form and process any attempts
+    """
+    Create a login form and process login attempts
     
-    RETURN - bool: true if the lgoin is succesful or else false
-    '''
+    Returns:
+        bool: True if login is successful, False otherwise
+    """
     st.subheader("Login")
 
     with st.form("login_form"):
@@ -54,25 +65,25 @@ def login_form() -> bool:
                 st.session_state.user = user_data
                 st.session_state.is_authenticated = True
                 st.success(f"Welcome back, {user_data['username']}!")
+                st.rerun()  # Refresh page to update UI based on authentication
                 return True
             else:
                 st.error(message)
                 return False
     
-
-    st.markdown("Don't have an account already?? [Register here](#)")
+    st.markdown("Don't have an account already? [Register here](#)")
     if st.button("Create an account"):
         toggle_login_register()
     
     return False
 
 def registration_form() -> bool:
-    '''
-    create a registration form and process registration attempts
+    """
+    Create a registration form and process registration attempts
     
-    RETURN - bool: true if registration successful, or else fals
-    '''
-
+    Returns:
+        bool: True if registration is successful, False otherwise
+    """
     st.subheader("Create An Account")
     
     with st.form("registration_form"):
@@ -83,20 +94,22 @@ def registration_form() -> bool:
         confirm_password = st.text_input("Confirm Password", type="password")
         role = "user"  # default role, assigned to all users 
         
-        # to register as a restaurant staff or admin .
+        # Registration for staff roles
         is_staff = st.checkbox("Register as restaurant staff")
         if is_staff:
             role_options = ["staff", "admin", "chef"]
             role = st.selectbox("Select your role", role_options)
             staff_code = st.text_input("Registration code", type="password")
-            if staff_code != "staffcode123":  
-                role = "user"  # if code entered is wrong then it will revert to user
+            if staff_code != "staffcode123":  # Simple code verification
+                role = "user"  # Reset to user if wrong code
+                
         submitted = st.form_submit_button("Register")
         
         if submitted:
             if not username or not email or not password or not confirm_password:
                 st.error("Please fill all fields! MANDATORY")
                 return False
+                
             if password != confirm_password:
                 st.error("Passwords do not match!!")
                 return False
@@ -106,43 +119,44 @@ def registration_form() -> bool:
             if success:
                 st.success(message)
                 st.info("Please log in with your new account!")
-                st.session_state.show_login = True # now switch to login page
+                st.session_state.show_login = True  # Switch to login page
                 st.session_state.show_register = False
+                st.rerun()  # Refresh page to show login form
                 return True
             else:
                 st.error(message)
                 return False
     
-    # adding the option to go back to login after going to register page.
+    # Option to go back to login
     st.markdown("Already have an account? [Login here](#)")
     if st.button("Log in instead"):
         toggle_login_register()
     return False
 
 def user_profile():
-    '''showcasing the user profile section'''
+    """Display the user profile section in the sidebar"""
     if st.session_state.is_authenticated and st.session_state.user:
         user = st.session_state.user
         
         st.sidebar.subheader("User Profile")
         st.sidebar.write(f"Welcome, {user['username']}!")
         st.sidebar.write(f"Your Role: {user['role'].capitalize()}")
+        
         if st.sidebar.button("Logout"):
             logout_user()
 
 def auth_required(func):
-    '''
-    decorator so as to require authentication to access some pages or features 
-    USAGE - @auth_required at the beginning of any function
-
-    '''
+    """
+    Decorator to require authentication to access certain pages or features
+    Usage: @auth_required at the beginning of any function
+    """
     def wrapper(*args, **kwargs):
         initialize_session_state()
         
         if st.session_state.is_authenticated:
             return func(*args, **kwargs)
         else:
-            st.warning("It is required to be logged in so you can use this feature.")
+            st.warning("You need to be logged in to use this feature.")
             if st.session_state.show_login:
                 login_form()
             else:
@@ -151,38 +165,44 @@ def auth_required(func):
     return wrapper
 
 def render_auth_ui():
-    '''show the authentication ui based on the current state'''
+    """
+    Show the authentication UI based on the current state
+    
+    Returns:
+        bool: True if user is authenticated, False otherwise
+    """
     initialize_session_state()
     
-    if st.session_state.is_authenticated: # if the user is already authenticated then it will show their profile 
+    if st.session_state.is_authenticated:  # Show profile if authenticated
         user_profile()
         return True
     
-    if st.session_state.show_login: #if not it will show login or registration form
+    if st.session_state.show_login:  # Show login or registration form
         return login_form()
     else:
         return registration_form()
 
 def get_current_user() -> Optional[Dict]:
-    '''
-    get the currently logged in user
+    """
+    Get the currently logged in user
     
-    RETURN - Optional[Dict]: user data if already authenticated, or else None
-    '''
-
+    Returns:
+        Optional[Dict]: User data if authenticated, None otherwise
+    """
     if st.session_state.is_authenticated and st.session_state.user:
         return st.session_state.user
     return None
 
 def is_user_role(required_role: str) -> bool:
-    '''
-    check if user has required role for some tasks
-
-    ARGUMENT - required_role(str): the role which has to be checked
+    """
+    Check if user has a required role for certain tasks
+    
+    Args:
+        required_role (str): The role to check for
         
-    RETURN - bool: true if user has role or else False
-    '''
-
+    Returns:
+        bool: True if user has the role, False otherwise
+    """
     user = get_current_user()
     if user and user['role'] == required_role:
         return True
