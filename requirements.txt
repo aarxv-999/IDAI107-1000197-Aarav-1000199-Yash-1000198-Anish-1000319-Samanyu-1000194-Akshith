@@ -9,3 +9,4 @@ pytest
 flake8
 google-generativeai
 openai
+firebase-admin
