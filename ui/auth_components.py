@@ -47,32 +47,72 @@ def login_form() -> bool:
     Returns:
         bool: True if login is successful, False otherwise
     """
-    # Create a container for better styling
-    with st.container():
-        st.markdown("### 🔐 Welcome Back!")
-        st.markdown("Please sign in to your account")
+    # Add custom CSS for better styling
+    st.markdown("""
+    <style>
+    .auth-container {
+        max-width: 500px;
+        margin: 0 auto;
+        padding: 2rem;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+    }
+    .auth-title {
+        text-align: center;
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+        color: #ffffff;
+    }
+    .auth-subtitle {
+        text-align: center;
+        margin-bottom: 2rem;
+        color: #cccccc;
+    }
+    .stTextInput > div > div > input {
+        background-color: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        color: white;
+        padding: 12px;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: rgba(255, 255, 255, 0.4);
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+    }
+    .auth-switch-text {
+        text-align: center;
+        margin-top: 1.5rem;
+        color: #cccccc;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Create centered container
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown('<div class="auth-container">', unsafe_allow_html=True)
         
-        # Add some spacing
-        st.markdown("<br>", unsafe_allow_html=True)
+        # Title and subtitle
+        st.markdown('<h2 class="auth-title">🔐 Welcome Back!</h2>', unsafe_allow_html=True)
+        st.markdown('<p class="auth-subtitle">Please sign in to your account</p>', unsafe_allow_html=True)
 
         with st.form("login_form", clear_on_submit=False):
-            col1, col2 = st.columns([1, 4])
-            with col2:
-                username_or_email = st.text_input(
-                    "Username or Email", 
-                    placeholder="Enter your username or email",
-                    help="You can use either your username or email address"
-                )
-                password = st.text_input(
-                    "Password", 
-                    type="password",
-                    placeholder="Enter your password"
-                )
-                
-                # Center the submit button
-                col_left, col_center, col_right = st.columns([1, 2, 1])
-                with col_center:
-                    submitted = st.form_submit_button("🚀 Login", use_container_width=True)
+            username_or_email = st.text_input(
+                "Username or Email", 
+                placeholder="Enter your username or email",
+                help="You can use either your username or email address"
+            )
+            password = st.text_input(
+                "Password", 
+                type="password",
+                placeholder="Enter your password"
+            )
+            
+            # Submit button - full width
+            submitted = st.form_submit_button("🚀 Login", use_container_width=True)
             
             # Process form submission
             if submitted:
@@ -95,13 +135,13 @@ def login_form() -> bool:
                         return False
         
         # Switch to registration
-        st.markdown("<br>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.markdown("Don't have an account?")
-            if st.button("📝 Create New Account", use_container_width=True, key="switch_to_register"):
-                switch_to_register()
-                st.rerun()
+        st.markdown('<div class="auth-switch-text">Don\'t have an account?</div>', unsafe_allow_html=True)
+        
+        if st.button("📝 Create New Account", use_container_width=True, key="switch_to_register"):
+            switch_to_register()
+            st.rerun()
+            
+        st.markdown('</div>', unsafe_allow_html=True)
     
     return False
 
@@ -112,64 +152,110 @@ def registration_form() -> bool:
     Returns:
         bool: True if registration is successful, False otherwise
     """
-    with st.container():
-        st.markdown("### 📝 Create Your Account")
-        st.markdown("Join our restaurant management system")
+    # Add custom CSS for registration form
+    st.markdown("""
+    <style>
+    .auth-container {
+        max-width: 500px;
+        margin: 0 auto;
+        padding: 2rem;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+    }
+    .auth-title {
+        text-align: center;
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+        color: #ffffff;
+    }
+    .auth-subtitle {
+        text-align: center;
+        margin-bottom: 2rem;
+        color: #cccccc;
+    }
+    .stTextInput > div > div > input {
+        background-color: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        color: white;
+        padding: 12px;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: rgba(255, 255, 255, 0.4);
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+    }
+    .auth-switch-text {
+        text-align: center;
+        margin-top: 1.5rem;
+        color: #cccccc;
+    }
+    .section-header {
+        color: #ffffff;
+        font-weight: 600;
+        margin: 1rem 0 0.5rem 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Create centered container
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown('<div class="auth-container">', unsafe_allow_html=True)
         
-        # Add some spacing
-        st.markdown("<br>", unsafe_allow_html=True)
+        # Title and subtitle
+        st.markdown('<h2 class="auth-title">📝 Create Your Account</h2>', unsafe_allow_html=True)
+        st.markdown('<p class="auth-subtitle">Join our restaurant management system</p>', unsafe_allow_html=True)
         
         with st.form("registration_form", clear_on_submit=False):
-            col1, col2 = st.columns([1, 4])
-            with col2:
-                username = st.text_input(
-                    "Username", 
-                    placeholder="Choose a unique username",
-                    help="Your username must be unique"
-                )
-                email = st.text_input(
-                    "Email", 
-                    placeholder="your.email@example.com",
-                    help="We'll use this for account recovery"
-                )
-                password = st.text_input(
-                    "Password", 
+            username = st.text_input(
+                "Username", 
+                placeholder="Choose a unique username",
+                help="Your username must be unique"
+            )
+            email = st.text_input(
+                "Email", 
+                placeholder="your.email@example.com",
+                help="We'll use this for account recovery"
+            )
+            password = st.text_input(
+                "Password", 
+                type="password",
+                placeholder="Create a strong password",
+                help="Password must be at least 5 characters with uppercase letters and numbers"
+            )
+            confirm_password = st.text_input(
+                "Confirm Password", 
+                type="password",
+                placeholder="Re-enter your password"
+            )
+            
+            # Role selection with better UI
+            st.markdown('<p class="section-header">Account Type:</p>', unsafe_allow_html=True)
+            is_staff = st.checkbox("🏢 I'm restaurant staff", help="Check this if you work at the restaurant")
+            
+            role = "user"  # default role
+            staff_code = ""
+            
+            if is_staff:
+                role_options = {
+                    "staff": "👥 Staff Member",
+                    "chef": "👨‍🍳 Chef",
+                    "admin": "⚡ Administrator"
+                }
+                role = st.selectbox("Select your role:", list(role_options.keys()), 
+                                  format_func=lambda x: role_options[x])
+                staff_code = st.text_input(
+                    "Staff Registration Code", 
                     type="password",
-                    placeholder="Create a strong password",
-                    help="Password must be at least 5 characters with uppercase letters and numbers"
+                    placeholder="Enter staff code",
+                    help="Contact your manager for the registration code"
                 )
-                confirm_password = st.text_input(
-                    "Confirm Password", 
-                    type="password",
-                    placeholder="Re-enter your password"
-                )
-                
-                # Role selection with better UI
-                st.markdown("**Account Type:**")
-                is_staff = st.checkbox("🏢 I'm restaurant staff", help="Check this if you work at the restaurant")
-                
-                role = "user"  # default role
-                staff_code = ""
-                
-                if is_staff:
-                    role_options = {
-                        "staff": "👥 Staff Member",
-                        "chef": "👨‍🍳 Chef",
-                        "admin": "⚡ Administrator"
-                    }
-                    role = st.selectbox("Select your role:", list(role_options.keys()), 
-                                      format_func=lambda x: role_options[x])
-                    staff_code = st.text_input(
-                        "Staff Registration Code", 
-                        type="password",
-                        placeholder="Enter staff code",
-                        help="Contact your manager for the registration code"
-                    )
-                
-                # Center the submit button
-                col_left, col_center, col_right = st.columns([1, 2, 1])
-                with col_center:
-                    submitted = st.form_submit_button("🎯 Create Account", use_container_width=True)
+            
+            # Submit button - full width
+            submitted = st.form_submit_button("🎯 Create Account", use_container_width=True)
             
             # Process form submission
             if submitted:
@@ -204,13 +290,12 @@ def registration_form() -> bool:
                         return False
         
         # Switch to login
-        st.markdown("<br>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.markdown("Already have an account?")
-            if st.button("🔐 Sign In Instead", use_container_width=True, key="switch_to_login"):
-                switch_to_login()
-                st.rerun()
+        st.markdown('<div class="auth-switch-text">Already have an account?</div>', unsafe_allow_html=True)
+        if st.button("🔐 Sign In Instead", use_container_width=True, key="switch_to_login"):
+            switch_to_login()
+            st.rerun()
+            
+        st.markdown('</div>', unsafe_allow_html=True)
     
     return False
 
