@@ -17,26 +17,26 @@ def initialize_session_state():
         st.session_state.user = None
     if 'is_authenticated' not in st.session_state:
         st.session_state.is_authenticated = False
-    if 'show_login' not in st.session_state:
-        st.session_state.show_login = True  # defaults to showing login form
-    if 'show_register' not in st.session_state:
-        st.session_state.show_register = False
+    if 'auth_mode' not in st.session_state:
+        st.session_state.auth_mode = 'login'  # 'login' or 'register'
     
     # Initialize Firebase at app startup
     if 'firebase_initialized' not in st.session_state:
         st.session_state.firebase_initialized = init_firebase()
 
-def toggle_login_register():
-    """Toggle between login and registration forms"""
-    st.session_state.show_login = not st.session_state.show_login
-    st.session_state.show_register = not st.session_state.show_register
+def switch_to_register():
+    """Switch to registration mode"""
+    st.session_state.auth_mode = 'register'
+
+def switch_to_login():
+    """Switch to login mode"""
+    st.session_state.auth_mode = 'login'
 
 def logout_user():
     """Log out the current user"""
     st.session_state.user = None
     st.session_state.is_authenticated = False
-    st.session_state.show_login = True
-    st.session_state.show_register = False
+    st.session_state.auth_mode = 'login'
     st.success("You have been logged out successfully!")
     st.rerun()
 
@@ -47,33 +47,61 @@ def login_form() -> bool:
     Returns:
         bool: True if login is successful, False otherwise
     """
-    st.subheader("Login")
-
-    with st.form("login_form"):
-        username_or_email = st.text_input("Username / Email")
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Login")
+    # Create a container for better styling
+    with st.container():
+        st.markdown("### 🔐 Welcome Back!")
+        st.markdown("Please sign in to your account")
         
-        if submitted:
-            if not username_or_email or not password:
-                st.error("Please fill all fields! MANDATORY")
-                return False
+        # Add some spacing
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        with st.form("login_form", clear_on_submit=False):
+            col1, col2 = st.columns([1, 4])
+            with col2:
+                username_or_email = st.text_input(
+                    "Username or Email", 
+                    placeholder="Enter your username or email",
+                    help="You can use either your username or email address"
+                )
+                password = st.text_input(
+                    "Password", 
+                    type="password",
+                    placeholder="Enter your password"
+                )
                 
-            success, user_data, message = authenticate_user(username_or_email, password)
+                # Center the submit button
+                col_left, col_center, col_right = st.columns([1, 2, 1])
+                with col_center:
+                    submitted = st.form_submit_button("🚀 Login", use_container_width=True)
             
-            if success:
-                st.session_state.user = user_data
-                st.session_state.is_authenticated = True
-                st.success(f"Welcome back, {user_data['username']}!")
-                st.rerun()  # Refresh page to update UI based on authentication
-                return True
-            else:
-                st.error(message)
-                return False
-    
-    st.markdown("Don't have an account already? [Register here](#)")
-    if st.button("Create an account"):
-        toggle_login_register()
+            # Process form submission
+            if submitted:
+                if not username_or_email or not password:
+                    st.error("⚠️ Please fill all fields!")
+                    return False
+                    
+                with st.spinner("Signing you in..."):
+                    success, user_data, message = authenticate_user(username_or_email, password)
+                    
+                    if success:
+                        st.session_state.user = user_data
+                        st.session_state.is_authenticated = True
+                        st.success(f"🎉 Welcome back, {user_data['username']}!")
+                        st.balloons()  # Add celebration effect
+                        st.rerun()
+                        return True
+                    else:
+                        st.error(f"❌ {message}")
+                        return False
+        
+        # Switch to registration
+        st.markdown("<br>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("Don't have an account?")
+            if st.button("📝 Create New Account", use_container_width=True, key="switch_to_register"):
+                switch_to_register()
+                st.rerun()
     
     return False
 
@@ -84,53 +112,106 @@ def registration_form() -> bool:
     Returns:
         bool: True if registration is successful, False otherwise
     """
-    st.subheader("Create An Account")
-    
-    with st.form("registration_form"):
-        username = st.text_input("Username")
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password", 
-                                help="Password must be at least 5 characters with uppercase letters and numbers")
-        confirm_password = st.text_input("Confirm Password", type="password")
-        role = "user"  # default role, assigned to all users 
+    with st.container():
+        st.markdown("### 📝 Create Your Account")
+        st.markdown("Join our restaurant management system")
         
-        # Registration for staff roles
-        is_staff = st.checkbox("Register as restaurant staff")
-        if is_staff:
-            role_options = ["staff", "admin", "chef"]
-            role = st.selectbox("Select your role", role_options)
-            staff_code = st.text_input("Registration code", type="password")
-            if staff_code != "staffcode123":  # Simple code verification
-                role = "user"  # Reset to user if wrong code
-                
-        submitted = st.form_submit_button("Register")
+        # Add some spacing
+        st.markdown("<br>", unsafe_allow_html=True)
         
-        if submitted:
-            if not username or not email or not password or not confirm_password:
-                st.error("Please fill all fields! MANDATORY")
-                return False
+        with st.form("registration_form", clear_on_submit=False):
+            col1, col2 = st.columns([1, 4])
+            with col2:
+                username = st.text_input(
+                    "Username", 
+                    placeholder="Choose a unique username",
+                    help="Your username must be unique"
+                )
+                email = st.text_input(
+                    "Email", 
+                    placeholder="your.email@example.com",
+                    help="We'll use this for account recovery"
+                )
+                password = st.text_input(
+                    "Password", 
+                    type="password",
+                    placeholder="Create a strong password",
+                    help="Password must be at least 5 characters with uppercase letters and numbers"
+                )
+                confirm_password = st.text_input(
+                    "Confirm Password", 
+                    type="password",
+                    placeholder="Re-enter your password"
+                )
                 
-            if password != confirm_password:
-                st.error("Passwords do not match!!")
-                return False
+                # Role selection with better UI
+                st.markdown("**Account Type:**")
+                is_staff = st.checkbox("🏢 I'm restaurant staff", help="Check this if you work at the restaurant")
+                
+                role = "user"  # default role
+                staff_code = ""
+                
+                if is_staff:
+                    role_options = {
+                        "staff": "👥 Staff Member",
+                        "chef": "👨‍🍳 Chef",
+                        "admin": "⚡ Administrator"
+                    }
+                    role = st.selectbox("Select your role:", list(role_options.keys()), 
+                                      format_func=lambda x: role_options[x])
+                    staff_code = st.text_input(
+                        "Staff Registration Code", 
+                        type="password",
+                        placeholder="Enter staff code",
+                        help="Contact your manager for the registration code"
+                    )
+                
+                # Center the submit button
+                col_left, col_center, col_right = st.columns([1, 2, 1])
+                with col_center:
+                    submitted = st.form_submit_button("🎯 Create Account", use_container_width=True)
             
-            success, message = register_user(username, email, password, role)
-            
-            if success:
-                st.success(message)
-                st.info("Please log in with your new account!")
-                st.session_state.show_login = True  # Switch to login page
-                st.session_state.show_register = False
-                st.rerun()  # Refresh page to show login form
-                return True
-            else:
-                st.error(message)
-                return False
+            # Process form submission
+            if submitted:
+                # Validation
+                if not username or not email or not password or not confirm_password:
+                    st.error("⚠️ Please fill all required fields!")
+                    return False
+                    
+                if password != confirm_password:
+                    st.error("🔐 Passwords do not match!")
+                    return False
+                
+                # Validate staff code if needed
+                if is_staff and staff_code != "staffcode123":
+                    st.error("🚫 Invalid staff registration code!")
+                    role = "user"  # Reset to user role
+                
+                with st.spinner("Creating your account..."):
+                    success, message = register_user(username, email, password, role)
+                    
+                    if success:
+                        st.success(f"🎉 {message}")
+                        st.info("✅ Account created successfully! Please log in with your new credentials.")
+                        st.balloons()  # Add celebration effect
+                        
+                        # Switch to login after successful registration
+                        st.session_state.auth_mode = 'login'
+                        st.rerun()
+                        return True
+                    else:
+                        st.error(f"❌ {message}")
+                        return False
+        
+        # Switch to login
+        st.markdown("<br>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("Already have an account?")
+            if st.button("🔐 Sign In Instead", use_container_width=True, key="switch_to_login"):
+                switch_to_login()
+                st.rerun()
     
-    # Option to go back to login
-    st.markdown("Already have an account? [Login here](#)")
-    if st.button("Log in instead"):
-        toggle_login_register()
     return False
 
 def user_profile():
@@ -138,12 +219,33 @@ def user_profile():
     if st.session_state.is_authenticated and st.session_state.user:
         user = st.session_state.user
         
-        st.sidebar.subheader("User Profile")
-        st.sidebar.write(f"Welcome, {user['username']}!")
-        st.sidebar.write(f"Your Role: {user['role'].capitalize()}")
-        
-        if st.sidebar.button("Logout"):
-            logout_user()
+        # Create a nice profile card
+        with st.sidebar.container():
+            st.markdown("### 👤 User Profile")
+            
+            # User info with better formatting
+            st.markdown(f"""
+            **Welcome back!**  
+            🏷️ **Name:** {user['username']}  
+            🎭 **Role:** {user['role'].capitalize()}  
+            """)
+            
+            # Role-specific badges
+            role_badges = {
+                'admin': '⚡ Administrator',
+                'chef': '👨‍🍳 Chef',
+                'staff': '👥 Staff Member',
+                'user': '🙂 Customer'
+            }
+            
+            if user['role'] in role_badges:
+                st.markdown(f"*{role_badges[user['role']]}*")
+            
+            st.markdown("---")
+            
+            # Logout button with confirmation
+            if st.button("🚪 Logout", use_container_width=True, type="secondary"):
+                logout_user()
 
 def auth_required(func):
     """
@@ -156,8 +258,10 @@ def auth_required(func):
         if st.session_state.is_authenticated:
             return func(*args, **kwargs)
         else:
-            st.warning("You need to be logged in to use this feature.")
-            if st.session_state.show_login:
+            st.warning("🔒 You need to be logged in to access this feature.")
+            
+            # Show appropriate auth form
+            if st.session_state.auth_mode == 'login':
                 login_form()
             else:
                 registration_form()
@@ -173,11 +277,12 @@ def render_auth_ui():
     """
     initialize_session_state()
     
-    if st.session_state.is_authenticated:  # Show profile if authenticated
+    if st.session_state.is_authenticated:
         user_profile()
         return True
     
-    if st.session_state.show_login:  # Show login or registration form
+    # Show auth form based on current mode
+    if st.session_state.auth_mode == 'login':
         return login_form()
     else:
         return registration_form()
@@ -207,3 +312,27 @@ def is_user_role(required_role: str) -> bool:
     if user and user['role'] == required_role:
         return True
     return False
+
+# Additional utility functions for better UX
+def show_auth_status():
+    """Show a small authentication status indicator"""
+    if st.session_state.is_authenticated:
+        user = get_current_user()
+        st.sidebar.success(f"✅ Signed in as {user['username']}")
+    else:
+        st.sidebar.info("ℹ️ Please sign in to continue")
+
+def create_auth_tabs():
+    """Create tabbed interface for login/register (alternative UI)"""
+    initialize_session_state()
+    
+    if not st.session_state.is_authenticated:
+        tab1, tab2 = st.tabs(["🔐 Login", "📝 Register"])
+        
+        with tab1:
+            login_form()
+        
+        with tab2:
+            registration_form()
+    else:
+        user_profile()
