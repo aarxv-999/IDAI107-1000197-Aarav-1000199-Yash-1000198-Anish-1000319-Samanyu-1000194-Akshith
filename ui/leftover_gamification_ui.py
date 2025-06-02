@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 # Import gamification functions
-from modules.gamification import (
+from modules.leftover_gamification import (
     generate_dynamic_quiz_questions, calculate_quiz_score, get_user_stats,
     update_user_stats, get_leaderboard, get_xp_progress, award_recipe_xp
 )
