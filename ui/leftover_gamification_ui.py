@@ -1,5 +1,5 @@
 """
-Complete UI components for the gamification system.
+Minimalist UI components for the gamification system.
 Handles quiz interface, leaderboard display, and user stats visualization.
 
 File location: ui/gamification_ui.py
@@ -18,7 +18,7 @@ from modules.leftover_gamification import (
 
 def display_user_stats_sidebar(user_id: str) -> Dict:
     """
-    Display user's gamification stats in the sidebar.
+    Display user's gamification stats in the sidebar with minimal design.
     
     Args:
         user_id (str): User's unique ID
@@ -28,48 +28,43 @@ def display_user_stats_sidebar(user_id: str) -> Dict:
     """
     stats = get_user_stats(user_id)
     
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("## 🎮 Your Stats")
+    st.sidebar.divider()
+    st.sidebar.subheader("Player Stats")
     
     # Level and XP display
     current_level_xp, xp_needed = get_xp_progress(stats['total_xp'], stats['level'])
     xp_for_current_level = (stats['level'] ** 2) * 100 - ((stats['level'] - 1) ** 2) * 100
     progress = current_level_xp / xp_for_current_level if xp_for_current_level > 0 else 0
     
-    st.sidebar.markdown(f"**Level:** {stats['level']} 🌟")
-    st.sidebar.markdown(f"**Total XP:** {stats['total_xp']} ⚡")
-    st.sidebar.progress(progress)
-    st.sidebar.markdown(f"*{xp_needed} XP to next level*")
+    # Clean metrics display
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        st.metric("Level", stats['level'])
+        st.metric("Quizzes", stats['quizzes_taken'])
+    with col2:
+        st.metric("XP", stats['total_xp'])
+        st.metric("Perfect", stats['perfect_scores'])
     
-    # Quiz stats
-    st.sidebar.markdown(f"**Quizzes Taken:** {stats['quizzes_taken']} 📝")
-    st.sidebar.markdown(f"**Perfect Scores:** {stats['perfect_scores']} 💯")
-    st.sidebar.markdown(f"**Recipes Generated:** {stats.get('recipes_generated', 0)} 🍳")
+    # Progress bar
+    st.sidebar.progress(progress, text=f"{xp_needed} XP to next level")
     
     # Accuracy
     if stats['total_questions'] > 0:
         accuracy = (stats['correct_answers'] / stats['total_questions']) * 100
-        st.sidebar.markdown(f"**Accuracy:** {accuracy:.1f}% 🎯")
-    
-    # Recent achievements
-    achievements = stats.get('achievements', [])
-    if achievements:
-        st.sidebar.markdown("**Recent Achievements:**")
-        for achievement in achievements[-3:]:  # Show last 3 achievements
-            st.sidebar.markdown(f"🏆 {achievement}")
+        st.sidebar.metric("Accuracy", f"{accuracy:.1f}%")
     
     return stats
 
 def render_cooking_quiz(ingredients: List[str], user_id: str):
     """
-    Render the cooking quiz interface.
+    Render the cooking quiz interface with clean design.
     
     Args:
         ingredients (List[str]): List of leftover ingredients
         user_id (str): User's unique ID
     """
-    st.subheader("🧠 Cooking Knowledge Quiz")
-    st.markdown(f"**Based on your ingredients:** {', '.join(ingredients)}")
+    st.subheader("Cooking Knowledge Quiz")
+    st.caption(f"Based on: {', '.join(ingredients[:3])}{'...' if len(ingredients) > 3 else ''}")
     
     # Initialize session state for quiz
     if 'quiz_questions' not in st.session_state:
@@ -82,12 +77,12 @@ def render_cooking_quiz(ingredients: List[str], user_id: str):
         st.session_state.quiz_results = None
     
     # Quiz configuration
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([1, 2])
     with col1:
-        num_questions = st.selectbox("Number of Questions:", [3, 5, 7], index=1)
+        num_questions = st.selectbox("Questions:", [3, 5, 7], index=1)
     with col2:
-        if st.button("🚀 Start New Quiz"):
-            with st.spinner("Generating personalized quiz questions..."):
+        if st.button("Start Quiz", type="primary", use_container_width=True):
+            with st.spinner("Loading questions..."):
                 st.session_state.quiz_questions = generate_dynamic_quiz_questions(ingredients, num_questions)
                 st.session_state.quiz_answers = []
                 st.session_state.quiz_submitted = False
@@ -96,36 +91,39 @@ def render_cooking_quiz(ingredients: List[str], user_id: str):
     
     # Display quiz if questions are loaded
     if st.session_state.quiz_questions and not st.session_state.quiz_submitted:
-        st.markdown("---")
-        st.markdown("### Quiz Questions")
+        st.divider()
         
         answers = []
         for i, question in enumerate(st.session_state.quiz_questions):
-            st.markdown(f"**Question {i+1}:** {question['question']}")
+            with st.container():
+                st.write(f"**{i+1}.** {question['question']}")
+                
+                # Difficulty and XP info
+                difficulty_map = {"easy": "Easy", "medium": "Medium", "hard": "Hard"}
+                st.caption(f"{difficulty_map.get(question['difficulty'], 'Unknown')} • {question['xp_reward']} XP")
+                
+                # Answer options
+                answer = st.radio(
+                    "Select answer:",
+                    options=question['options'],
+                    key=f"q_{i}",
+                    index=None,
+                    label_visibility="collapsed"
+                )
+                
+                if answer:
+                    answers.append(question['options'].index(answer))
+                else:
+                    answers.append(-1)
             
-            # Difficulty indicator
-            difficulty_colors = {"easy": "🟢", "medium": "🟡", "hard": "🔴"}
-            st.markdown(f"{difficulty_colors.get(question['difficulty'], '⚪')} Difficulty: {question['difficulty'].title()} | XP: {question['xp_reward']}")
-            
-            # Multiple choice options
-            answer = st.radio(
-                f"Select your answer for Question {i+1}:",
-                options=question['options'],
-                key=f"q_{i}",
-                index=None
-            )
-            
-            if answer:
-                answers.append(question['options'].index(answer))
-            else:
-                answers.append(-1)  # No answer selected
-            
-            st.markdown("---")
+            if i < len(st.session_state.quiz_questions) - 1:
+                st.divider()
         
         # Submit quiz button
-        if st.button("📝 Submit Quiz", type="primary"):
+        st.write("")  # Spacing
+        if st.button("Submit Quiz", type="primary", use_container_width=True):
             if -1 in answers:
-                st.error("Please answer all questions before submitting!")
+                st.error("Please answer all questions before submitting.")
             else:
                 st.session_state.quiz_answers = answers
                 st.session_state.quiz_submitted = True
@@ -149,15 +147,15 @@ def render_cooking_quiz(ingredients: List[str], user_id: str):
 
 def display_quiz_results(results: Dict, questions: List[Dict], user_answers: List[int]):
     """
-    Display quiz results with detailed feedback.
+    Display quiz results with clean feedback design.
     
     Args:
         results (Dict): Quiz results
         questions (List[Dict]): Quiz questions
         user_answers (List[int]): User's answers
     """
-    st.markdown("---")
-    st.markdown("## 🎉 Quiz Results")
+    st.divider()
+    st.subheader("Quiz Results")
     
     # Score display
     score = results['correct']
@@ -170,55 +168,56 @@ def display_quiz_results(results: Dict, questions: List[Dict], user_answers: Lis
     with col1:
         st.metric("Score", f"{score}/{total}")
     with col2:
-        st.metric("Percentage", f"{percentage:.1f}%")
+        st.metric("Accuracy", f"{percentage:.1f}%")
     with col3:
         st.metric("XP Earned", f"+{xp_earned}")
     with col4:
         if percentage == 100:
-            st.metric("Bonus", "Perfect! 🎯")
+            st.metric("Grade", "Perfect")
         elif percentage >= 80:
-            st.metric("Grade", "Excellent! 🌟")
+            st.metric("Grade", "Excellent")
         elif percentage >= 60:
-            st.metric("Grade", "Good! 👍")
+            st.metric("Grade", "Good")
         else:
-            st.metric("Grade", "Keep Learning! 📚")
+            st.metric("Grade", "Practice")
     
     # Performance message
     if percentage == 100:
-        st.success("🎯 Perfect score! You're a true culinary expert!")
+        st.success("Perfect score! Excellent culinary knowledge.")
     elif percentage >= 80:
-        st.success("🌟 Excellent work! Your cooking knowledge is impressive!")
+        st.success("Great work! Your cooking knowledge is impressive.")
     elif percentage >= 60:
-        st.info("👍 Good job! Keep studying to become a cooking master!")
+        st.info("Good job! Keep studying to improve further.")
     else:
-        st.warning("📚 Keep learning! Practice makes perfect in the kitchen!")
+        st.warning("Keep learning! Practice makes perfect.")
     
-    # Detailed question review
-    st.markdown("### 📋 Question Review")
-    for i, question in enumerate(questions):
-        user_answer = user_answers[i]
-        correct_answer = question['correct']
-        is_correct = user_answer == correct_answer
-        
-        # Question header
-        status_icon = "✅" if is_correct else "❌"
-        st.markdown(f"**{status_icon} Question {i+1}:** {question['question']}")
-        
-        # Answer details
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown(f"**Your answer:** {question['options'][user_answer]}")
-        with col2:
-            st.markdown(f"**Correct answer:** {question['options'][correct_answer]}")
-        
-        # Explanation if available
-        if 'explanation' in question and question['explanation']:
-            st.markdown(f"**💡 Explanation:** {question['explanation']}")
-        
-        st.markdown("---")
+    # Question review
+    with st.expander("Review Answers", expanded=False):
+        for i, question in enumerate(questions):
+            user_answer = user_answers[i]
+            correct_answer = question['correct']
+            is_correct = user_answer == correct_answer
+            
+            # Question header
+            status = "✓" if is_correct else "✗"
+            st.write(f"**{status} Question {i+1}:** {question['question']}")
+            
+            # Answer details
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"Your answer: {question['options'][user_answer]}")
+            with col2:
+                st.write(f"Correct: {question['options'][correct_answer]}")
+            
+            # Explanation
+            if 'explanation' in question and question['explanation']:
+                st.caption(f"Explanation: {question['explanation']}")
+            
+            if i < len(questions) - 1:
+                st.divider()
     
     # New quiz button
-    if st.button("🔄 Take Another Quiz"):
+    if st.button("Take Another Quiz", use_container_width=True):
         st.session_state.quiz_questions = None
         st.session_state.quiz_answers = []
         st.session_state.quiz_submitted = False
@@ -226,174 +225,139 @@ def display_quiz_results(results: Dict, questions: List[Dict], user_answers: Lis
         st.rerun()
 
 def display_leaderboard():
-    """Display the global leaderboard."""
-    st.subheader("🏆 Global Leaderboard")
-    st.markdown("*Top chefs by total XP earned*")
+    """Display the global leaderboard with clean design."""
+    st.subheader("Leaderboard")
+    st.caption("Top players by XP")
     
     leaderboard = get_leaderboard(10)
     
     if leaderboard:
-        # Create leaderboard table
+        # Header
+        col1, col2, col3, col4, col5 = st.columns([1, 3, 2, 2, 2])
+        with col1:
+            st.write("**Rank**")
+        with col2:
+            st.write("**Player**")
+        with col3:
+            st.write("**Level**")
+        with col4:
+            st.write("**XP**")
+        with col5:
+            st.write("**Quizzes**")
+        
+        st.divider()
+        
+        # Leaderboard entries
         for entry in leaderboard:
-            rank = entry['rank']
-            username = entry['username']
-            total_xp = entry['total_xp']
-            level = entry['level']
-            quizzes = entry['quizzes_taken']
-            perfect_scores = entry['perfect_scores']
-            achievements = entry['achievements']
+            col1, col2, col3, col4, col5 = st.columns([1, 3, 2, 2, 2])
             
-            # Rank icons
-            rank_icons = {1: "🥇", 2: "🥈", 3: "🥉"}
-            rank_icon = rank_icons.get(rank, f"{rank}.")
+            with col1:
+                if entry['rank'] <= 3:
+                    rank_display = {1: "🥇", 2: "🥈", 3: "🥉"}[entry['rank']]
+                else:
+                    rank_display = str(entry['rank'])
+                st.write(rank_display)
             
-            # Create expandable row for each user
-            with st.expander(f"{rank_icon} {username} - Level {level} ({total_xp} XP)"):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Quizzes Taken", quizzes)
-                with col2:
-                    st.metric("Perfect Scores", perfect_scores)
-                with col3:
-                    st.metric("Achievements", achievements)
+            with col2:
+                st.write(entry['username'])
+            
+            with col3:
+                st.write(f"Level {entry['level']}")
+            
+            with col4:
+                st.write(f"{entry['total_xp']:,}")
+            
+            with col5:
+                st.write(entry['quizzes_taken'])
     else:
-        st.info("No leaderboard data available yet. Be the first to take a quiz!")
+        st.info("No leaderboard data available. Be the first to take a quiz!")
 
 def display_achievements_showcase(user_id: str):
     """
-    Display user's achievements in a showcase format.
+    Display user's achievements in a clean showcase format.
     
     Args:
         user_id (str): User's unique ID
     """
-    st.subheader("🏆 Achievement Showcase")
+    st.subheader("Achievements")
     
     stats = get_user_stats(user_id)
     achievements = stats.get('achievements', [])
     
     if not achievements:
-        st.info("🎯 No achievements yet! Take some quizzes to start earning achievements!")
+        st.info("No achievements yet. Take quizzes to start earning achievements!")
         return
     
-    # Achievement definitions with emojis and descriptions
-    achievement_info = {
-        "First Quiz": {"emoji": "🎯", "description": "Completed your first cooking quiz"},
-        "Quiz Novice": {"emoji": "📚", "description": "Completed 5 cooking quizzes"},
-        "Quiz Enthusiast": {"emoji": "🔥", "description": "Completed 10 cooking quizzes"},
-        "Quiz Master": {"emoji": "👑", "description": "Completed 25 cooking quizzes"},
-        "Quiz Legend": {"emoji": "⭐", "description": "Completed 50 cooking quizzes"},
-        "Perfectionist": {"emoji": "💯", "description": "Achieved your first perfect score"},
-        "Streak Master": {"emoji": "🎯", "description": "Achieved 5 perfect scores"},
-        "Flawless Chef": {"emoji": "👨‍🍳", "description": "Achieved 10 perfect scores"},
-        "Rising Star": {"emoji": "🌟", "description": "Reached Level 5"},
-        "Kitchen Pro": {"emoji": "🔪", "description": "Reached Level 10"},
-        "Culinary Expert": {"emoji": "👨‍🍳", "description": "Reached Level 15"},
-        "Master Chef": {"emoji": "🏆", "description": "Reached Level 20"}
+    # Achievement definitions
+    achievement_descriptions = {
+        "First Quiz": "Completed your first cooking quiz",
+        "Quiz Novice": "Completed 5 cooking quizzes",
+        "Quiz Enthusiast": "Completed 10 cooking quizzes",
+        "Quiz Master": "Completed 25 cooking quizzes",
+        "Quiz Legend": "Completed 50 cooking quizzes",
+        "Perfectionist": "Achieved your first perfect score",
+        "Streak Master": "Achieved 5 perfect scores",
+        "Flawless Chef": "Achieved 10 perfect scores",
+        "Rising Star": "Reached Level 5",
+        "Kitchen Pro": "Reached Level 10",
+        "Culinary Expert": "Reached Level 15",
+        "Master Chef": "Reached Level 20"
     }
     
-    # Display achievements in a grid
-    cols = st.columns(3)
+    # Display achievements in a clean grid
+    cols = st.columns(2)
     for i, achievement in enumerate(achievements):
-        col_idx = i % 3
+        col_idx = i % 2
         with cols[col_idx]:
-            info = achievement_info.get(achievement, {"emoji": "🏅", "description": "Special achievement"})
-            st.markdown(f"""
-            <div style="
-                border: 2px solid #FFD700;
-                border-radius: 10px;
-                padding: 15px;
-                text-align: center;
-                background: linear-gradient(135deg, #FFF8DC, #FFFACD);
-                margin: 10px 0;
-            ">
-                <div style="font-size: 2em;">{info['emoji']}</div>
-                <div style="font-weight: bold; color: #B8860B;">{achievement}</div>
-                <div style="font-size: 0.8em; color: #696969;">{info['description']}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            description = achievement_descriptions.get(achievement, "Special achievement")
+            st.success(f"**{achievement}**\n{description}")
     
     # Achievement progress
-    st.markdown("### 🎯 Achievement Progress")
+    st.divider()
+    st.write("**Progress Tracking**")
     
-    # Calculate progress for various achievements
     quizzes_taken = stats.get('quizzes_taken', 0)
     perfect_scores = stats.get('perfect_scores', 0)
     current_level = stats.get('level', 1)
     
-    # Quiz milestones
+    # Next milestones
     quiz_milestones = [1, 5, 10, 25, 50]
     next_quiz_milestone = next((m for m in quiz_milestones if m > quizzes_taken), None)
     
     if next_quiz_milestone:
         progress = quizzes_taken / next_quiz_milestone
-        st.progress(progress)
-        st.markdown(f"**Next Quiz Milestone:** {quizzes_taken}/{next_quiz_milestone} quizzes completed")
-    
-    # Perfect score milestones
-    perfect_milestones = [1, 5, 10]
-    next_perfect_milestone = next((m for m in perfect_milestones if m > perfect_scores), None)
-    
-    if next_perfect_milestone:
-        progress = perfect_scores / next_perfect_milestone
-        st.progress(progress)
-        st.markdown(f"**Next Perfect Score Milestone:** {perfect_scores}/{next_perfect_milestone} perfect scores")
-    
-    # Level milestones
-    level_milestones = [5, 10, 15, 20]
-    next_level_milestone = next((m for m in level_milestones if m > current_level), None)
-    
-    if next_level_milestone:
-        progress = current_level / next_level_milestone
-        st.progress(progress)
-        st.markdown(f"**Next Level Milestone:** Level {current_level}/{next_level_milestone}")
+        st.progress(progress, text=f"Quiz Progress: {quizzes_taken}/{next_quiz_milestone}")
 
 def display_gamification_dashboard(user_id: str):
     """
-    Display a comprehensive gamification dashboard.
+    Display a clean gamification dashboard.
     
     Args:
         user_id (str): User's unique ID
     """
-    st.title("🎮 Gamification Dashboard")
+    st.title("Player Dashboard")
     
     # Get user stats
     stats = get_user_stats(user_id)
     
     # Overview metrics
-    st.markdown("## 📊 Overview")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric(
-            label="🌟 Level",
-            value=stats['level'],
-            delta=f"+{stats['total_xp']} XP"
-        )
+        st.metric("Level", stats['level'], f"{stats['total_xp']} XP")
     
     with col2:
-        st.metric(
-            label="📝 Quizzes",
-            value=stats['quizzes_taken'],
-            delta=f"{stats['perfect_scores']} perfect"
-        )
+        st.metric("Quizzes Taken", stats['quizzes_taken'])
     
     with col3:
         accuracy = (stats['correct_answers'] / stats['total_questions'] * 100) if stats['total_questions'] > 0 else 0
-        st.metric(
-            label="🎯 Accuracy",
-            value=f"{accuracy:.1f}%",
-            delta=f"{stats['correct_answers']}/{stats['total_questions']}"
-        )
+        st.metric("Accuracy", f"{accuracy:.1f}%")
     
     with col4:
-        st.metric(
-            label="🏆 Achievements",
-            value=len(stats.get('achievements', [])),
-            delta="unlocked"
-        )
+        st.metric("Achievements", len(stats.get('achievements', [])))
     
     # Tabs for different sections
-    tab1, tab2, tab3 = st.tabs(["🏆 Achievements", "📈 Progress", "🥇 Leaderboard"])
+    tab1, tab2, tab3 = st.tabs(["Achievements", "Progress", "Leaderboard"])
     
     with tab1:
         display_achievements_showcase(user_id)
@@ -406,13 +370,11 @@ def display_gamification_dashboard(user_id: str):
 
 def display_progress_tracking(user_id: str):
     """
-    Display detailed progress tracking for the user.
+    Display clean progress tracking for the user.
     
     Args:
         user_id (str): User's unique ID
     """
-    st.markdown("## 📈 Your Progress")
-    
     stats = get_user_stats(user_id)
     
     # XP Progress
@@ -420,84 +382,61 @@ def display_progress_tracking(user_id: str):
     xp_for_current_level = (stats['level'] ** 2) * 100 - ((stats['level'] - 1) ** 2) * 100
     progress_percentage = (current_level_xp / xp_for_current_level * 100) if xp_for_current_level > 0 else 0
     
-    st.markdown("### ⚡ XP Progress")
+    st.subheader("Level Progress")
     st.progress(current_level_xp / xp_for_current_level if xp_for_current_level > 0 else 0)
-    st.markdown(f"**Level {stats['level']}:** {current_level_xp}/{xp_for_current_level} XP ({progress_percentage:.1f}%)")
-    st.markdown(f"**{xp_needed} XP needed for Level {stats['level'] + 1}**")
+    st.write(f"Level {stats['level']}: {current_level_xp}/{xp_for_current_level} XP ({progress_percentage:.1f}%)")
+    st.caption(f"{xp_needed} XP needed for Level {stats['level'] + 1}")
     
     # Performance metrics
-    st.markdown("### 📊 Performance Metrics")
+    st.divider()
+    st.subheader("Statistics")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("**Quiz Performance:**")
+        st.write("**Quiz Performance**")
         if stats['quizzes_taken'] > 0:
             perfect_rate = (stats['perfect_scores'] / stats['quizzes_taken']) * 100
-            st.markdown(f"- Perfect Score Rate: {perfect_rate:.1f}%")
-            st.markdown(f"- Average Accuracy: {(stats['correct_answers'] / stats['total_questions'] * 100):.1f}%")
-            st.markdown(f"- Total Questions Answered: {stats['total_questions']}")
+            st.metric("Perfect Score Rate", f"{perfect_rate:.1f}%")
+            st.metric("Questions Answered", stats['total_questions'])
         else:
-            st.markdown("- No quizzes taken yet")
+            st.info("No quizzes taken yet")
     
     with col2:
-        st.markdown("**Activity Summary:**")
-        st.markdown(f"- Recipes Generated: {stats.get('recipes_generated', 0)}")
-        st.markdown(f"- Days Active: {calculate_days_active(stats)}")
-        st.markdown(f"- Last Quiz: {format_last_activity(stats.get('last_quiz_date'))}")
+        st.write("**Activity**")
+        st.metric("Recipes Generated", stats.get('recipes_generated', 0))
+        st.metric("Days Active", calculate_days_active(stats))
     
     # Weekly goals
-    st.markdown("### 🎯 Weekly Goals")
+    st.divider()
+    st.subheader("Weekly Goals")
     display_weekly_goals(stats)
 
 def calculate_days_active(stats: Dict) -> int:
     """Calculate approximate days active based on user stats."""
-    # Simple estimation based on activity
     base_days = max(1, stats.get('quizzes_taken', 0) // 2)
-    return min(base_days, 30)  # Cap at 30 days for display
-
-def format_last_activity(last_date) -> str:
-    """Format the last activity date."""
-    if not last_date:
-        return "Never"
-    
-    # If it's a Firestore timestamp, convert it
-    try:
-        if hasattr(last_date, 'seconds'):
-            last_date = datetime.fromtimestamp(last_date.seconds)
-        
-        days_ago = (datetime.now() - last_date).days
-        if days_ago == 0:
-            return "Today"
-        elif days_ago == 1:
-            return "Yesterday"
-        else:
-            return f"{days_ago} days ago"
-    except:
-        return "Unknown"
+    return min(base_days, 30)
 
 def display_weekly_goals(stats: Dict):
-    """Display weekly goals and progress."""
-    quizzes_this_week = min(stats.get('quizzes_taken', 0), 7)  # Simplified for demo
-    recipes_this_week = min(stats.get('recipes_generated', 0), 5)  # Simplified for demo
+    """Display weekly goals with clean progress bars."""
+    quizzes_this_week = min(stats.get('quizzes_taken', 0), 7)
+    recipes_this_week = min(stats.get('recipes_generated', 0), 5)
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("**Quiz Goal (5/week):**")
+        st.write("**Quiz Goal (5/week)**")
         quiz_progress = min(quizzes_this_week / 5, 1.0)
-        st.progress(quiz_progress)
-        st.markdown(f"{quizzes_this_week}/5 quizzes completed")
+        st.progress(quiz_progress, text=f"{quizzes_this_week}/5 completed")
     
     with col2:
-        st.markdown("**Recipe Goal (3/week):**")
+        st.write("**Recipe Goal (3/week)**")
         recipe_progress = min(recipes_this_week / 3, 1.0)
-        st.progress(recipe_progress)
-        st.markdown(f"{recipes_this_week}/3 recipes generated")
+        st.progress(recipe_progress, text=f"{recipes_this_week}/3 completed")
 
 def award_recipe_generation_xp(user_id: str, num_recipes: int = 1):
     """
-    Award XP for recipe generation and show notification.
+    Award XP for recipe generation with clean notification.
     
     Args:
         user_id (str): User's unique ID
@@ -506,18 +445,18 @@ def award_recipe_generation_xp(user_id: str, num_recipes: int = 1):
     updated_stats = award_recipe_xp(user_id, num_recipes)
     xp_earned = num_recipes * 5
     
-    # Show success message
-    st.success(f"🎉 Recipe generated! +{xp_earned} XP earned!")
+    # Show clean success message
+    st.success(f"Recipe generated! +{xp_earned} XP earned")
     
     # Check for level up
     if 'level_up' in st.session_state and st.session_state.level_up:
         st.balloons()
-        st.success(f"🎊 LEVEL UP! You're now Level {updated_stats['level']}!")
+        st.success(f"Level Up! You're now Level {updated_stats['level']}")
         st.session_state.level_up = False
 
 def show_xp_notification(xp_earned: int, level_up: bool = False):
     """
-    Show XP earned notification.
+    Show clean XP earned notification.
     
     Args:
         xp_earned (int): XP amount earned
@@ -525,11 +464,9 @@ def show_xp_notification(xp_earned: int, level_up: bool = False):
     """
     if level_up:
         st.balloons()
-        st.success(f"🎊 LEVEL UP! +{xp_earned} XP earned!")
+        st.success(f"Level Up! +{xp_earned} XP earned")
     else:
-        st.success(f"⚡ +{xp_earned} XP earned!")
-
-# Additional utility functions for enhanced gamification
+        st.success(f"+{xp_earned} XP earned")
 
 def get_daily_challenge(user_id: str) -> Dict:
     """
@@ -570,27 +507,18 @@ def get_daily_challenge(user_id: str) -> Dict:
         }
     ]
     
-    # Simple daily challenge selection (in real app, this would be more sophisticated)
+    # Simple daily challenge selection
     today_seed = datetime.now().strftime("%Y-%m-%d") + user_id
     random.seed(hash(today_seed))
     
     return random.choice(challenges)
 
 def display_daily_challenge(user_id: str):
-    """Display the daily challenge for the user."""
+    """Display the daily challenge with clean design."""
     challenge = get_daily_challenge(user_id)
     
-    st.markdown("### 🎯 Daily Challenge")
-    st.markdown(f"""
-    <div style="
-        border: 2px solid #4CAF50;
-        border-radius: 10px;
-        padding: 15px;
-        background: linear-gradient(135deg, #E8F5E8, #F1F8E9);
-        margin: 10px 0;
-    ">
-        <h4 style="color: #2E7D32; margin: 0;">{challenge['title']}</h4>
-        <p style="margin: 5px 0;">{challenge['description']}</p>
-        <p style="margin: 0; font-weight: bold; color: #4CAF50;">Reward: +{challenge['xp_reward']} XP</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.subheader("Daily Challenge")
+    with st.container():
+        st.write(f"**{challenge['title']}**")
+        st.write(challenge['description'])
+        st.caption(f"Reward: +{challenge['xp_reward']} XP")
