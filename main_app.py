@@ -11,15 +11,15 @@ st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
 from ui.components import (  # Import UI functions
     leftover_input_csv, leftover_input_manual,
 )
-from ui.auth_components import (
+from ui.components import (
     render_auth_ui, initialize_session_state, auth_required, get_current_user, is_user_role
 )
-from ui.leftover_gamification_ui import (  # Import gamification UI functions
+from ui.components import (  # Import gamification UI functions
     display_user_stats_sidebar, render_cooking_quiz, display_gamification_dashboard,
     award_recipe_generation_xp, display_daily_challenge, show_xp_notification
 )
 from modules.leftover import suggest_recipes  # Import logic functions
-from modules.leftover_gamification import get_user_stats, award_recipe_xp  # Import gamification logic
+from modules.leftover import get_user_stats, award_recipe_xp  # Import gamification logic
 from firebase_init import init_firebase
 init_firebase()
 
