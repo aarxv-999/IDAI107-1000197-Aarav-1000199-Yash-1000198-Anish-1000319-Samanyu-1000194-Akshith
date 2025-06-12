@@ -2,13 +2,6 @@ import streamlit as st
 
 st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
 
-"""
-Example of how to integrate the Event Planning Chatbot into main_app.py
-MAIN APP FILE for the Smart Restaurant Menu Management App
-This combines all UI components and logic functions to create a complete Streamlit interface.
-Enhanced with gamification system integration.
-"""
-
 from ui.components import (  # Import UI functions
     leftover_input_csv, leftover_input_manual,
 )
