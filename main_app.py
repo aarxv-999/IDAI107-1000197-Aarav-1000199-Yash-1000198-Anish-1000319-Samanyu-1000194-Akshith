@@ -19,6 +19,8 @@ from firebase_init import init_firebase
 from app_integration import integrate_event_planner, check_event_firebase_config
 
 init_firebase()
+from setup_event_collections import setup_collections; setup_collections()  # Remove this line after first run
+
 
 import logging
 logging.basicConfig(level=logging.INFO, 
