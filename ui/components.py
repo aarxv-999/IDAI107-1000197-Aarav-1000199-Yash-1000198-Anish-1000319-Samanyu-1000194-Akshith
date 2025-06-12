@@ -16,7 +16,7 @@ import re
 
 from modules.auth import register_user, authenticate_user
 from firebase_init import init_firebase
-from modules.leftover_combined import (
+from modules.leftover import (
     load_leftovers, parse_manual_leftovers, suggest_recipes,
     generate_dynamic_quiz_questions, calculate_quiz_score, get_user_stats,
     update_user_stats, get_leaderboard, get_xp_progress, award_recipe_xp
