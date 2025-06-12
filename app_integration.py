@@ -4,7 +4,7 @@ This file provides the necessary functions to integrate with main_app.py
 """
 
 import streamlit as st
-from event_planner import event_planner, init_event_firebase
+from modules.event_planner import event_planner, init_event_firebase
 
 def integrate_event_planner():
     """
