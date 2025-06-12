@@ -2,18 +2,31 @@ import streamlit as st
 
 st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
 
-from ui.components import (  # Import UI functions
-    leftover_input_csv, leftover_input_manual,
-)
+# Import all UI and logic functions from components.py
 from ui.components import (
-    render_auth_ui, initialize_session_state, auth_required, get_current_user, is_user_role
+    leftover_input_csv, 
+    leftover_input_manual,
+    render_auth_ui, 
+    initialize_session_state, 
+    auth_required, 
+    get_current_user, 
+    is_user_role,
+    display_leftover_summary,  # Assuming you use this in leftover_management
+    # Add other UI/logic functions as needed from ui/components.py
 )
-from ui.components import (  # Import gamification UI functions
-    display_user_stats_sidebar, render_cooking_quiz, display_gamification_dashboard,
-    award_recipe_generation_xp, display_daily_challenge, show_xp_notification
+
+from ui.components import (
+    # Gamification UI and logic functions
+    # Add these only if they exist in ui/components.py
+    display_user_stats_sidebar, 
+    render_cooking_quiz, 
+    display_gamification_dashboard,
+    award_recipe_generation_xp, 
+    display_daily_challenge, 
+    show_xp_notification
 )
-from modules.leftover import suggest_recipes  # Import logic functions
-from modules.leftover import get_user_stats, award_recipe_xp  # Import gamification logic
+
+from modules.leftover import suggest_recipes, get_user_stats, award_recipe_xp
 from firebase_init import init_firebase
 
 # Import the event planner integration
@@ -62,43 +75,40 @@ def check_feature_access(feature_name):
 # Individual feature functions
 @auth_required
 def leftover_management():
-    # Existing leftover management code...
-    pass
+    # Example implementation (customize as needed)
+    leftovers = leftover_input_csv()
+    leftovers += leftover_input_manual()
+    display_leftover_summary(leftovers)
+    # Add recipe suggestion or other logic here
 
 @auth_required
 def gamification_hub():
-    # Existing gamification hub code...
-    pass
+    # Example placeholder (customize as needed)
+    st.write("Gamification Hub coming soon!")
 
 @auth_required
 def cooking_quiz():
-    # Existing cooking quiz code...
-    pass
+    # Example placeholder (customize as needed)
+    st.write("Cooking Quiz coming soon!")
 
 @auth_required
 def event_planning():
     """Event Planning ChatBot feature"""
-    # Call the integrated event planner function
     integrate_event_planner()
 
 def promotion_generator():
-    # Existing promotion generator code...
-    pass
+    st.write("Promotion Generator coming soon!")
 
 def chef_recipe_suggestions():
-    # Existing chef recipe suggestions code...
-    pass
+    st.write("Chef Recipe Suggestions coming soon!")
 
 def visual_menu_search():
-    # Existing visual menu search code...
-    pass
+    st.write("Visual Menu Search coming soon!")
 
 # Main app function
 def main():
-    # Initialize Firebase and session state for authentication
     initialize_session_state()
     
-    # Initialize gamification session state
     if 'show_quiz' not in st.session_state:
         st.session_state.show_quiz = False
     if 'show_general_quiz' not in st.session_state:
@@ -106,22 +116,18 @@ def main():
     if 'show_achievements' not in st.session_state:
         st.session_state.show_achievements = False
     
-    # Check Event Firebase configuration
     check_event_firebase_config()
     
-    # Render authentication UI in sidebar
     st.sidebar.title("🔐 Authentication")
     auth_status = render_auth_ui()
     
-    # Display user gamification stats in sidebar if authenticated
     user = get_current_user()
     if user and user.get('user_id'):
-        display_user_stats_sidebar(user['user_id'])
+        if 'display_user_stats_sidebar' in globals():
+            display_user_stats_sidebar(user['user_id'])
     
-    # Main content
     st.title("🍽️ Smart Restaurant Menu Management System")
     
-    # Welcome message based on authentication status
     if user:
         stats = get_user_stats(user['user_id']) if user.get('user_id') else {}
         level = stats.get('level', 1)
@@ -129,13 +135,12 @@ def main():
         
         st.markdown(f'''
         Welcome to the AI-powered smart restaurant system, **{user['username']}**! 🎉
-        
+
         **Your Role:** {user['role'].capitalize()} | **Level:** {level} | **Total XP:** {total_xp}
-        
+
         Select a feature from the sidebar to begin your culinary journey!
         ''')
         
-        # Show quick stats
         if user.get('user_id'):
             col1, col2, col3, col4 = st.columns(4)
             
@@ -150,22 +155,20 @@ def main():
     else:
         st.markdown('''
         Welcome to the AI-powered smart restaurant system! 🍽️
-        
+
         **Features include:**
         - 🧠 **Smart Recipe Generation** from leftover ingredients
         - 🎮 **Gamification System** with quizzes and achievements  
         - 🏆 **Leaderboards** to compete with other chefs
         - 📊 **Progress Tracking** and skill development
         - 🎉 **Event Planning** for special occasions
-        
+
         Please log in or register to access all features.
         ''')
-    
-    # Feature selection in sidebar
+
     st.sidebar.divider()
     st.sidebar.header("🚀 Features")
     
-    # List of all available features with enhanced descriptions
     features = [
         "Leftover Management",
         "Gamification Hub", 
@@ -176,10 +179,8 @@ def main():
         "Visual Menu Search"
     ]
     
-    # Filter features based on user role
     available_features = [f for f in features if check_feature_access(f)]
     
-    # Only show feature selection if user is authenticated
     if user:
         selected_feature = st.sidebar.selectbox(
             "Choose a Feature",
@@ -187,7 +188,6 @@ def main():
             help="Select a feature to explore different aspects of the restaurant management system"
         )
         
-        # Add feature descriptions in sidebar
         feature_descriptions = {
             "Leftover Management": "♻️ Generate recipes from leftover ingredients",
             "Gamification Hub": "🎮 View achievements, leaderboard, and progress",
@@ -203,7 +203,6 @@ def main():
         
         st.divider()
         
-        # Display the selected feature
         if selected_feature == "Leftover Management":
             leftover_management()
         elif selected_feature == "Gamification Hub":
@@ -219,14 +218,9 @@ def main():
         elif selected_feature == "Visual Menu Search":
             visual_menu_search()
     else:
-        # If not authenticated, show a motivational message
         st.info("🔑 Please log in or register to unlock the full potential of our smart restaurant system!")
-        
-        # Show some preview features
         st.markdown("### 🌟 What you can do:")
-        
         col1, col2 = st.columns(2)
-        
         with col1:
             st.markdown("""
             **🧠 Smart Recipe Generation**
@@ -234,14 +228,12 @@ def main():
             - Get AI-powered recipe suggestions
             - Reduce food waste effectively
             """)
-            
             st.markdown("""
             **🎮 Gamification System**
             - Take cooking knowledge quizzes
             - Earn XP and level up
             - Unlock achievements
             """)
-        
         with col2:
             st.markdown("""
             **🏆 Competition & Learning**
@@ -249,7 +241,6 @@ def main():
             - Track your culinary progress
             - Learn from detailed explanations
             """)
-            
             st.markdown("""
             **🎉 Event Planning**
             - Plan special restaurant events
