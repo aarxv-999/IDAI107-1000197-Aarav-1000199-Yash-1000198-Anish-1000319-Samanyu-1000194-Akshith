@@ -324,7 +324,7 @@ def generate_event_plan(query: str) -> Dict:
         guest_count = int(guest_matches[0])
     
     # Prepare prompt for AI
-    prompt = f"""
+    prompt = f'''
     You are an expert event planner for a restaurant. Plan an event based on this request:
     "{query}"
     
@@ -353,8 +353,8 @@ def generate_event_plan(query: str) -> Dict:
         "invitation": "Invitation text"
     }}
     
-    Make sure the JSON is valid and properly formatted.
-    """
+    Make sure the JSON is valid and properly formatted.'''
+    
     
     try:
         # Generate response from AI
