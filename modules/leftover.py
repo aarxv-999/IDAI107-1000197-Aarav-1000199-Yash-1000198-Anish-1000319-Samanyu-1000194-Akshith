@@ -75,7 +75,7 @@ def fetch_ingredients_from_firebase() -> List[Dict]:
             # If event_app is not initialized, initialize it
             from app_integration import check_event_firebase_config
             check_event_firebase_config()
-            from event_planner import init_event_firebase
+            from modules.event_planner import init_event_firebase
             init_event_firebase()
             db = firestore.client(app=firebase_admin.get_app(name='event_app'))
         
