@@ -9,6 +9,7 @@ from typing import Dict, List, Any, Optional, Tuple
 import firebase_admin
 from firebase_admin import firestore, credentials
 import logging
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -160,37 +161,30 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
         firestore_data = {
             'id': event_id,
             'description': event_data.get('description', ''),
-            'theme': event_data.get('theme', 'Untitled Event'),  # ✅ Add this line
+            'theme': event_data.get('theme', 'Untitled Event'),
             'decor': event_data.get('decor', []),
             'invitation': event_data.get('invitation', ''),
             'created_by': event_data.get('created_by', 'unknown'),
-            'created_at': datetime.utcnow(),
+            'created_at': current_time,  # Store as actual timestamp
             'seating': {
                 'layout': event_data.get('seating', {}).get('layout', ''),
                 'tables': event_data.get('seating', {}).get('tables', []),
-                'themes': []
             },
-            'menu': event_data.get('recipes', [])
+            'menu': event_data.get('recipes', [])  # Store recipes as menu
         }
-
 
         # Log the data being saved
         logger.info(f"Attempting to save event with ID: {event_id}")
         logger.info(f"Full event data: {firestore_data}")
-        logger.info("Attempting to save event to Firestore:", firestore_data)
-        st.write("DEBUG - Attempting to save:", firestore_data)  # Add this too
 
         # Save to Firestore
         events_ref = db.collection('events')
-        doc_ref = events_ref.document(event_id)
-        doc_ref.set(firestore_data, merge=True)
+        events_ref.document(event_id).set(firestore_data)  # Use document with ID directly
 
         # Verify the document was saved
-        saved_doc = doc_ref.get()
+        saved_doc = events_ref.document(event_id).get()
         if saved_doc.exists:
             logger.info(f"Event document saved successfully with ID: {event_id}")
-            saved_data = saved_doc.to_dict()
-            logger.info(f"Verified saved data: {saved_data}")
             return True, event_id
         else:
             logger.error(f"Event not found after saving: {event_id}")
@@ -518,7 +512,8 @@ def render_chatbot_ui():
                         if st.button("💾 Save Event Plan", type="primary", key="save_event_btn"):
                             with st.spinner("Saving event..."):
                                 event_data = {
-                                    'theme': event_plan['theme']['name'],  # ✅ Include theme name
+                                    'id': str(uuid.uuid4()),  # Generate a new UUID for each event
+                                    'theme': event_plan['theme']['name'],
                                     'description': event_plan['theme']['description'],
                                     'decor': event_plan['decor'],
                                     'recipes': event_plan['recipe_suggestions'],
@@ -528,7 +523,6 @@ def render_chatbot_ui():
                                 }
 
                                 logger.info(f"Saving event data: {event_data}")
-                                st.write("Saving this event data:", event_data)
                                 success, result = save_event_to_firestore(event_data)
                                 if success:
                                     st.success(f"✅ Event plan saved successfully! Event ID: {result}")
