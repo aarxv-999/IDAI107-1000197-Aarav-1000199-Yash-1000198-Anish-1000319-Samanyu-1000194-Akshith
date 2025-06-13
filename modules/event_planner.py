@@ -149,21 +149,20 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
         # Generate a unique ID if not provided
         event_id = event_data.get('id', str(uuid.uuid4()))
         
-        # Prepare the data with proper timestamp
+        # Prepare the data with proper timestamp and structure
         firestore_data = {
             'id': event_id,
-            'theme': event_data.get('theme', 'Untitled Event'),
             'description': event_data.get('description', ''),
-            'seating': event_data.get('seating', {}),
             'decor': event_data.get('decor', []),
-            'recipes': event_data.get('recipes', []),
             'invitation': event_data.get('invitation', ''),
-            'query': event_data.get('query', ''),
             'created_by': event_data.get('created_by', 'unknown'),
             'created_at': firestore.SERVER_TIMESTAMP,  # Use server timestamp
-            'status': 'active',
-            'invited_customers': [],
-            'last_invite_sent': None
+            'seating': {
+                'layout': event_data.get('seating', {}).get('layout', ''),
+                'tables': event_data.get('seating', {}).get('tables', []),
+                'themes': []  # Add empty themes array as required
+            },
+            'menu': event_data.get('recipes', [])  # Rename recipes to menu as expected
         }
         
         # Save to Firestore using the event_id as document ID
@@ -508,13 +507,11 @@ def render_chatbot_ui():
                         if st.button("💾 Save Event Plan", type="primary", key="save_event_btn"):
                             # Prepare event data
                             event_data = {
-                                'theme': event_plan['theme']['name'],
                                 'description': event_plan['theme']['description'],
-                                'seating': event_plan['seating'],
                                 'decor': event_plan['decor'],
                                 'recipes': event_plan['recipe_suggestions'],
                                 'invitation': event_plan['invitation'],
-                                'query': user_query,
+                                'seating': event_plan['seating'],
                                 'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'unknown'
                             }
                             
