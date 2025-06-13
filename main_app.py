@@ -15,6 +15,12 @@ from modules.leftover import suggest_recipes  # Import logic functions
 from modules.leftover import get_user_stats, award_recipe_xp  # Import gamification logic
 from firebase_init import init_firebase
 
+# Import the event planner integration
+from app_integration import integrate_event_planner, check_event_firebase_config
+
+# Import the dashboard module
+from dashboard import render_dashboard, get_feature_description
+
 init_firebase()
 
 import logging
@@ -27,7 +33,7 @@ def check_feature_access(feature_name):
     user = get_current_user()
     
     # Public features accessible to all authenticated users
-    public_features = ["Gamification Hub", "Cooking Quiz"]
+    public_features = ["Event Planning ChatBot", "Gamification Hub", "Cooking Quiz"]
     
     # Staff/admin only features
     staff_features = ["Leftover Management", "Promotion Generator"]
@@ -151,6 +157,12 @@ def cooking_quiz():
     # Render the cooking quiz
     render_cooking_quiz(sample_ingredients, user['user_id'])
 
+@auth_required
+def event_planning():
+    """Event Planning ChatBot feature"""
+    # Call the integrated event planner function
+    integrate_event_planner()
+
 def promotion_generator():
     """Promotion generator feature"""
     st.title("📣 Promotion Generator")
@@ -188,6 +200,9 @@ def main():
     if 'selected_feature' not in st.session_state:
         st.session_state.selected_feature = "Dashboard"
     
+    # Check Event Firebase configuration
+    check_event_firebase_config()
+    
     # Render authentication UI in sidebar
     st.sidebar.title("🔐 Authentication")
     auth_status = render_auth_ui()
@@ -203,6 +218,7 @@ def main():
         - 🎮 **Gamification System** with quizzes and achievements  
         - 🏆 **Leaderboards** to compete with other chefs
         - 📊 **Progress Tracking** and skill development
+        - 🎉 **Event Planning** for special occasions
         
         Please log in or register to access all features.
         ''')
@@ -218,6 +234,7 @@ def main():
         "Leftover Management",
         "Gamification Hub", 
         "Cooking Quiz",
+        "Event Planning ChatBot",
         "Promotion Generator", 
         "Chef Recipe Suggestions",
         "Visual Menu Search"
@@ -256,6 +273,8 @@ def main():
         gamification_hub()
     elif selected_feature == "Cooking Quiz":
         cooking_quiz()
+    elif selected_feature == "Event Planning ChatBot":
+        event_planning()
     elif selected_feature == "Promotion Generator":
         promotion_generator()
     elif selected_feature == "Chef Recipe Suggestions":
