@@ -6,6 +6,8 @@ This module provides:
 1. AI-powered event planning chatbot using Gemini API
 2. Integration with Firestore for recipe and ingredient data (read-only)
 3. Role-based access control for different user types
+4. User-friendly display of event plans
+5. PDF export functionality
 """
 
 import streamlit as st
@@ -18,6 +20,10 @@ from typing import Dict, List, Any, Optional
 import firebase_admin
 from firebase_admin import firestore, credentials
 import logging
+import pandas as pd
+from fpdf import FPDF
+import base64
+import io
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -231,14 +237,18 @@ def generate_event_plan(query: str) -> Dict:
         }},
         "seating": {{
             "layout": "Layout description",
-            "tables": [List of tables with guest counts]
+            "tables": [
+                {{"table_number": 1, "shape": "round", "seats": 8, "location": "near window"}},
+                {{"table_number": 2, "shape": "rectangular", "seats": 10, "location": "center"}}
+            ]
         }},
         "decor": [List of decoration ideas],
         "recipe_suggestions": [List of recipe names],
         "invitation": "Invitation text"
     }}
 
-    Make sure the JSON is valid and properly formatted.'''
+    Make sure the JSON is valid and properly formatted. For the tables, include table number, shape, number of seats, and location.
+    '''
 
     try:
         # Generate response from AI
@@ -267,6 +277,9 @@ def generate_event_plan(query: str) -> Dict:
             if filtered_names:
                 event_plan['recipe_suggestions'] = filtered_names[:7]
         
+        # Add event date (current date)
+        event_plan['date'] = datetime.now().strftime("%Y-%m-%d")
+        
         return {
             'plan': event_plan,
             'success': True
@@ -278,7 +291,187 @@ def generate_event_plan(query: str) -> Dict:
             'success': False
         }
 
+# PDF Generation Functions
+def create_event_pdf(event_plan: Dict) -> bytes:
+    """
+    Create a PDF document of the event plan
+    
+    Args:
+        event_plan: Dictionary containing event plan details
+        
+    Returns:
+        PDF document as bytes
+    """
+    try:
+        # Create PDF object
+        pdf = FPDF()
+        pdf.add_page()
+        
+        # Set font
+        pdf.set_font("Arial", "B", 16)
+        
+        # Title
+        pdf.cell(0, 10, f"Event Plan: {event_plan['theme']['name']}", ln=True, align="C")
+        pdf.ln(5)
+        
+        # Date
+        pdf.set_font("Arial", "I", 12)
+        pdf.cell(0, 10, f"Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}", ln=True)
+        pdf.ln(5)
+        
+        # Theme description
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Theme", ln=True)
+        pdf.set_font("Arial", "", 12)
+        pdf.multi_cell(0, 10, event_plan['theme']['description'])
+        pdf.ln(5)
+        
+        # Seating arrangement
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Seating Arrangement", ln=True)
+        pdf.set_font("Arial", "", 12)
+        pdf.multi_cell(0, 10, event_plan['seating']['layout'])
+        
+        # Table details
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 10, "Tables:", ln=True)
+        
+        # Create table for seating
+        pdf.set_font("Arial", "", 10)
+        col_width = 45
+        row_height = 10
+        
+        # Table headers
+        pdf.cell(col_width, row_height, "Table Number", border=1)
+        pdf.cell(col_width, row_height, "Shape", border=1)
+        pdf.cell(col_width, row_height, "Seats", border=1)
+        pdf.cell(col_width, row_height, "Location", border=1)
+        pdf.ln(row_height)
+        
+        # Table data
+        for table in event_plan['seating']['tables']:
+            if isinstance(table, dict):
+                # New format
+                pdf.cell(col_width, row_height, str(table.get('table_number', '')), border=1)
+                pdf.cell(col_width, row_height, str(table.get('shape', '')), border=1)
+                pdf.cell(col_width, row_height, str(table.get('seats', '')), border=1)
+                pdf.cell(col_width, row_height, str(table.get('location', '')), border=1)
+            else:
+                # Old format (string)
+                pdf.cell(0, row_height, str(table), border=1, ln=True)
+            pdf.ln(row_height)
+        
+        pdf.ln(5)
+        
+        # Decoration
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Decoration Ideas", ln=True)
+        pdf.set_font("Arial", "", 12)
+        for item in event_plan['decor']:
+            pdf.cell(0, 10, f"• {item}", ln=True)
+        pdf.ln(5)
+        
+        # Recipe suggestions
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Recipe Suggestions", ln=True)
+        pdf.set_font("Arial", "", 12)
+        for item in event_plan['recipe_suggestions']:
+            pdf.cell(0, 10, f"• {item}", ln=True)
+        pdf.ln(5)
+        
+        # Invitation
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Invitation Template", ln=True)
+        pdf.set_font("Arial", "I", 12)
+        pdf.multi_cell(0, 10, event_plan['invitation'])
+        
+        # Return PDF as bytes
+        return pdf.output(dest="S").encode("latin1")
+    except Exception as e:
+        logger.error(f"Error creating PDF: {str(e)}")
+        return b""
+
+def get_pdf_download_link(pdf_bytes: bytes, filename: str) -> str:
+    """
+    Generate a download link for a PDF file
+    
+    Args:
+        pdf_bytes: PDF document as bytes
+        filename: Name of the file to download
+        
+    Returns:
+        HTML string with download link
+    """
+    b64 = base64.b64encode(pdf_bytes).decode()
+    href = f'<a href="data:application/pdf;base64,{b64}" download="{filename}">Download Event Plan PDF</a>'
+    return href
+
 # Streamlit UI Components
+def render_seating_visualization(tables: List):
+    """
+    Render a visual representation of the seating arrangement
+    
+    Args:
+        tables: List of table dictionaries or strings
+    """
+    # Convert tables to dataframe for better display
+    table_data = []
+    
+    for i, table in enumerate(tables):
+        if isinstance(table, dict):
+            # New format
+            table_data.append({
+                "Table Number": table.get("table_number", i+1),
+                "Shape": table.get("shape", "Round"),
+                "Seats": table.get("seats", 0),
+                "Location": table.get("location", "")
+            })
+        else:
+            # Old format (string) - try to parse
+            try:
+                # Try to extract information from string format
+                table_info = eval(table) if isinstance(table, str) else {"table_number": i+1, "guest_count": 0}
+                table_data.append({
+                    "Table Number": table_info.get("table_number", i+1),
+                    "Shape": "Not specified",
+                    "Seats": table_info.get("guest_count", 0),
+                    "Location": "Not specified"
+                })
+            except:
+                # Fallback if parsing fails
+                table_data.append({
+                    "Table Number": i+1,
+                    "Shape": "Not specified",
+                    "Seats": 0,
+                    "Location": "Not specified"
+                })
+    
+    # Create dataframe
+    df = pd.DataFrame(table_data)
+    
+    # Display as a styled table
+    st.dataframe(
+        df,
+        column_config={
+            "Table Number": st.column_config.NumberColumn(
+                "Table #",
+                help="Table number",
+                format="%d"
+            ),
+            "Seats": st.column_config.NumberColumn(
+                "Seats",
+                help="Number of seats at this table",
+                format="%d"
+            )
+        },
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    # Calculate total seats
+    total_seats = sum(table.get("seats", 0) if isinstance(table, dict) else 0 for table in tables)
+    st.caption(f"Total capacity: {total_seats} guests")
+
 def render_chatbot_ui():
     """Render the event planning chatbot UI"""
     st.markdown("### 🤖 Event Planning Assistant")
@@ -325,16 +518,15 @@ def render_chatbot_ui():
                     st.markdown(event_plan['theme']['description'])
                     
                     # Create tabs for different aspects of the plan
-                    tabs = st.tabs(["💺 Seating", "🎭 Decor", "🍽️ Recipes", "✉️ Invitation"])
+                    tabs = st.tabs(["💺 Seating", "🎭 Decor", "🍽️ Recipes", "✉️ Invitation", "📄 Export"])
                     
                     with tabs[0]:
                         st.markdown("#### Seating Arrangement")
                         st.markdown(event_plan['seating']['layout'])
                         
-                        # Display tables
+                        # Display tables in a user-friendly format
                         st.markdown("##### Tables:")
-                        for i, table in enumerate(event_plan['seating']['tables']):
-                            st.markdown(f"- {table}")
+                        render_seating_visualization(event_plan['seating']['tables'])
                     
                     with tabs[1]:
                         st.markdown("#### Decoration Ideas")
@@ -350,10 +542,28 @@ def render_chatbot_ui():
                         st.markdown("#### Invitation Template")
                         st.info(event_plan['invitation'])
                     
+                    with tabs[4]:
+                        st.markdown("#### Export Event Plan")
+                        
+                        # Generate PDF
+                        pdf_bytes = create_event_pdf(event_plan)
+                        
+                        if pdf_bytes:
+                            # Create download button
+                            st.download_button(
+                                label="Download Event Plan as PDF",
+                                data=pdf_bytes,
+                                file_name=f"event_plan_{datetime.now().strftime('%Y%m%d')}.pdf",
+                                mime="application/pdf",
+                                key="download_pdf"
+                            )
+                        else:
+                            st.error("Failed to generate PDF. Please try again.")
+                    
                     # Add assistant message to chat history
                     st.session_state.event_chat_history.append({
                         'role': 'assistant',
-                        'content': f"I've created an event plan for '{event_plan['theme']['name']}'. You can view the details above."
+                        'content': f"I've created an event plan for '{event_plan['theme']['name']}'. You can view the details above and download it as a PDF."
                     })
                 else:
                     st.error(f"Failed to generate event plan: {response.get('error', 'Unknown error')}")
