@@ -54,10 +54,10 @@ def render_dashboard():
     with col3:
         if user_role in ['admin', 'chef']:
             st.metric(
-                label="Menu Items",
+                label="Recipe Archive",
                 value="24",
                 delta="+3 new",
-                help="Total number of menu items"
+                help="Total number of recipes in archive"
             )
         else:
             st.metric(
