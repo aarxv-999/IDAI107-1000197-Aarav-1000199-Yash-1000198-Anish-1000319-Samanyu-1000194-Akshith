@@ -60,13 +60,25 @@ def parse_manual_leftovers(input_text: str) -> List[str]:
 
 def fetch_ingredients_from_firebase() -> List[Dict]:
     '''
-    Fetches ingredients from Firebase ingredient_inventory collection
+    Fetches ingredients from Firebase ingredient_inventory collection using the event Firebase configuration
     
     RETURN - List[Dict]: a list of ingredient dictionaries with their details
     '''
     try:
         from firebase_admin import firestore
-        db = firestore.client()
+        import firebase_admin
+        
+        # Use the event Firebase app instead of the default one
+        if 'event_app' in [app.name for app in firebase_admin._apps.values()]:
+            db = firestore.client(app=firebase_admin.get_app(name='event_app'))
+        else:
+            # If event_app is not initialized, initialize it
+            from app_integration import check_event_firebase_config
+            check_event_firebase_config()
+            from event_planner import init_event_firebase
+            init_event_firebase()
+            db = firestore.client(app=firebase_admin.get_app(name='event_app'))
+        
         inventory_ref = db.collection('ingredient_inventory')
         inventory_docs = inventory_ref.get()
         
@@ -78,6 +90,7 @@ def fetch_ingredients_from_firebase() -> List[Dict]:
             
         return ingredients
     except Exception as e:
+        logger.error(f"Error fetching ingredients from Firebase: {str(e)}")
         raise Exception(f"Error fetching ingredients from Firebase: {str(e)}")
 
 def parse_firebase_ingredients(firebase_ingredients: List[Dict]) -> List[str]:
