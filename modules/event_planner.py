@@ -58,6 +58,51 @@ def get_event_db():
         return firestore.client(app=firebase_admin.get_app(name='event_app'))
     return None
 
+def ensure_events_collection_exists():
+    """
+    Check if the events collection exists and create it if needed
+    """
+    try:
+        db = get_event_db()
+        if not db:
+            logger.error("Failed to get Firestore database client")
+            return False
+            
+        # Check if the events collection exists
+        collections = [collection.id for collection in db.collections()]
+        
+        if 'events' not in collections:
+            logger.warning("Events collection does not exist, creating it with a sample event")
+            
+            # Create a sample event to initialize the collection
+            sample_event = {
+                'id': 'sample-event-' + str(uuid.uuid4()),
+                'theme': 'Sample Event',
+                'description': 'This is a sample event to initialize the events collection.',
+                'seating': {
+                    'layout': 'Sample layout',
+                    'tables': ['Table 1: 8 guests', 'Table 2: 8 guests']
+                },
+                'decor': ['Sample decoration 1', 'Sample decoration 2'],
+                'recipes': ['Sample recipe 1', 'Sample recipe 2'],
+                'invitation': 'Sample invitation text',
+                'created_at': datetime.now(),
+                'created_by': 'system'
+            }
+            
+            # Save the sample event
+            events_ref = db.collection('events')
+            events_ref.document(sample_event['id']).set(sample_event)
+            logger.info("Created events collection with sample event")
+            return True
+        else:
+            logger.info("Events collection already exists")
+            return True
+            
+    except Exception as e:
+        logger.error(f"Error checking/creating events collection: {str(e)}")
+        return False
+
 # AI Model Configuration
 def configure_ai_model():
     """Configure and return the Gemini AI model"""
@@ -142,7 +187,7 @@ def get_available_ingredients() -> List[Dict]:
 
 def save_event_to_firestore(event_data: Dict) -> bool:
     """
-    Save event data to Firestore
+    Save event data to Firestore 'events' collection
 
     Args:
         event_data: Dictionary containing event details
@@ -153,6 +198,7 @@ def save_event_to_firestore(event_data: Dict) -> bool:
     try:
         db = get_event_db()
         if not db:
+            logger.error("Failed to get Firestore database client")
             return False
             
         # Generate a unique ID if not provided
@@ -162,19 +208,36 @@ def save_event_to_firestore(event_data: Dict) -> bool:
         # Add timestamp
         event_data['created_at'] = datetime.now()
         
-        # Save to Firestore
+        # Log event data being saved
+        logger.info(f"Saving event with ID: {event_data['id']} to 'events' collection")
+        logger.info(f"Event theme: {event_data.get('theme', 'Unknown')}")
+        
+        # Ensure all required fields are present
+        required_fields = ['theme', 'description', 'recipes', 'invitation']
+        for field in required_fields:
+            if field not in event_data:
+                logger.warning(f"Missing required field '{field}' in event data")
+        
+        # Save to Firestore events collection
         events_ref = db.collection('events')
         events_ref.document(event_data['id']).set(event_data)
         
-        logger.info(f"Event saved successfully with ID: {event_data['id']}")
-        return True
+        # Verify the event was saved
+        saved_doc = events_ref.document(event_data['id']).get()
+        if saved_doc.exists:
+            logger.info(f"Event successfully saved and verified in 'events' collection with ID: {event_data['id']}")
+            return True
+        else:
+            logger.error(f"Event save verification failed for ID: {event_data['id']}")
+            return False
+            
     except Exception as e:
-        logger.error(f"Error saving event: {str(e)}")
+        logger.error(f"Error saving event to 'events' collection: {str(e)}", exc_info=True)
         return False
 
 def get_all_events() -> List[Dict]:
     """
-    Fetch all events from Firestore
+    Fetch all events from Firestore 'events' collection
 
     Returns:
         List of events as dictionaries
@@ -182,9 +245,20 @@ def get_all_events() -> List[Dict]:
     try:
         db = get_event_db()
         if not db:
+            logger.error("Failed to get Firestore database client for event retrieval")
             return []
             
+        logger.info("Fetching events from 'events' collection")
         events_ref = db.collection('events')
+        
+        # First check if the collection exists and has documents
+        collection_ref = db.collection('events')
+        docs = collection_ref.limit(1).get()
+        if not docs:
+            logger.warning("The 'events' collection exists but contains no documents")
+            return []
+            
+        # Get all events, ordered by creation time
         events_docs = events_ref.order_by('created_at', direction=firestore.Query.DESCENDING).get()
         
         events = []
@@ -194,10 +268,16 @@ def get_all_events() -> List[Dict]:
             if 'created_at' in event and isinstance(event['created_at'], datetime):
                 event['created_at'] = event['created_at'].strftime("%Y-%m-%d %H:%M")
             events.append(event)
+        
+        logger.info(f"Retrieved {len(events)} events from 'events' collection")
+        
+        # Log the first event for debugging
+        if events:
+            logger.info(f"First event theme: {events[0].get('theme', 'Unknown')}")
             
         return events
     except Exception as e:
-        logger.error(f"Error fetching events: {str(e)}")
+        logger.error(f"Error fetching events from 'events' collection: {str(e)}", exc_info=True)
         return []
 
 def get_customers() -> List[Dict]:
@@ -613,6 +693,11 @@ def render_chatbot_ui():
                         # Save to Firestore
                         if save_event_to_firestore(event_data):
                             st.success("Event plan saved successfully!")
+                            # Set a flag to switch to the dashboard tab after saving
+                            if 'switch_to_dashboard' not in st.session_state:
+                                st.session_state.switch_to_dashboard = True
+                            # Force a rerun to refresh the dashboard
+                            st.rerun()
                         else:
                             st.error("Failed to save event plan. Please try again.")
                     
@@ -633,6 +718,36 @@ def render_chatbot_ui():
 def render_event_dashboard():
     """Render the event dashboard UI"""
     st.markdown("### 📊 Event Dashboard")
+
+    # Debug section for admins
+    user = st.session_state.get('user', {})
+    if user.get('role') == 'admin':
+        with st.expander("🔧 Dashboard Debug"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("Refresh Events"):
+                    st.rerun()
+                    
+                if st.button("Add Test Event"):
+                    if add_test_event():
+                        st.success("Test event added successfully!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to add test event")
+            
+            with col2:
+                if st.button("Check Events Collection"):
+                    if ensure_events_collection_exists():
+                        st.success("Events collection exists or was created")
+                    else:
+                        st.error("Failed to check/create events collection")
+            
+            # Show raw event data
+            events_raw = get_all_events()
+            st.write(f"Found {len(events_raw)} events in database")
+            if events_raw:
+                st.json(events_raw[0])
 
     # Fetch events
     events = get_all_events()
@@ -692,6 +807,41 @@ def render_event_dashboard():
                                     st.rerun()
                                 else:
                                     st.error("Failed to send invites. Please try again.")
+
+def add_test_event():
+    """
+    Add a test event directly to the events collection
+    For admin debugging purposes
+    """
+    try:
+        db = get_event_db()
+        if not db:
+            return False
+            
+        test_event = {
+            'id': 'test-event-' + str(uuid.uuid4()),
+            'theme': 'Test Event ' + datetime.now().strftime("%H:%M:%S"),
+            'description': 'This is a test event added directly to the events collection.',
+            'seating': {
+                'layout': 'Test layout with round tables',
+                'tables': ['Table 1: 6 guests', 'Table 2: 6 guests', 'Table 3: 4 guests']
+            },
+            'decor': ['Elegant centerpieces', 'Ambient lighting', 'Floral arrangements'],
+            'recipes': ['Spaghetti Carbonara', 'Chicken Stir-Fry', 'Chocolate Chip Cookies'],
+            'invitation': 'You are invited to our test event!',
+            'created_at': datetime.now(),
+            'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'admin'
+        }
+        
+        # Save to Firestore
+        events_ref = db.collection('events')
+        events_ref.document(test_event['id']).set(test_event)
+        
+        logger.info(f"Test event added with ID: {test_event['id']}")
+        return True
+    except Exception as e:
+        logger.error(f"Error adding test event: {str(e)}")
+        return False
 
 def render_user_invites():
     """Render the user's event invites UI"""
@@ -792,17 +942,31 @@ def event_planner():
 
     # Get user role
     user_role = st.session_state.user.get('role', 'user')
+    
+    # Ensure the events collection exists
+    ensure_events_collection_exists()
 
     # Different views based on role
     if user_role in ['admin', 'staff', 'chef']:
         # Staff view with tabs for chatbot and dashboard
+        tab_index = 1 if st.session_state.get('switch_to_dashboard', False) else 0
+    
+        # Reset the switch flag after using it
+        if st.session_state.get('switch_to_dashboard', False):
+            st.session_state.switch_to_dashboard = False
+    
         tab1, tab2 = st.tabs(["🤖 Event Planner", "📊 Event Dashboard"])
-        
-        with tab1:
-            render_chatbot_ui()
-            
-        with tab2:
-            render_event_dashboard()
+    
+        if tab_index == 0:
+            with tab1:
+                render_chatbot_ui()
+            with tab2:
+                render_event_dashboard()
+        else:
+            with tab1:
+                render_chatbot_ui()
+            with tab2:
+                render_event_dashboard()
     else:
         # Customer view - only shows their invites
         render_user_invites()
