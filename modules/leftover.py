@@ -75,7 +75,7 @@ def fetch_ingredients_from_firebase() -> List[Dict]:
             # If event_app is not initialized, initialize it
             from app_integration import check_event_firebase_config
             check_event_firebase_config()
-            from modules.event_planner import init_event_firebase
+            from modules.event_planner import init_event_firebase  # Updated import path
             init_event_firebase()
             db = firestore.client(app=firebase_admin.get_app(name='event_app'))
         
@@ -106,13 +106,14 @@ def parse_firebase_ingredients(firebase_ingredients: List[Dict]) -> List[str]:
             ingredients.append(item['Ingredient'])
     return ingredients
 
-def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]:
+def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str = "") -> List[str]:
     '''
     Suggest recipes based on the leftover ingredients.
 
     ARGUMENT - 
     leftovers (List[str]), list of the leftover ingredients (whether via the csv file or manually entered)
     max_suggestions (int, optional): maximum number of recipe suggestions to output
+    notes (str, optional): additional notes or requirements for the recipes
 
     RETURN - List[str] of all recipes
     '''
@@ -127,8 +128,12 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]
         model = genai.GenerativeModel('gemini-1.5-flash')
 
         ingredients_list = ", ".join(leftovers)
+        
+        # Add notes to the prompt if provided
+        notes_text = f"\nAdditional requirements: {notes}" if notes else ""
+        
         prompt = f'''
-        Here are the leftover ingredients I have: {ingredients_list}.
+        Here are the leftover ingredients I have: {ingredients_list}.{notes_text}
 
         I need you to suggest {max_suggestions} creative and unique recipe ideas that use these ingredients to avoid any food waste
 
