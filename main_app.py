@@ -18,9 +18,10 @@ from firebase_init import init_firebase
 # Import the event planner integration
 from app_integration import integrate_event_planner, check_event_firebase_config
 
-init_firebase()
-from setup_event_collections import setup_collections; setup_collections()  # Remove this line after first run
+# Import the dashboard module
+from dashboard import render_dashboard, get_feature_description
 
+init_firebase()
 
 import logging
 logging.basicConfig(level=logging.INFO, 
@@ -63,18 +64,98 @@ def check_feature_access(feature_name):
 # Individual feature functions
 @auth_required
 def leftover_management():
-    # Existing leftover management code...
-    pass
+    """Leftover management feature"""
+    st.title("♻️ Leftover Management")
+    
+    # Sidebar for input methods
+    st.sidebar.header("Input Methods")
+    
+    # Get leftovers from CSV or manual input
+    csv_leftovers = leftover_input_csv()
+    manual_leftovers = leftover_input_manual()
+    
+    # Combine leftovers from both sources
+    leftovers = csv_leftovers + manual_leftovers
+    
+    # Main content
+    if leftovers:
+        st.write(f"Found {len(leftovers)} ingredients")
+        
+        # Display ingredients
+        st.subheader("Available Ingredients")
+        cols = st.columns(3)
+        for i, ingredient in enumerate(leftovers):
+            col_idx = i % 3
+            with cols[col_idx]:
+                st.info(ingredient.title())
+        
+        # Generate recipe button
+        if st.button("Generate Recipe Suggestions", type="primary"):
+            with st.spinner("Generating recipes..."):
+                recipes = suggest_recipes(leftovers)
+                
+                if recipes:
+                    st.success(f"Generated {len(recipes)} recipe suggestions!")
+                    
+                    # Display recipes
+                    st.subheader("Recipe Suggestions")
+                    for i, recipe in enumerate(recipes):
+                        st.write(f"{i+1}. {recipe}")
+                    
+                    # Award XP for generating recipes
+                    user = get_current_user()
+                    if user and user.get('user_id'):
+                        award_recipe_generation_xp(user['user_id'], len(recipes))
+                else:
+                    st.error("Could not generate recipes with these ingredients. Try adding more ingredients.")
+    else:
+        st.info("Please add ingredients using the sidebar options.")
+        
+        # Example section
+        st.markdown("### How it works")
+        st.markdown("""
+        1. Add leftover ingredients using the sidebar
+        2. Click 'Generate Recipe Suggestions'
+        3. Get AI-powered recipe ideas that use your ingredients
+        4. Reduce food waste and create delicious meals!
+        """)
+        
+        # Example ingredients
+        st.markdown("### Example Ingredients")
+        example_ingredients = ["chicken", "rice", "bell peppers", "onions", "tomatoes", "garlic"]
+        example_cols = st.columns(3)
+        for i, ingredient in enumerate(example_ingredients):
+            col_idx = i % 3
+            with example_cols[col_idx]:
+                st.markdown(f"• {ingredient.title()}")
 
 @auth_required
 def gamification_hub():
-    # Existing gamification hub code...
-    pass
+    """Gamification hub feature"""
+    user = get_current_user()
+    if user and user.get('user_id'):
+        display_gamification_dashboard(user['user_id'])
+    else:
+        st.warning("Please log in to view your gamification stats")
 
 @auth_required
 def cooking_quiz():
-    # Existing cooking quiz code...
-    pass
+    """Cooking quiz feature"""
+    st.title("🧠 Cooking Knowledge Quiz")
+    
+    user = get_current_user()
+    if not user or not user.get('user_id'):
+        st.warning("Please log in to take quizzes")
+        return
+        
+    # Sample ingredients for quiz generation
+    sample_ingredients = ["chicken", "rice", "tomatoes", "onions", "garlic", "olive oil"]
+    
+    # Display daily challenge
+    display_daily_challenge(user['user_id'])
+    
+    # Render the cooking quiz
+    render_cooking_quiz(sample_ingredients, user['user_id'])
 
 @auth_required
 def event_planning():
@@ -83,16 +164,24 @@ def event_planning():
     integrate_event_planner()
 
 def promotion_generator():
-    # Existing promotion generator code...
-    pass
+    """Promotion generator feature"""
+    st.title("📣 Promotion Generator")
+    st.info("This feature is coming soon!")
 
 def chef_recipe_suggestions():
-    # Existing chef recipe suggestions code...
-    pass
+    """Chef recipe suggestions feature"""
+    st.title("👨‍🍳 Chef Recipe Suggestions")
+    st.info("This feature is coming soon!")
 
 def visual_menu_search():
-    # Existing visual menu search code...
-    pass
+    """Visual menu search feature"""
+    st.title("🔍 Visual Menu Search")
+    st.info("This feature is coming soon!")
+
+@auth_required
+def dashboard():
+    """Main dashboard feature"""
+    render_dashboard()
 
 # Main app function
 def main():
@@ -107,6 +196,10 @@ def main():
     if 'show_achievements' not in st.session_state:
         st.session_state.show_achievements = False
     
+    # Initialize selected feature state
+    if 'selected_feature' not in st.session_state:
+        st.session_state.selected_feature = "Dashboard"
+    
     # Check Event Firebase configuration
     check_event_firebase_config()
     
@@ -114,41 +207,9 @@ def main():
     st.sidebar.title("🔐 Authentication")
     auth_status = render_auth_ui()
     
-    # Display user gamification stats in sidebar if authenticated
-    user = get_current_user()
-    if user and user.get('user_id'):
-        display_user_stats_sidebar(user['user_id'])
-    
     # Main content
-    st.title("🍽️ Smart Restaurant Menu Management System")
-    
-    # Welcome message based on authentication status
-    if user:
-        stats = get_user_stats(user['user_id']) if user.get('user_id') else {}
-        level = stats.get('level', 1)
-        total_xp = stats.get('total_xp', 0)
-        
-        st.markdown(f'''
-        Welcome to the AI-powered smart restaurant system, **{user['username']}**! 🎉
-        
-        **Your Role:** {user['role'].capitalize()} | **Level:** {level} | **Total XP:** {total_xp}
-        
-        Select a feature from the sidebar to begin your culinary journey!
-        ''')
-        
-        # Show quick stats
-        if user.get('user_id'):
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("🌟 Level", level)
-            with col2:
-                st.metric("⚡ Total XP", total_xp)
-            with col3:
-                st.metric("📝 Quizzes", stats.get('quizzes_taken', 0))
-            with col4:
-                st.metric("🏆 Achievements", len(stats.get('achievements', [])))
-    else:
+    if not st.session_state.is_authenticated:
+        st.title("🍽️ Smart Restaurant Menu Management System")
         st.markdown('''
         Welcome to the AI-powered smart restaurant system! 🍽️
         
@@ -161,6 +222,7 @@ def main():
         
         Please log in or register to access all features.
         ''')
+        return
     
     # Feature selection in sidebar
     st.sidebar.divider()
@@ -168,6 +230,7 @@ def main():
     
     # List of all available features with enhanced descriptions
     features = [
+        "Dashboard",
         "Leftover Management",
         "Gamification Hub", 
         "Cooking Quiz",
@@ -178,85 +241,46 @@ def main():
     ]
     
     # Filter features based on user role
-    available_features = [f for f in features if check_feature_access(f)]
+    available_features = ["Dashboard"] + [f for f in features[1:] if check_feature_access(f)]
     
-    # Only show feature selection if user is authenticated
-    if user:
-        selected_feature = st.sidebar.selectbox(
-            "Choose a Feature",
-            options=available_features,
-            help="Select a feature to explore different aspects of the restaurant management system"
-        )
-        
-        # Add feature descriptions in sidebar
-        feature_descriptions = {
-            "Leftover Management": "♻️ Generate recipes from leftover ingredients",
-            "Gamification Hub": "🎮 View achievements, leaderboard, and progress",
-            "Cooking Quiz": "🧠 Test your culinary knowledge and earn XP",
-            "Event Planning ChatBot": "🎉 Plan restaurant events and special occasions",
-            "Promotion Generator": "📣 Create marketing promotions and campaigns",
-            "Chef Recipe Suggestions": "👨‍🍳 Get professional recipe recommendations",
-            "Visual Menu Search": "🔍 Search menu items using images"
-        }
-        
-        if selected_feature in feature_descriptions:
-            st.sidebar.info(feature_descriptions[selected_feature])
-        
-        st.divider()
-        
-        # Display the selected feature
-        if selected_feature == "Leftover Management":
-            leftover_management()
-        elif selected_feature == "Gamification Hub":
-            gamification_hub()
-        elif selected_feature == "Cooking Quiz":
-            cooking_quiz()
-        elif selected_feature == "Event Planning ChatBot":
-            event_planning()
-        elif selected_feature == "Promotion Generator":
-            promotion_generator()
-        elif selected_feature == "Chef Recipe Suggestions":
-            chef_recipe_suggestions()
-        elif selected_feature == "Visual Menu Search":
-            visual_menu_search()
-    else:
-        # If not authenticated, show a motivational message
-        st.info("🔑 Please log in or register to unlock the full potential of our smart restaurant system!")
-        
-        # Show some preview features
-        st.markdown("### 🌟 What you can do:")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("""
-            **🧠 Smart Recipe Generation**
-            - Upload leftover ingredients
-            - Get AI-powered recipe suggestions
-            - Reduce food waste effectively
-            """)
-            
-            st.markdown("""
-            **🎮 Gamification System**
-            - Take cooking knowledge quizzes
-            - Earn XP and level up
-            - Unlock achievements
-            """)
-        
-        with col2:
-            st.markdown("""
-            **🏆 Competition & Learning**
-            - Compete on global leaderboards
-            - Track your culinary progress
-            - Learn from detailed explanations
-            """)
-            
-            st.markdown("""
-            **🎉 Event Planning**
-            - Plan special restaurant events
-            - Get AI-generated theme ideas
-            - Send invites to customers
-            """)
+    # Display user gamification stats in sidebar if authenticated
+    user = get_current_user()
+    if user and user.get('user_id'):
+        display_user_stats_sidebar(user['user_id'])
+    
+    # Feature selection
+    selected_feature = st.sidebar.selectbox(
+        "Choose a Feature",
+        options=available_features,
+        index=available_features.index(st.session_state.selected_feature),
+        help="Select a feature to explore different aspects of the restaurant management system"
+    )
+    
+    # Update session state with selected feature
+    st.session_state.selected_feature = selected_feature
+    
+    # Add feature descriptions in sidebar
+    feature_description = get_feature_description(selected_feature)
+    if feature_description:
+        st.sidebar.info(feature_description)
+    
+    # Display the selected feature
+    if selected_feature == "Dashboard":
+        dashboard()
+    elif selected_feature == "Leftover Management":
+        leftover_management()
+    elif selected_feature == "Gamification Hub":
+        gamification_hub()
+    elif selected_feature == "Cooking Quiz":
+        cooking_quiz()
+    elif selected_feature == "Event Planning ChatBot":
+        event_planning()
+    elif selected_feature == "Promotion Generator":
+        promotion_generator()
+    elif selected_feature == "Chef Recipe Suggestions":
+        chef_recipe_suggestions()
+    elif selected_feature == "Visual Menu Search":
+        visual_menu_search()
 
 if __name__ == "__main__":
     main()
