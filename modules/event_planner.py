@@ -256,7 +256,7 @@ def generate_event_plan(query: str) -> Dict:
         response_text = response.text
         
         # Extract JSON from response
-        json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+        json_match = re.search(r'\`\`\`json\s*(.*?)\s*\`\`\`', response_text, re.DOTALL)
         if json_match:
             response_text = json_match.group(1)
         else:
@@ -368,7 +368,8 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         pdf.cell(0, 10, "Decoration Ideas", ln=True)
         pdf.set_font("Arial", "", 12)
         for item in event_plan['decor']:
-            pdf.cell(0, 10, f"• {item}", ln=True)
+            # Replace bullet point with hyphen to avoid encoding issues
+            pdf.cell(0, 10, f"- {item}", ln=True)
         pdf.ln(5)
         
         # Recipe suggestions
@@ -376,7 +377,8 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         pdf.cell(0, 10, "Recipe Suggestions", ln=True)
         pdf.set_font("Arial", "", 12)
         for item in event_plan['recipe_suggestions']:
-            pdf.cell(0, 10, f"• {item}", ln=True)
+            # Replace bullet point with hyphen to avoid encoding issues
+            pdf.cell(0, 10, f"- {item}", ln=True)
         pdf.ln(5)
         
         # Invitation
@@ -386,10 +388,135 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         pdf.multi_cell(0, 10, event_plan['invitation'])
         
         # Return PDF as bytes
-        return pdf.output(dest="S").encode("latin1")
+        return pdf.output(dest="S").encode("latin1", errors="replace")
     except Exception as e:
         logger.error(f"Error creating PDF: {str(e)}")
         return b""
+
+def create_unicode_pdf(event_plan: Dict) -> bytes:
+    """
+    Create a PDF document with Unicode support using BytesIO
+    
+    Args:
+        event_plan: Dictionary containing event plan details
+        
+    Returns:
+        PDF document as bytes
+    """
+    try:
+        from fpdf import FPDF
+        
+        class UnicodePDF(FPDF):
+            def __init__(self):
+                super().__init__()
+                self.add_font('DejaVu', '', 'DejaVuSansCondensed.ttf', uni=True)
+                self.add_font('DejaVu', 'B', 'DejaVuSansCondensed-Bold.ttf', uni=True)
+                self.add_font('DejaVu', 'I', 'DejaVuSansCondensed-Oblique.ttf', uni=True)
+        
+        # If we can't use DejaVu fonts, fall back to standard method
+        try:
+            pdf = UnicodePDF()
+            use_unicode = True
+        except:
+            pdf = FPDF()
+            use_unicode = False
+        
+        pdf.add_page()
+        
+        # Set font based on availability
+        if use_unicode:
+            pdf.set_font("DejaVu", "B", 16)
+        else:
+            pdf.set_font("Arial", "B", 16)
+        
+        # Title
+        pdf.cell(0, 10, f"Event Plan: {event_plan['theme']['name']}", ln=True, align="C")
+        pdf.ln(5)
+        
+        # Rest of PDF generation...
+        # (Similar to create_event_pdf but with Unicode awareness)
+        
+        # Date
+        pdf.set_font("Arial", "I", 12)
+        pdf.cell(0, 10, f"Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}", ln=True)
+        pdf.ln(5)
+        
+        # Theme description
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Theme", ln=True)
+        pdf.set_font("Arial", "", 12)
+        pdf.multi_cell(0, 10, event_plan['theme']['description'])
+        pdf.ln(5)
+        
+        # Seating arrangement
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Seating Arrangement", ln=True)
+        pdf.set_font("Arial", "", 12)
+        pdf.multi_cell(0, 10, event_plan['seating']['layout'])
+        
+        # Table details
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 10, "Tables:", ln=True)
+        
+        # Create table for seating
+        pdf.set_font("Arial", "", 10)
+        col_width = 45
+        row_height = 10
+        
+        # Table headers
+        pdf.cell(col_width, row_height, "Table Number", border=1)
+        pdf.cell(col_width, row_height, "Shape", border=1)
+        pdf.cell(col_width, row_height, "Seats", border=1)
+        pdf.cell(col_width, row_height, "Location", border=1)
+        pdf.ln(row_height)
+        
+        # Table data
+        for table in event_plan['seating']['tables']:
+            if isinstance(table, dict):
+                # New format
+                pdf.cell(col_width, row_height, str(table.get('table_number', '')), border=1)
+                pdf.cell(col_width, row_height, str(table.get('shape', '')), border=1)
+                pdf.cell(col_width, row_height, str(table.get('seats', '')), border=1)
+                pdf.cell(col_width, row_height, str(table.get('location', '')), border=1)
+            else:
+                # Old format (string)
+                pdf.cell(0, row_height, str(table), border=1, ln=True)
+            pdf.ln(row_height)
+        
+        pdf.ln(5)
+        
+        # Decoration
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Decoration Ideas", ln=True)
+        pdf.set_font("Arial", "", 12)
+        for item in event_plan['decor']:
+            # Replace bullet point with hyphen to avoid encoding issues
+            pdf.cell(0, 10, f"- {item}", ln=True)
+        pdf.ln(5)
+        
+        # Recipe suggestions
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Recipe Suggestions", ln=True)
+        pdf.set_font("Arial", "", 12)
+        for item in event_plan['recipe_suggestions']:
+            # Replace bullet point with hyphen to avoid encoding issues
+            pdf.cell(0, 10, f"- {item}", ln=True)
+        pdf.ln(5)
+        
+        # Invitation
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Invitation Template", ln=True)
+        pdf.set_font("Arial", "I", 12)
+        pdf.multi_cell(0, 10, event_plan['invitation'])
+        
+        # Use BytesIO to avoid encoding issues
+        pdf_buffer = io.BytesIO()
+        pdf.output(pdf_buffer)
+        return pdf_buffer.getvalue()
+    except Exception as e:
+        logger.error(f"Error creating Unicode PDF: {str(e)}")
+        # Fall back to standard method with character replacement
+        return create_event_pdf(event_plan)
 
 def get_pdf_download_link(pdf_bytes: bytes, filename: str) -> str:
     """
@@ -546,7 +673,12 @@ def render_chatbot_ui():
                         st.markdown("#### Export Event Plan")
                         
                         # Generate PDF
-                        pdf_bytes = create_event_pdf(event_plan)
+                        try:
+                            # Try Unicode PDF first
+                            pdf_bytes = create_unicode_pdf(event_plan)
+                        except:
+                            # Fall back to standard PDF with character replacement
+                            pdf_bytes = create_event_pdf(event_plan)
                         
                         if pdf_bytes:
                             # Create download button
@@ -559,6 +691,45 @@ def render_chatbot_ui():
                             )
                         else:
                             st.error("Failed to generate PDF. Please try again.")
+                            
+                            # Provide plain text alternative
+                            st.markdown("### Plain Text Export")
+                            text_export = f"""
+                            # Event Plan: {event_plan['theme']['name']}
+                            Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}
+                            
+                            ## Theme
+                            {event_plan['theme']['description']}
+                            
+                            ## Seating Arrangement
+                            {event_plan['seating']['layout']}
+                            
+                            ### Tables:
+                            """
+                            
+                            for i, table in enumerate(event_plan['seating']['tables']):
+                                if isinstance(table, dict):
+                                    text_export += f"- Table {table.get('table_number', i+1)}: {table.get('shape', 'Round')} table with {table.get('seats', 0)} seats at {table.get('location', 'unspecified location')}\n"
+                                else:
+                                    text_export += f"- {table}\n"
+                            
+                            text_export += "\n## Decoration Ideas\n"
+                            for item in event_plan['decor']:
+                                text_export += f"- {item}\n"
+                                
+                            text_export += "\n## Recipe Suggestions\n"
+                            for item in event_plan['recipe_suggestions']:
+                                text_export += f"- {item}\n"
+                                
+                            text_export += f"\n## Invitation Template\n{event_plan['invitation']}\n"
+                            
+                            st.download_button(
+                                label="Download as Text File",
+                                data=text_export,
+                                file_name=f"event_plan_{datetime.now().strftime('%Y%m%d')}.txt",
+                                mime="text/plain",
+                                key="download_txt"
+                            )
                     
                     # Add assistant message to chat history
                     st.session_state.event_chat_history.append({
