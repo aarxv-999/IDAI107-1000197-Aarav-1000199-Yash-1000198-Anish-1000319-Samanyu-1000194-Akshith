@@ -504,19 +504,18 @@ def render_chatbot_ui():
                             event_data = {
                                 'description': event_plan['theme']['description'],
                                 'decor': event_plan['decor'],
-                                'recipes': event_plan['recipe_suggestions'],
+                                'menu': event_plan['recipe_suggestions'],  # Use 'menu' instead of 'recipes'
                                 'invitation': event_plan['invitation'],
                                 'seating': event_plan['seating'],
-                                'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'unknown'
+                                'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'admin',
+                                'theme': event_plan['theme']['name']
                             }
                             
                             # Save to Firestore
                             success, result = save_event_to_firestore(event_data)
                             if success:
                                 st.success(f"✅ Event plan saved successfully! Event ID: {result}")
-                                # Clear the current plan after saving
                                 st.session_state.current_event_plan = None
-                                # Force refresh to show in dashboard
                                 st.rerun()
                             else:
                                 st.error(f"❌ Failed to save event plan: {result}")
