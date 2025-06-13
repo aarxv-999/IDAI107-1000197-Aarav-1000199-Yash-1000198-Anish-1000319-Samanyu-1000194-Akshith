@@ -73,27 +73,47 @@ def leftover_management():
     # Get leftovers from CSV, manual input, or Firebase
     csv_leftovers = leftover_input_csv()
     manual_leftovers = leftover_input_manual()
-    firebase_leftovers = leftover_input_firebase()  # Add this line
+    firebase_leftovers = leftover_input_firebase()
     
     # Combine leftovers from all sources
-    leftovers = csv_leftovers + manual_leftovers + firebase_leftovers  # Update this line
+    all_leftovers = csv_leftovers + manual_leftovers + firebase_leftovers
     
     # Main content
-    if leftovers:
-        st.write(f"Found {len(leftovers)} ingredients")
+    if all_leftovers:
+        st.write(f"Found {len(all_leftovers)} ingredients")
         
-        # Display ingredients
-        st.subheader("Available Ingredients")
-        cols = st.columns(3)
-        for i, ingredient in enumerate(leftovers):
-            col_idx = i % 3
-            with cols[col_idx]:
-                st.info(ingredient.title())
+        # Create a dropdown for ingredients
+        with st.expander("Available Ingredients", expanded=False):
+            # Display ingredients in a more compact format
+            cols = st.columns(3)
+            for i, ingredient in enumerate(all_leftovers):
+                col_idx = i % 3
+                with cols[col_idx]:
+                    st.write(f"• {ingredient.title()}")
+        
+        # Recipe generation options
+        st.subheader("Recipe Generation Options")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Number of recipe suggestions
+            num_suggestions = st.slider("Number of recipe suggestions", 
+                                       min_value=1, 
+                                       max_value=10, 
+                                       value=3,
+                                       help="Select how many recipe suggestions you want")
+        
+        with col2:
+            # Additional notes or requirements
+            notes = st.text_area("Additional notes or requirements", 
+                                placeholder="E.g., vegetarian only, quick meals, kid-friendly, etc.",
+                                help="Add any specific requirements for your recipes")
         
         # Generate recipe button
         if st.button("Generate Recipe Suggestions", type="primary"):
             with st.spinner("Generating recipes..."):
-                recipes = suggest_recipes(leftovers)
+                recipes = suggest_recipes(all_leftovers, num_suggestions, notes)
                 
                 if recipes:
                     st.success(f"Generated {len(recipes)} recipe suggestions!")
