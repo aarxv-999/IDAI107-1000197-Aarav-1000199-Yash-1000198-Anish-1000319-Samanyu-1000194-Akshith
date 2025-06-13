@@ -272,8 +272,9 @@ def leftover_input_firebase() -> List[str]:
     
     if use_firebase:
         if st.sidebar.button("Fetch Current Ingredients", type="primary"):
-            with st.sidebar.spinner("Fetching ingredients..."):
-                try:
+            try:
+                # Show spinner in the main area since sidebar doesn't support spinner
+                with st.spinner("Fetching ingredients from inventory..."):
                     # Fetch ingredients from Firebase
                     firebase_ingredients = fetch_ingredients_from_firebase()
                     
@@ -297,8 +298,8 @@ def leftover_input_firebase() -> List[str]:
                         leftovers = parse_firebase_ingredients(firebase_ingredients)
                     else:
                         st.sidebar.warning("No ingredients found in inventory")
-                except Exception as err:
-                    st.sidebar.error(f"Error fetching ingredients: {str(err)}")
+            except Exception as err:
+                st.sidebar.error(f"Error fetching ingredients: {str(err)}")
     
     return leftovers
 
