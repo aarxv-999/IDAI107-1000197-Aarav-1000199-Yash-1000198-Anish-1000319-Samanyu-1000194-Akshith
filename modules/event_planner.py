@@ -14,6 +14,7 @@ import google.generativeai as genai
 import os
 import json
 import uuid
+import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 import firebase_admin
@@ -363,6 +364,84 @@ def send_invites(event_id: str, customer_ids: List[str]) -> bool:
         logger.error(f"Error sending invites: {str(e)}")
         return False
 
+# JSON Repair Functions
+def fix_json_string(json_str: str) -> str:
+    """
+    Attempt to fix common JSON formatting errors
+    
+    Args:
+        json_str: The potentially malformed JSON string
+        
+    Returns:
+        A corrected JSON string
+    """
+    # Replace single quotes with double quotes (except in strings)
+    json_str = re.sub(r"(?<!\\)'([^']*)':", r'"\1":', json_str)
+    json_str = re.sub(r":'([^']*)'", r':"\1"', json_str)
+    
+    # Fix missing quotes around keys
+    json_str = re.sub(r'([{,])\s*([a-zA-Z0-9_]+)\s*:', r'\1"\2":', json_str)
+    
+    # Fix trailing commas in arrays and objects
+    json_str = re.sub(r',\s*}', '}', json_str)
+    json_str = re.sub(r',\s*]', ']', json_str)
+    
+    # Fix missing commas between elements
+    json_str = re.sub(r'"\s*{', '", {', json_str)
+    json_str = re.sub(r'"\s*\[', '", [', json_str)
+    json_str = re.sub(r'}\s*"', '}, "', json_str)
+    json_str = re.sub(r']\s*"', '], "', json_str)
+    
+    # Fix unquoted strings
+    def quote_unquoted(match):
+        return f'"{match.group(1)}"'
+    
+    json_str = re.sub(r':\s*([a-zA-Z][a-zA-Z0-9_\s]*[a-zA-Z0-9_])\s*([,}])', r':"\1"\2', json_str)
+    
+    return json_str
+
+def safe_json_loads(json_str: str) -> Dict:
+    """
+    Safely parse JSON with multiple fallback strategies
+    
+    Args:
+        json_str: The JSON string to parse
+        
+    Returns:
+        Parsed JSON as a dictionary
+        
+    Raises:
+        ValueError: If all parsing attempts fail
+    """
+    # Try direct parsing first
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Initial JSON parsing failed: {str(e)}")
+        
+        # Try fixing common JSON errors
+        try:
+            fixed_json = fix_json_string(json_str)
+            return json.loads(fixed_json)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Fixed JSON parsing failed: {str(e)}")
+            
+            # Try using a more lenient approach - eval (with safety checks)
+            if all(c in json_str for c in ['{', '}']):
+                try:
+                    # Replace "true", "false", "null" with Python equivalents
+                    eval_json = json_str.replace('true', 'True').replace('false', 'False').replace('null', 'None')
+                    # Basic security check - only allow dictionaries
+                    if eval_json.strip().startswith('{') and eval_json.strip().endswith('}'):
+                        result = eval(eval_json)
+                        if isinstance(result, dict):
+                            return result
+                except Exception as e:
+                    logger.warning(f"Eval parsing failed: {str(e)}")
+            
+            # If all else fails, raise the original error
+            raise ValueError(f"Failed to parse JSON: {str(e)}")
+
 # AI Event Planning Functions
 def generate_event_plan(query: str) -> Dict:
     """
@@ -403,7 +482,7 @@ def generate_event_plan(query: str) -> Dict:
     if guest_matches:
         guest_count = int(guest_matches[0])
 
-    # Prepare prompt for AI
+    # Prepare prompt for AI - explicitly request valid JSON
     prompt = f'''
     You are an expert event planner for a restaurant. Plan an event based on this request:
     "{query}"
@@ -418,7 +497,7 @@ def generate_event_plan(query: str) -> Dict:
     4. Recipes: 5-7 recipe suggestions from our available recipes
     5. Invitation: A short invitation message template
 
-    Format your response as a JSON object with these exact keys:
+    IMPORTANT: Format your response as a valid JSON object with these exact keys:
     {{
         "theme": {{
             "name": "Theme name",
@@ -426,14 +505,14 @@ def generate_event_plan(query: str) -> Dict:
         }},
         "seating": {{
             "layout": "Layout description",
-            "tables": [List of tables with guest counts]
+            "tables": ["Table 1: 8 guests", "Table 2: 8 guests"]
         }},
-        "decor": [List of decoration ideas],
-        "recipe_suggestions": [List of recipe names],
+        "decor": ["Decoration 1", "Decoration 2", "Decoration 3"],
+        "recipe_suggestions": ["Recipe 1", "Recipe 2", "Recipe 3"],
         "invitation": "Invitation text"
     }}
 
-    Make sure the JSON is valid and properly formatted.'''
+    Make sure the JSON is valid with proper quotes, commas, and brackets. Do not include any explanations or text outside the JSON object.'''
 
     try:
         # Generate response from AI
@@ -444,7 +523,6 @@ def generate_event_plan(query: str) -> Dict:
         logger.info(f"Raw AI response received: {response_text[:200]}...")
         
         # Extract JSON from response
-        import re
         json_match = re.search(r'\`\`\`json\s*(.*?)\s*\`\`\`', response_text, re.DOTALL)
         if json_match:
             response_text = json_match.group(1)
@@ -456,7 +534,7 @@ def generate_event_plan(query: str) -> Dict:
                 response_text = json_match.group(1)
                 logger.info("JSON extracted from text")
             else:
-            # If no JSON found, create a structured response manually
+                # If no JSON found, create a structured response manually
                 logger.warning("No JSON found in response, creating structured response manually")
                 # Create a basic event plan structure
                 event_plan = {
@@ -473,7 +551,7 @@ def generate_event_plan(query: str) -> Dict:
                     "invitation": "You are cordially invited to our special event."
                 }
             
-            # Extract any useful information from the AI response
+                # Extract any useful information from the AI response
                 event_plan["ai_response"] = response_text
             
                 return {
@@ -484,7 +562,8 @@ def generate_event_plan(query: str) -> Dict:
     
         # Parse JSON response with better error handling
         try:
-            event_plan = json.loads(response_text)
+            # Use our enhanced JSON parser
+            event_plan = safe_json_loads(response_text)
             logger.info("Successfully parsed JSON response")
         
             # Validate the required fields are present
@@ -517,7 +596,7 @@ def generate_event_plan(query: str) -> Dict:
                     event_plan["recipe_suggestions"] = recipe_names[:5] if recipe_names else ["No recipes available"]
                 if "invitation" not in event_plan:
                     event_plan["invitation"] = "You are cordially invited to our special event."
-        except json.JSONDecodeError as e:
+        except Exception as e:
             logger.error(f"Failed to parse JSON: {str(e)}")
             # Create a fallback event plan
             event_plan = {
@@ -540,7 +619,7 @@ def generate_event_plan(query: str) -> Dict:
             return {
                 'plan': event_plan,
                 'success': True,
-                'warning': 'Failed to parse AI response as JSON. Created a basic plan.'
+                'warning': f'Failed to parse AI response as JSON: {str(e)}. Created a basic plan.'
             }
     
         # Filter recipe suggestions based on dietary restrictions
