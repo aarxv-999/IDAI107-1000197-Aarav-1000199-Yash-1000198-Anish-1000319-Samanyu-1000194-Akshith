@@ -38,17 +38,17 @@ def render_dashboard():
         # Different metrics based on user role
         if user_role in ['admin', 'chef', 'staff']:
             st.metric(
-                label="Active Events",
-                value="3",
-                delta="+1 from last week",
-                help="Number of active events being planned"
+                label="Recipe Archive",
+                value="24",
+                delta="+3 from last week",
+                help="Number of recipes in the archive"
             )
         else:
             st.metric(
-                label="Event Invites",
-                value="2",
+                label="Quiz Score",
+                value="85%",
                 delta=None,
-                help="Number of event invites you have"
+                help="Your average quiz score"
             )
     
     with col3:
@@ -61,10 +61,10 @@ def render_dashboard():
             )
         else:
             st.metric(
-                label="Upcoming Events",
-                value="5",
+                label="XP Points",
+                value="120",
                 delta=None,
-                help="Upcoming restaurant events"
+                help="Your experience points"
             )
     
     # Feature cards
@@ -73,14 +73,6 @@ def render_dashboard():
     
     # Define available features based on user role
     features = []
-    
-    # Common features for all users
-    features.append({
-        "title": "Event Planning ChatBot",
-        "description": "Plan restaurant events and special occasions with AI assistance",
-        "icon": "🎉",
-        "key": "Event Planning ChatBot"
-    })
     
     # Role-specific features
     if user_role in ['admin', 'staff', 'chef']:
@@ -152,14 +144,14 @@ def render_dashboard():
     # Different activity items based on user role
     if user_role in ['admin', 'chef', 'staff']:
         activities = [
-            {"time": "Today, 10:30 AM", "description": "New event plan created: Summer Wine Tasting"},
+            {"time": "Today, 10:30 AM", "description": "New recipes added to the archive"},
             {"time": "Yesterday", "description": "5 new recipes generated from leftover ingredients"},
             {"time": "2 days ago", "description": "Menu updated with seasonal items"}
         ]
     else:
         activities = [
-            {"time": "Today", "description": "New event invitation: Summer Wine Tasting"},
-            {"time": "Yesterday", "description": "Completed cooking quiz with 90% score"},
+            {"time": "Today", "description": "Completed cooking quiz with 90% score"},
+            {"time": "Yesterday", "description": "Generated 3 recipes from leftovers"},
             {"time": "Last week", "description": "Earned 'Quiz Novice' achievement"}
         ]
     
@@ -181,7 +173,6 @@ def get_feature_description(feature_name: str) -> str:
         "Leftover Management": "♻️ Generate recipes from leftover ingredients",
         "Gamification Hub": "🎮 View achievements, leaderboard, and progress",
         "Cooking Quiz": "🧠 Test your culinary knowledge and earn XP",
-        "Event Planning ChatBot": "🎉 Plan restaurant events and special occasions",
         "Promotion Generator": "📣 Create marketing promotions and campaigns",
         "Chef Recipe Suggestions": "👨‍🍳 Get professional recipe recommendations",
         "Visual Menu Search": "🔍 Search menu items using images"
