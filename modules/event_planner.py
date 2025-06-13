@@ -445,24 +445,6 @@ def render_chatbot_ui():
     """Render the event planning chatbot UI"""
     st.markdown("### 🤖 Event Planning Assistant")
 
-    if st.button("🔨 Test Firestore Save"):
-    test_event = {
-        'id': 'test-debug-123',
-        'theme': 'Test Event Debug',
-        'description': 'Debugging Firestore write',
-        'created_by': 'debug_user',
-        'created_at': datetime.utcnow(),
-        'decor': ['test'],
-        'invitation': 'This is a test invite',
-        'seating': {
-            'layout': 'Test layout',
-            'tables': ['1 table 2 guests']
-        },
-        'menu': ['Test Dish 1', 'Test Dish 2']
-    }
-    success, msg = save_event_to_firestore(test_event)
-    st.write("Saved?", success, msg)
-
     # Initialize chat history
     if 'event_chat_history' not in st.session_state:
         st.session_state.event_chat_history = []
