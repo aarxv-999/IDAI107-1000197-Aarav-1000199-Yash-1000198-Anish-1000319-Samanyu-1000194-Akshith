@@ -118,19 +118,24 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
     RETURN - List[str] of all recipes
     '''
     if not leftovers:
+        logger.warning("No ingredients provided for recipe suggestions")
         return []
 
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
+            logger.error("GEMINI_API_KEY environment variable was not found!")
             raise ValueError("GEMINI_API_KEY environment variable was not found!")
+        
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
 
         ingredients_list = ", ".join(leftovers)
+        logger.info(f"Generating recipes for ingredients: {ingredients_list}")
         
         # Add notes to the prompt if provided
         notes_text = f"\nAdditional requirements: {notes}" if notes else ""
+        logger.info(f"Additional notes: {notes_text}")
         
         prompt = f'''
         Here are the leftover ingredients I have: {ingredients_list}.{notes_text}
@@ -142,8 +147,11 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
         Keep the recipes simple and focused on using the leftover ingredients
         ''' 
 
+        logger.info("Sending request to Gemini API")
         response = model.generate_content(prompt)
         response_text = response.text
+        logger.info(f"Received response from Gemini API: {response_text[:100]}...")
+        
         recipe_lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         recipes = []
         for line in recipe_lines:
@@ -152,8 +160,10 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
             line = line.strip('"\'')
             if line and len(recipes) < max_suggestions:
                 recipes.append(line)
+        
         recipes = recipes[:max_suggestions]
-        logger.info(f"Got the following recipes from gemini: {recipes}")
+        logger.info(f"Processed recipes: {recipes}")
+        
         if not recipes:
             logger.warning(f"Got no recipes for the ingredients: {ingredients_list}!!")
             return []
@@ -161,6 +171,7 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
 
     except Exception as e:
         logger.error(f"Error using Gemini API: {str(e)}")
+        logger.exception("Full exception details:")
         return []
 
 # ------------------ Gamification Functions ------------------
