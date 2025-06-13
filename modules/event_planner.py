@@ -4,18 +4,17 @@ Created by: v0
 
 This module provides:
 1. AI-powered event planning chatbot using Gemini API
-2. Event dashboard for viewing and managing events
-3. Integration with Firestore for recipe and ingredient data
-4. Role-based access control for different user types
+2. Integration with Firestore for recipe and ingredient data (read-only)
+3. Role-based access control for different user types
 """
 
 import streamlit as st
 import google.generativeai as genai
 import os
 import json
-import uuid
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Tuple
+import re
+from datetime import datetime
+from typing import Dict, List, Any, Optional
 import firebase_admin
 from firebase_admin import firestore, credentials
 import logging
@@ -24,9 +23,9 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('event_planner')
 
-# Initialize Firebase for event data
+# Initialize Firebase for event data (read-only)
 def init_event_firebase():
-    """Initialize the Firebase Admin SDK for event data"""
+    """Initialize the Firebase Admin SDK for event data (read-only)"""
     if not firebase_admin._apps or 'event_app' not in [app.name for app in firebase_admin._apps.values()]:
         try:
             # Use environment variables with EVENT_ prefix
@@ -78,7 +77,7 @@ def configure_ai_model():
         st.error(f"Failed to configure AI model: {str(e)}")
         return None
 
-# Firestore Data Functions
+# Firestore Data Functions (Read-Only)
 def get_recipe_items(dietary_restrictions: Optional[str] = None) -> List[Dict]:
     """
     Fetch recipe items from Firestore, optionally filtered by dietary restrictions
@@ -140,66 +139,6 @@ def get_available_ingredients() -> List[Dict]:
         logger.error(f"Error fetching ingredients: {str(e)}")
         return []
 
-def save_event_to_firestore(event_data: Dict) -> bool:
-    """
-    Save event data to Firestore
-
-    Args:
-        event_data: Dictionary containing event details
-        
-    Returns:
-        Boolean indicating success or failure
-    """
-    try:
-        db = get_event_db()
-        if not db:
-            return False
-            
-        # Generate a unique ID if not provided
-        if 'id' not in event_data:
-            event_data['id'] = str(uuid.uuid4())
-            
-        # Add timestamp
-        event_data['created_at'] = datetime.now()
-        
-        # Save to Firestore
-        events_ref = db.collection('events')
-        events_ref.document(event_data['id']).set(event_data)
-        
-        logger.info(f"Event saved successfully with ID: {event_data['id']}")
-        return True
-    except Exception as e:
-        logger.error(f"Error saving event: {str(e)}")
-        return False
-
-def get_all_events() -> List[Dict]:
-    """
-    Fetch all events from Firestore
-
-    Returns:
-        List of events as dictionaries
-    """
-    try:
-        db = get_event_db()
-        if not db:
-            return []
-            
-        events_ref = db.collection('events')
-        events_docs = events_ref.order_by('created_at', direction=firestore.Query.DESCENDING).get()
-        
-        events = []
-        for doc in events_docs:
-            event = doc.to_dict()
-            # Convert Firestore timestamp to datetime for display
-            if 'created_at' in event and isinstance(event['created_at'], datetime):
-                event['created_at'] = event['created_at'].strftime("%Y-%m-%d %H:%M")
-            events.append(event)
-            
-        return events
-    except Exception as e:
-        logger.error(f"Error fetching events: {str(e)}")
-        return []
-
 def get_customers() -> List[Dict]:
     """
     Fetch customer data from Firestore
@@ -229,59 +168,6 @@ def get_customers() -> List[Dict]:
     except Exception as e:
         logger.error(f"Error fetching customers: {str(e)}")
         return []
-
-def send_invites(event_id: str, customer_ids: List[str]) -> bool:
-    """
-    Send invites to selected customers (mock function)
-
-    Args:
-        event_id: ID of the event
-        customer_ids: List of customer IDs to invite
-        
-    Returns:
-        Boolean indicating success or failure
-    """
-    try:
-        db = get_event_db()
-        if not db:
-            return False
-            
-        # Get event details
-        event_ref = db.collection('events').document(event_id)
-        event_doc = event_ref.get()
-        
-        if not event_doc.exists:
-            logger.error(f"Event {event_id} not found")
-            return False
-            
-        event_data = event_doc.to_dict()
-        
-        # Create invites collection
-        invites_ref = db.collection('invites')
-        
-        # Create an invite for each customer
-        for customer_id in customer_ids:
-            invite_id = f"{event_id}_{customer_id}"
-            invite_data = {
-                'event_id': event_id,
-                'customer_id': customer_id,
-                'event_name': event_data.get('theme', 'Event'),
-                'sent_at': datetime.now(),
-                'status': 'sent'
-            }
-            invites_ref.document(invite_id).set(invite_data)
-            
-        # Update event with invited customers
-        event_ref.update({
-            'invited_customers': firestore.ArrayUnion(customer_ids),
-            'last_invite_sent': datetime.now()
-        })
-        
-        logger.info(f"Invites sent to {len(customer_ids)} customers for event {event_id}")
-        return True
-    except Exception as e:
-        logger.error(f"Error sending invites: {str(e)}")
-        return False
 
 # AI Event Planning Functions
 def generate_event_plan(query: str) -> Dict:
@@ -317,7 +203,6 @@ def generate_event_plan(query: str) -> Dict:
             dietary_restrictions.append(keyword)
 
     # Extract guest count from query
-    import re
     guest_count = 20  # Default
     guest_matches = re.findall(r'(\d+)\s+(?:people|guests|persons)', query)
     if guest_matches:
@@ -361,7 +246,6 @@ def generate_event_plan(query: str) -> Dict:
         response_text = response.text
         
         # Extract JSON from response
-        import re
         json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
         if json_match:
             response_text = json_match.group(1)
@@ -466,26 +350,6 @@ def render_chatbot_ui():
                         st.markdown("#### Invitation Template")
                         st.info(event_plan['invitation'])
                     
-                    # Save event button
-                    if st.button("💾 Save Event Plan", type="primary"):
-                        # Prepare event data
-                        event_data = {
-                            'theme': event_plan['theme']['name'],
-                            'description': event_plan['theme']['description'],
-                            'seating': event_plan['seating'],
-                            'decor': event_plan['decor'],
-                            'recipes': event_plan['recipe_suggestions'],
-                            'invitation': event_plan['invitation'],
-                            'query': user_query,
-                            'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'unknown'
-                        }
-                        
-                        # Save to Firestore
-                        if save_event_to_firestore(event_data):
-                            st.success("Event plan saved successfully!")
-                        else:
-                            st.error("Failed to save event plan. Please try again.")
-                    
                     # Add assistant message to chat history
                     st.session_state.event_chat_history.append({
                         'role': 'assistant',
@@ -500,155 +364,10 @@ def render_chatbot_ui():
                         'content': f"I'm sorry, I couldn't generate an event plan. Error: {response.get('error', 'Unknown error')}"
                     })
 
-def render_event_dashboard():
-    """Render the event dashboard UI"""
-    st.markdown("### 📊 Event Dashboard")
-
-    # Fetch events
-    events = get_all_events()
-
-    if not events:
-        st.info("No events found. Use the chatbot to create your first event!")
-        return
-
-    # Display events in an expandable format
-    for event in events:
-        with st.expander(f"🎭 {event.get('theme', 'Event')} - {event.get('created_at', 'Unknown date')}"):
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.markdown(f"**Description:** {event.get('description', 'No description')}")
-                
-                st.markdown("##### 💺 Seating")
-                seating = event.get('seating', {})
-                st.markdown(seating.get('layout', 'No seating information'))
-                
-                st.markdown("##### 🎭 Decor")
-                for item in event.get('decor', ['No decor information']):
-                    st.markdown(f"- {item}")
-                
-                st.markdown("##### 🍽️ Recipes")
-                for item in event.get('recipes', ['No recipe information']):
-                    st.markdown(f"- {item}")
-            
-            with col2:
-                st.markdown("##### ✉️ Invitation")
-                st.info(event.get('invitation', 'No invitation template'))
-                
-                # Invite customers section
-                st.markdown("##### 👥 Invite Customers")
-                
-                # Check if invites were already sent
-                if event.get('invited_customers'):
-                    st.success(f"Invites sent to {len(event.get('invited_customers'))} customers")
-                else:
-                    # Get customers
-                    customers = get_customers()
-                    
-                    if not customers:
-                        st.warning("No customers found in the system")
-                    else:
-                        # Multi-select for customers
-                        selected_customers = st.multiselect(
-                            "Select customers to invite:",
-                            options=[c['user_id'] for c in customers],
-                            format_func=lambda x: next((c['username'] for c in customers if c['user_id'] == x), x)
-                        )
-                        
-                        if selected_customers:
-                            if st.button("Send Invites", key=f"send_invite_{event.get('id', '')}"):
-                                if send_invites(event.get('id', ''), selected_customers):
-                                    st.success(f"Invites sent to {len(selected_customers)} customers!")
-                                    st.rerun()
-                                else:
-                                    st.error("Failed to send invites. Please try again.")
-
 def render_user_invites():
     """Render the user's event invites UI"""
     st.markdown("### 📬 My Event Invites")
-
-    # Get current user
-    user = st.session_state.get('user')
-    if not user:
-        st.warning("Please log in to view your invites")
-        return
-
-    user_id = user.get('user_id')
-
-    try:
-        # Fetch user's invites
-        db = get_event_db()
-        if not db:
-            st.error("Failed to connect to database")
-            return
-            
-        invites_ref = db.collection('invites')
-        invites_docs = invites_ref.where('customer_id', '==', user_id).get()
-        
-        invites = []
-        for doc in invites_docs:
-            invite = doc.to_dict()
-            # Get event details
-            event_ref = db.collection('events').document(invite.get('event_id', ''))
-            event_doc = event_ref.get()
-            
-            if event_doc.exists:
-                event_data = event_doc.to_dict()
-                invite['event'] = event_data
-                
-            invites.append(invite)
-        
-        if not invites:
-            st.info("You don't have any event invites yet.")
-            return
-        
-        # Display invites
-        for invite in invites:
-            event = invite.get('event', {})
-            
-            with st.expander(f"🎉 {event.get('theme', 'Event')}"):
-                st.markdown(f"**Description:** {event.get('description', 'No description')}")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("##### 🍽️ Recipes")
-                    for item in event.get('recipes', ['No recipe information']):
-                        st.markdown(f"- {item}")
-                
-                with col2:
-                    st.markdown("##### ✉️ Invitation")
-                    st.info(event.get('invitation', 'No invitation template'))
-                
-                # RSVP buttons
-                st.markdown("##### RSVP")
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if st.button("✅ Accept", key=f"accept_{invite.get('event_id', '')}"):
-                        # Update invite status
-                        invite_id = f"{invite.get('event_id', '')}_{user_id}"
-                        db.collection('invites').document(invite_id).update({
-                            'status': 'accepted',
-                            'responded_at': datetime.now()
-                        })
-                        st.success("You've accepted the invitation!")
-                        st.rerun()
-                
-                with col2:
-                    if st.button("❌ Decline", key=f"decline_{invite.get('event_id', '')}"):
-                        # Update invite status
-                        invite_id = f"{invite.get('event_id', '')}_{user_id}"
-                        db.collection('invites').document(invite_id).update({
-                            'status': 'declined',
-                            'responded_at': datetime.now()
-                        })
-                        st.success("You've declined the invitation.")
-                        st.rerun()
-
-    except Exception as e:
-        logger.error(f"Error fetching invites: {str(e)}")
-        st.error(f"Failed to load invites: {str(e)}")
+    st.info("Event invites feature has been disabled.")
 
 # Main Event Planner Function
 def event_planner():
@@ -665,14 +384,8 @@ def event_planner():
 
     # Different views based on role
     if user_role in ['admin', 'staff', 'chef']:
-        # Staff view with tabs for chatbot and dashboard
-        tab1, tab2 = st.tabs(["🤖 Event Planner", "📊 Event Dashboard"])
-        
-        with tab1:
-            render_chatbot_ui()
-            
-        with tab2:
-            render_event_dashboard()
+        # Staff view with only chatbot
+        render_chatbot_ui()
     else:
         # Customer view - only shows their invites
         render_user_invites()
