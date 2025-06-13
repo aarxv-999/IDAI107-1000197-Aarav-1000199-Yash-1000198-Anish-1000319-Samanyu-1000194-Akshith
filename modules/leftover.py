@@ -172,7 +172,7 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
     except Exception as e:
         logger.error(f"Error using Gemini API: {str(e)}")
         logger.exception("Full exception details:")
-        return []
+        raise Exception(f"Error generating recipes: {str(e)}")
 
 # ------------------ Gamification Functions ------------------
 
