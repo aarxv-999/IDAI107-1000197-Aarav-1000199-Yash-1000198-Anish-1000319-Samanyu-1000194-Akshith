@@ -149,38 +149,57 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
         # Generate a unique ID if not provided
         event_id = event_data.get('id', str(uuid.uuid4()))
 
-        # Prepare the data as seen in your Firestore screenshot
+        # Format the current timestamp in the exact format shown in your Firestore
+        current_time = datetime.utcnow()
+        formatted_time = current_time.strftime('%d %B %Y at %H:%M:%S UTC+%z')
+        if not formatted_time.endswith('UTC+'):
+            formatted_time = current_time.strftime('%d %B %Y at %H:%M:%S UTC')
+
+        # Prepare the data exactly as seen in your Firestore screenshot
         firestore_data = {
             'id': event_id,
             'description': event_data.get('description', ''),
             'decor': event_data.get('decor', []),
             'invitation': event_data.get('invitation', ''),
             'created_by': event_data.get('created_by', 'admin'),
-            'created_at': datetime.utcnow().strftime('%d %B %Y at %H:%M:%S UTC'),
-            'menu': event_data.get('menu', []),
+            'created_at': formatted_time,  # Use formatted string instead of timestamp
+            'menu': event_data.get('menu', []),  # This should match your Firestore structure
             'seating': event_data.get('seating', {}),
             'theme': event_data.get('theme', ''),
         }
 
+        # Debug logging
+        logger.info(f"Attempting to save event with data: {firestore_data}")
+
         # Save to Firestore using the event_id as document ID
         events_ref = db.collection('events')
         doc_ref = events_ref.document(event_id)
-        doc_ref.set(firestore_data)
+        
+        # Use set with merge=False to ensure clean write
+        doc_ref.set(firestore_data, merge=False)
 
-        logger.info(f"Event saved successfully with ID: {event_id}")
+        logger.info(f"Event document created with ID: {event_id}")
+
+        # Add a small delay to ensure write completion
+        import time
+        time.sleep(1)
 
         # Verify the document was actually saved
         saved_doc = doc_ref.get()
         if saved_doc.exists:
+            saved_data = saved_doc.to_dict()
             logger.info(f"Event verification successful: {event_id}")
+            logger.info(f"Saved data: {saved_data}")
             return True, event_id
         else:
             logger.error(f"Event not found after saving: {event_id}")
-            return False, "Event was not saved properly"
+            return False, "Event was not saved properly - document does not exist"
 
     except Exception as e:
         error_msg = f"Error saving event: {str(e)}"
         logger.error(error_msg)
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         return False, error_msg
 
 def get_all_events() -> List[Dict]:
@@ -197,31 +216,26 @@ def get_all_events() -> List[Dict]:
             return []
             
         events_ref = db.collection('events')
-        # Order by created_at descending (newest first)
-        events_docs = events_ref.order_by('created_at', direction=firestore.Query.DESCENDING).get()
+        # Order by created_at descending (newest first) - but handle string timestamps
+        events_docs = events_ref.get()  # Get all first, then sort in Python
         
         events = []
         for doc in events_docs:
             event = doc.to_dict()
             event['doc_id'] = doc.id  # Store the document ID
             
-            # Handle timestamp conversion
-            if 'created_at' in event:
-                try:
-                    if hasattr(event['created_at'], 'timestamp'):
-                        # Convert Firestore timestamp to datetime string
-                        event['created_at'] = event['created_at'].strftime("%Y-%m-%d %H:%M:%S")
-                    elif isinstance(event['created_at'], datetime):
-                        event['created_at'] = event['created_at'].strftime("%Y-%m-%d %H:%M:%S")
-                    else:
-                        event['created_at'] = str(event['created_at'])
-                except Exception as timestamp_error:
-                    logger.warning(f"Error converting timestamp: {timestamp_error}")
-                    event['created_at'] = "Unknown date"
-            else:
+            # Handle timestamp - keep as string since that's how it's stored
+            if 'created_at' not in event:
                 event['created_at'] = "Unknown date"
                 
             events.append(event)
+        
+        # Sort by created_at (newest first) - handle string dates
+        try:
+            events.sort(key=lambda x: datetime.strptime(x.get('created_at', '01 January 1970 at 00:00:00 UTC').split(' at ')[0], '%d %B %Y'), reverse=True)
+        except:
+            # If sorting fails, just return as is
+            pass
             
         logger.info(f"Retrieved {len(events)} events from Firestore")
         return events
@@ -238,8 +252,15 @@ def get_customers() -> List[Dict]:
         List of customers as dictionaries
     """
     try:
-        # Use the main Firebase app for user data
-        db = firestore.client()
+        # Try to use the main Firebase app for user data, fallback to event app
+        try:
+            db = firestore.client()
+        except:
+            db = get_event_db()
+            
+        if not db:
+            return []
+            
         users_ref = db.collection('users')
         
         # Get users with role 'user' (customers)
@@ -500,25 +521,34 @@ def render_chatbot_ui():
                     col1, col2 = st.columns([1, 1])
                     with col1:
                         if st.button("💾 Save Event Plan", type="primary", key="save_event_btn"):
-                            # Prepare event data
-                            event_data = {
-                                'description': event_plan['theme']['description'],
-                                'decor': event_plan['decor'],
-                                'menu': event_plan['recipe_suggestions'],  # Use 'menu' instead of 'recipes'
-                                'invitation': event_plan['invitation'],
-                                'seating': event_plan['seating'],
-                                'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'admin',
-                                'theme': event_plan['theme']['name']
-                            }
-                            
-                            # Save to Firestore
-                            success, result = save_event_to_firestore(event_data)
-                            if success:
-                                st.success(f"✅ Event plan saved successfully! Event ID: {result}")
-                                st.session_state.current_event_plan = None
-                                st.rerun()
-                            else:
-                                st.error(f"❌ Failed to save event plan: {result}")
+                            with st.spinner("Saving event..."):
+                                # Prepare event data with correct field mapping
+                                event_data = {
+                                    'description': event_plan['theme']['description'],
+                                    'decor': event_plan['decor'],
+                                    'menu': event_plan['recipe_suggestions'],  # Use 'menu' to match Firestore
+                                    'invitation': event_plan['invitation'],
+                                    'seating': event_plan['seating'],
+                                    'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'admin',
+                                    'theme': event_plan['theme']['name']
+                                }
+                                
+                                # Debug logging
+                                st.write("Debug: Saving event data:", event_data)
+                                
+                                # Save to Firestore
+                                success, result = save_event_to_firestore(event_data)
+                                if success:
+                                    st.success(f"✅ Event plan saved successfully! Event ID: {result}")
+                                    st.balloons()
+                                    # Clear the current plan
+                                    st.session_state.current_event_plan = None
+                                    # Force refresh by clearing cache and rerunning
+                                    time.sleep(2)
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ Failed to save event plan: {result}")
+                                    st.write("Debug: Full error details:", result)
                     
                     with col2:
                         if st.button("🔄 Generate New Plan", key="new_plan_btn"):
@@ -572,10 +602,6 @@ def render_event_dashboard():
                 st.markdown(f"**Description:** {event.get('description', 'No description')}")
                 st.markdown(f"**Created by:** {event.get('created_by', 'Unknown')}")
                 
-                # Display original query if available
-                if event.get('query'):
-                    st.markdown(f"**Original Request:** _{event.get('query')}_")
-                
                 st.markdown("##### 💺 Seating")
                 seating = event.get('seating', {})
                 if isinstance(seating, dict):
@@ -596,13 +622,14 @@ def render_event_dashboard():
                 else:
                     st.markdown("No decor information")
                 
-                st.markdown("##### 🍽️ Recipes")
-                recipes = event.get('recipes', [])
-                if recipes:
-                    for item in recipes:
+                st.markdown("##### 🍽️ Menu")
+                # Use 'menu' instead of 'recipes' to match Firestore structure
+                menu_items = event.get('menu', [])
+                if menu_items:
+                    for item in menu_items:
                         st.markdown(f"- {item}")
                 else:
-                    st.markdown("No recipe information")
+                    st.markdown("No menu information")
             
             with col2:
                 st.markdown("##### ✉️ Invitation")
@@ -692,13 +719,13 @@ def render_user_invites():
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.markdown("##### 🍽️ Recipes")
-                    recipes = event.get('recipes', [])
-                    if recipes:
-                        for item in recipes:
+                    st.markdown("##### 🍽️ Menu")
+                    menu_items = event.get('menu', [])
+                    if menu_items:
+                        for item in menu_items:
                             st.markdown(f"- {item}")
                     else:
-                        st.markdown("No recipe information")
+                        st.markdown("No menu information")
                 
                 with col2:
                     st.markdown("##### ✉️ Invitation")
