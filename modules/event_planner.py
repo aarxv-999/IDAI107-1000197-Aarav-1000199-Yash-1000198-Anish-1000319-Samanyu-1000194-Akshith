@@ -10,6 +10,7 @@ import firebase_admin
 from firebase_admin import firestore, credentials
 import logging
 import time
+import traceback
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -17,8 +18,6 @@ logger = logging.getLogger('event_planner')
 
 # Initialize Firebase for event data
 def init_event_firebase():
-    st.write("Firebase secret type:", st.secrets.get("event_firebase_type", "MISSING"))
-
     """Initialize the Firebase Admin SDK for event data"""
     if not firebase_admin._apps or 'event_app' not in [app.name for app in firebase_admin._apps.values()]:
         try:
@@ -36,12 +35,11 @@ def init_event_firebase():
                 "client_x509_cert_url": os.getenv("EVENT_FIREBASE_CLIENT_X509_CERT_URL", st.secrets.get("event_firebase_client_x509_cert_url")),
             })
             firebase_admin.initialize_app(cred, name='event_app')
-            st.success("✅ Firebase app initialized successfully")
-
             logger.info("Event Firebase initialized successfully")
             return True
         except Exception as e:
             logger.error(f"Failed to initialize Event Firebase: {str(e)}")
+            logger.error(traceback.format_exc())
             st.error(f"Failed to initialize Event Firebase. Please check your credentials: {str(e)}")
             return False
     return True
@@ -51,6 +49,41 @@ def get_event_db():
     if init_event_firebase():
         return firestore.client(app=firebase_admin.get_app(name='event_app'))
     return None
+
+def test_firestore_connection():
+    """
+    Test function to verify Firestore connectivity and write permissions.
+    """
+    try:
+        # Get Firestore client
+        db = get_event_db()
+        if not db:
+            return False, "Failed to get database connection"
+        
+        # Create a test document
+        test_id = f"test_{uuid.uuid4()}"
+        test_data = {
+            'id': test_id,
+            'test': True,
+            'timestamp': datetime.utcnow(),
+            'message': 'This is a test document'
+        }
+        
+        # Try to write to Firestore
+        db.collection('test_collection').document(test_id).set(test_data)
+        
+        # Verify the write
+        test_doc = db.collection('test_collection').document(test_id).get()
+        
+        if test_doc.exists:
+            # Clean up
+            db.collection('test_collection').document(test_id).delete()
+            return True, "Firestore connection and write permissions verified"
+        else:
+            return False, "Failed to verify document creation"
+            
+    except Exception as e:
+        return False, f"Error testing Firestore: {str(e)}\n{traceback.format_exc()}"
 
 # AI Model Configuration
 def configure_ai_model():
@@ -136,64 +169,67 @@ def get_available_ingredients() -> List[Dict]:
 
 def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
     """
-    Save event data to Firestore in the correct format as per dashboard requirements.
-
+    Save event data to Firestore with enhanced error handling and debugging.
+    
     Args:
         event_data: Dictionary containing event details
-
+        
     Returns:
         Tuple of (success_boolean, event_id_or_error_message)
     """
     try:
+        # Get Firestore client
         db = get_event_db()
         if not db:
             logger.error("Failed to get database connection")
             return False, "Database connection failed"
-
+            
         # Generate a unique ID if not provided
         event_id = event_data.get('id', str(uuid.uuid4()))
-
-        # Format the current timestamp
-        current_time = datetime.utcnow()
-        formatted_time = current_time.strftime('%d %B %Y at %H:%M:%S UTC')
-
-        # Prepare the data
+        
+        # Log the event ID
+        logger.info(f"Generated event ID: {event_id}")
+        
+        # Format the data for Firestore
         firestore_data = {
             'id': event_id,
-            'description': event_data.get('description', ''),
             'theme': event_data.get('theme', 'Untitled Event'),
+            'description': event_data.get('description', ''),
             'decor': event_data.get('decor', []),
             'invitation': event_data.get('invitation', ''),
             'created_by': event_data.get('created_by', 'unknown'),
-            'created_at': current_time,  # Store as actual timestamp
+            'created_at': datetime.utcnow(),
             'seating': {
                 'layout': event_data.get('seating', {}).get('layout', ''),
-                'tables': event_data.get('seating', {}).get('tables', []),
+                'tables': event_data.get('seating', {}).get('tables', [])
             },
-            'menu': event_data.get('recipes', [])  # Store recipes as menu
+            'menu': event_data.get('recipes', [])
         }
-
+        
         # Log the data being saved
         logger.info(f"Attempting to save event with ID: {event_id}")
-        logger.info(f"Full event data: {firestore_data}")
-
-        # Save to Firestore
-        events_ref = db.collection('events')
-        events_ref.document(event_id).set(firestore_data)  # Use document with ID directly
-
-        # Verify the document was saved
-        saved_doc = events_ref.document(event_id).get()
+        logger.info(f"Event data: {str(firestore_data)}")
+        
+        # DIRECT APPROACH: Use the collection reference directly
+        events_collection = db.collection('events')
+        
+        # Set the document with the event ID
+        events_collection.document(event_id).set(firestore_data)
+        
+        # Verify the save was successful
+        logger.info(f"Checking if document {event_id} was saved...")
+        saved_doc = events_collection.document(event_id).get()
+        
         if saved_doc.exists:
-            logger.info(f"Event document saved successfully with ID: {event_id}")
+            logger.info(f"✅ Event saved successfully with ID: {event_id}")
             return True, event_id
         else:
-            logger.error(f"Event not found after saving: {event_id}")
-            return False, "Event was not saved properly - document does not exist"
-
+            logger.error(f"❌ Document {event_id} not found after save operation")
+            return False, "Event was not saved - document does not exist after save"
+            
     except Exception as e:
         error_msg = f"Error saving event: {str(e)}"
         logger.error(error_msg)
-        import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
         return False, error_msg
 
@@ -510,30 +546,51 @@ def render_chatbot_ui():
                     col1, col2 = st.columns([1, 1])
                     with col1:
                         if st.button("💾 Save Event Plan", type="primary", key="save_event_btn"):
-                            with st.spinner("Saving event..."):
-                                event_data = {
-                                    'id': str(uuid.uuid4()),  # Generate a new UUID for each event
-                                    'theme': event_plan['theme']['name'],
-                                    'description': event_plan['theme']['description'],
-                                    'decor': event_plan['decor'],
-                                    'recipes': event_plan['recipe_suggestions'],
-                                    'invitation': event_plan['invitation'],
-                                    'seating': event_plan['seating'],
-                                    'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'unknown'
-                                }
-
-                                logger.info(f"Saving event data: {event_data}")
-                                success, result = save_event_to_firestore(event_data)
-                                if success:
-                                    st.success(f"✅ Event plan saved successfully! Event ID: {result}")
-                                    st.balloons()
-                                    # Clear the current plan but avoid immediate rerun
-                                    st.session_state.current_event_plan = None
-                                    time.sleep(1)  # Small delay to ensure save
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ Failed to save event plan: {result}")
-                                    st.write("Debug: Full error details:", result)
+                            with st.spinner("Saving event to Firestore..."):
+                                try:
+                                    # Generate a unique ID for this event
+                                    new_event_id = str(uuid.uuid4())
+                                    
+                                    # Prepare the event data
+                                    event_data = {
+                                        'id': new_event_id,
+                                        'theme': event_plan['theme']['name'],
+                                        'description': event_plan['theme']['description'],
+                                        'decor': event_plan['decor'],
+                                        'recipes': event_plan['recipe_suggestions'],
+                                        'invitation': event_plan['invitation'],
+                                        'seating': event_plan['seating'],
+                                        'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'unknown'
+                                    }
+                                    
+                                    # Log the data we're about to save
+                                    st.write("Saving event data:", event_data)
+                                    logger.info(f"Attempting to save event with ID {new_event_id}")
+                                    
+                                    # Call the save function
+                                    success, result = save_event_to_firestore(event_data)
+                                    
+                                    if success:
+                                        st.success(f"✅ Event plan saved successfully! Event ID: {result}")
+                                        st.balloons()
+                                        
+                                        # Clear the current plan but avoid immediate rerun
+                                        st.session_state.current_event_plan = None
+                                        time.sleep(1)  # Small delay to ensure save
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ Failed to save event plan: {result}")
+                                        st.error("Please try again or contact support.")
+                                        
+                                        # Add debug information
+                                        with st.expander("Debug Information"):
+                                            st.code(f"Error: {result}")
+                                            st.write("Event Data:", event_data)
+                                            
+                                except Exception as e:
+                                    st.error(f"❌ An error occurred: {str(e)}")
+                                    with st.expander("Error Details"):
+                                        st.code(traceback.format_exc())
                     
                     with col2:
                         if st.button("🔄 Generate New Plan", key="new_plan_btn"):
@@ -557,6 +614,39 @@ def render_chatbot_ui():
 def render_event_dashboard():
     """Render the event dashboard UI"""
     st.markdown("### 📊 Event Dashboard")
+    
+    # Add diagnostic section
+    with st.expander("🔧 Diagnostics"):
+        if st.button("Test Firestore Connection"):
+            with st.spinner("Testing Firestore connection..."):
+                success, message = test_firestore_connection()
+                if success:
+                    st.success(f"✅ {message}")
+                else:
+                    st.error(f"❌ {message}")
+                    
+        # Add a direct save test
+        if st.button("Test Direct Save"):
+            with st.spinner("Testing direct save to Firestore..."):
+                try:
+                    test_id = f"manual_test_{uuid.uuid4()}"
+                    test_data = {
+                        'id': test_id,
+                        'theme': 'Test Event',
+                        'description': 'This is a test event',
+                        'created_at': datetime.utcnow(),
+                        'created_by': 'admin_test'
+                    }
+                    
+                    db = get_event_db()
+                    if db:
+                        # Direct save to Firestore
+                        db.collection('events').document(test_id).set(test_data)
+                        st.success(f"✅ Test event saved with ID: {test_id}")
+                    else:
+                        st.error("❌ Failed to get database connection")
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
     
     # Add refresh button
     col1, col2 = st.columns([1, 4])
@@ -763,6 +853,40 @@ def event_planner():
     # Get user role
     user_role = st.session_state.user.get('role', 'user')
 
+    # Add a diagnostic section for admins
+    if user_role == 'admin':
+        with st.expander("🔧 Firebase Diagnostics"):
+            if st.button("Test Firestore Connection"):
+                with st.spinner("Testing Firestore connection..."):
+                    success, message = test_firestore_connection()
+                    if success:
+                        st.success(f"✅ {message}")
+                    else:
+                        st.error(f"❌ {message}")
+                        
+            # Add a direct save test
+            if st.button("Test Direct Save"):
+                with st.spinner("Testing direct save to Firestore..."):
+                    try:
+                        test_id = f"manual_test_{uuid.uuid4()}"
+                        test_data = {
+                            'id': test_id,
+                            'theme': 'Test Event',
+                            'description': 'This is a test event',
+                            'created_at': datetime.utcnow(),
+                            'created_by': 'admin_test'
+                        }
+                        
+                        db = get_event_db()
+                        if db:
+                            # Direct save to Firestore
+                            db.collection('events').document(test_id).set(test_data)
+                            st.success(f"✅ Test event saved with ID: {test_id}")
+                        else:
+                            st.error("❌ Failed to get database connection")
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+
     # Different views based on role
     if user_role in ['admin', 'staff', 'chef']:
         # Staff view with tabs for chatbot and dashboard
@@ -790,157 +914,3 @@ if __name__ == "__main__":
         }
 
     event_planner()
-
-class EventPlanner:
-    def __init__(self):
-        self.events = []
-        self.users = {}  # Dictionary to store user information (e.g., username, password, invites)
-
-    def create_event(self, name, date, location, description, organizer):
-        """Creates a new event."""
-        event_id = len(self.events) + 1
-        event = {
-            'id': event_id,
-            'name': name,
-            'date': date,
-            'location': location,
-            'description': description,
-            'organizer': organizer,
-            'attendees': [],
-            'invites': []
-        }
-        self.events.append(event)
-        print(f"Event '{name}' created successfully with ID: {event_id}")
-        return event_id
-
-    def get_event(self, event_id):
-        """Retrieves an event by its ID."""
-        for event in self.events:
-            if event['id'] == event_id:
-                return event
-        return None
-
-    def update_event(self, event_id, name=None, date=None, location=None, description=None):
-        """Updates an existing event."""
-        event = self.get_event(event_id)
-        if event:
-            if name:
-                event['name'] = name
-            if date:
-                event['date'] = date
-            if location:
-                event['location'] = location
-            if description:
-                event['description'] = description
-            print(f"Event '{event['name']}' updated successfully.")
-        else:
-            print("Event not found.")
-
-    def delete_event(self, event_id):
-        """Deletes an event."""
-        event = self.get_event(event_id)
-        if event:
-            self.events.remove(event)
-            print(f"Event '{event['name']}' deleted successfully.")
-        else:
-            print("Event not found.")
-
-    def add_attendee(self, event_id, attendee_name):
-        """Adds an attendee to an event."""
-        event = self.get_event(event_id)
-        if event:
-            if attendee_name not in event['attendees']:
-                event['attendees'].append(attendee_name)
-                print(f"Attendee '{attendee_name}' added to event '{event['name']}'.")
-            else:
-                print(f"Attendee '{attendee_name}' is already attending event '{event['name']}'.")
-        else:
-            print("Event not found.")
-
-    def remove_attendee(self, event_id, attendee_name):
-        """Removes an attendee from an event."""
-        event = self.get_event(event_id)
-        if event:
-            if attendee_name in event['attendees']:
-                event['attendees'].remove(attendee_name)
-                print(f"Attendee '{attendee_name}' removed from event '{event['name']}'.")
-            else:
-                print(f"Attendee '{attendee_name}' is not attending event '{event['name']}'.")
-        else:
-            print("Event not found.")
-
-    def list_events(self):
-        """Lists all events."""
-        if not self.events:
-            print("No events found.")
-        else:
-            print("Upcoming Events:")
-            for event in self.events:
-                print(f"  ID: {event['id']}, Name: {event['name']}, Date: {event['date']}, Location: {event['location']}")
-
-    def create_user(self, username, password):
-        """Creates a new user."""
-        if username in self.users:
-            print("Username already exists.")
-            return False
-        else:
-            self.users[username] = {'password': password, 'invites': []}
-            print(f"User '{username}' created successfully.")
-            return True
-
-    def login_user(self, username, password):
-        """Logs in an existing user."""
-        if username in self.users and self.users[username]['password'] == password:
-            print(f"User '{username}' logged in successfully.")
-            return True
-        else:
-            print("Invalid username or password.")
-            return False
-
-    def invite_user_to_event(self, event_id, username):
-        """Invites a user to an event."""
-        event = self.get_event(event_id)
-        if not event:
-            print("Event not found.")
-            return False
-
-        if username not in self.users:
-            print("User not found.")
-            return False
-
-        if username in event['invites']:
-            print(f"User '{username}' is already invited to this event.")
-            return False
-
-        event['invites'].append(username)
-        self.users[username]['invites'].append(event_id)
-        print(f"User '{username}' invited to event '{event['name']}'.")
-        return True
-
-    def render_user_invites(self, username):
-        """Renders the invites for a specific user."""
-        if username not in self.users:
-            print("User not found.")
-            return
-
-        invites = self.users[username]['invites']
-        if not invites:
-            print("No invites found for this user.")
-            return
-
-        print(f"Invites for user '{username}':")
-        for event_id in invites:
-            event = self.get_event(event_id)
-            if event:
-                print(f"  Event: {event['name']}, Date: {event['date']}, Location: {event['location']}")
-            else:
-                print(f"  Event ID: {event_id} (Event not found)") # Handle case where event was deleted
-
-    def view_events(self, username, is_admin=False):
-        """Allows users to view events, with admin having full access."""
-        if is_admin:
-            # Admin view - shows all events
-            self.list_events()
-        else:
-            # Customer view - only shows their invites
-            self.render_user_invites(username)
