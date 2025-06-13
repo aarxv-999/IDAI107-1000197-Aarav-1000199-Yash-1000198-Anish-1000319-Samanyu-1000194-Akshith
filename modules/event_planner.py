@@ -16,6 +16,8 @@ logger = logging.getLogger('event_planner')
 
 # Initialize Firebase for event data
 def init_event_firebase():
+    st.write("Firebase secret type:", st.secrets.get("event_firebase_type", "MISSING"))
+
     """Initialize the Firebase Admin SDK for event data"""
     if not firebase_admin._apps or 'event_app' not in [app.name for app in firebase_admin._apps.values()]:
         try:
@@ -33,6 +35,8 @@ def init_event_firebase():
                 "client_x509_cert_url": os.getenv("EVENT_FIREBASE_CLIENT_X509_CERT_URL", st.secrets.get("event_firebase_client_x509_cert_url")),
             })
             firebase_admin.initialize_app(cred, name='event_app')
+            st.success("✅ Firebase app initialized successfully")
+
             logger.info("Event Firebase initialized successfully")
             return True
         except Exception as e:
@@ -160,7 +164,7 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
             'decor': event_data.get('decor', []),
             'invitation': event_data.get('invitation', ''),
             'created_by': event_data.get('created_by', 'unknown'),
-            'created_at': firestore.SERVER_TIMESTAMP,
+            'created_at': datetime.utcnow(),
             'seating': {
                 'layout': event_data.get('seating', {}).get('layout', ''),
                 'tables': event_data.get('seating', {}).get('tables', []),
@@ -173,6 +177,8 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
         # Log the data being saved
         logger.info(f"Attempting to save event with ID: {event_id}")
         logger.info(f"Full event data: {firestore_data}")
+        logger.info("Attempting to save event to Firestore:", firestore_data)
+        st.write("DEBUG - Attempting to save:", firestore_data)  # Add this too
 
         # Save to Firestore
         events_ref = db.collection('events')
@@ -522,6 +528,7 @@ def render_chatbot_ui():
                                 }
 
                                 logger.info(f"Saving event data: {event_data}")
+                                st.write("Saving this event data:", event_data)
                                 success, result = save_event_to_firestore(event_data)
                                 if success:
                                     st.success(f"✅ Event plan saved successfully! Event ID: {result}")
