@@ -2,7 +2,7 @@ import streamlit as st
 st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
 
 from ui.components import (  # Import UI functions
-    leftover_input_csv, leftover_input_manual,
+    leftover_input_csv, leftover_input_manual, leftover_input_firebase
 )
 from ui.components import (
     render_auth_ui, initialize_session_state, auth_required, get_current_user, is_user_role
