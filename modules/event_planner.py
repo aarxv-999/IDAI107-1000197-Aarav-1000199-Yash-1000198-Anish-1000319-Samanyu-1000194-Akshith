@@ -44,11 +44,9 @@ def init_event_firebase():
                 "client_x509_cert_url": st.secrets["event_firebase_client_x509_cert_url"],
             })
             firebase_admin.initialize_app(cred, name='event_app')
-            logger.info("Event Firebase initialized successfully")
             return True
         except Exception as e:
             logger.error(f"Failed to initialize Event Firebase: {str(e)}")
-            # Fallback to display error in UI
             st.error(f"Failed to initialize Event Firebase. Please check your credentials.")
             return False
     return True
@@ -199,7 +197,6 @@ def save_event_to_firestore(event_data: Dict) -> bool:
     try:
         db = get_event_db()
         if not db:
-            logger.error("Failed to get Firestore database client")
             return False
             
         # Generate a unique ID if not provided
@@ -209,31 +206,17 @@ def save_event_to_firestore(event_data: Dict) -> bool:
         # Add timestamp
         event_data['created_at'] = datetime.now()
         
-        # Log event data being saved
-        logger.info(f"Saving event with ID: {event_data['id']} to 'events' collection")
-        logger.info(f"Event theme: {event_data.get('theme', 'Unknown')}")
-        
-        # Ensure all required fields are present
-        required_fields = ['theme', 'description', 'recipes', 'invitation']
-        for field in required_fields:
-            if field not in event_data:
-                logger.warning(f"Missing required field '{field}' in event data")
-        
         # Save to Firestore events collection
         events_ref = db.collection('events')
         events_ref.document(event_data['id']).set(event_data)
         
-        # Verify the event was saved
-        saved_doc = events_ref.document(event_data['id']).get()
-        if saved_doc.exists:
-            logger.info(f"Event successfully saved and verified in 'events' collection with ID: {event_data['id']}")
-            return True
-        else:
-            logger.error(f"Event save verification failed for ID: {event_data['id']}")
-            return False
+        # Force a refresh of the session state to ensure the dashboard updates
+        if 'events_cache' in st.session_state:
+            del st.session_state.events_cache
             
+        return True
     except Exception as e:
-        logger.error(f"Error saving event to 'events' collection: {str(e)}", exc_info=True)
+        logger.error(f"Error saving event to 'events' collection: {str(e)}")
         return False
 
 def get_all_events() -> List[Dict]:
@@ -243,23 +226,16 @@ def get_all_events() -> List[Dict]:
     Returns:
         List of events as dictionaries
     """
+    # Check if we have cached events
+    if 'events_cache' in st.session_state:
+        return st.session_state.events_cache
+        
     try:
         db = get_event_db()
         if not db:
-            logger.error("Failed to get Firestore database client for event retrieval")
             return []
             
-        logger.info("Fetching events from 'events' collection")
         events_ref = db.collection('events')
-        
-        # First check if the collection exists and has documents
-        collection_ref = db.collection('events')
-        docs = collection_ref.limit(1).get()
-        if not docs:
-            logger.warning("The 'events' collection exists but contains no documents")
-            return []
-            
-        # Get all events, ordered by creation time
         events_docs = events_ref.order_by('created_at', direction=firestore.Query.DESCENDING).get()
         
         events = []
@@ -270,15 +246,11 @@ def get_all_events() -> List[Dict]:
                 event['created_at'] = event['created_at'].strftime("%Y-%m-%d %H:%M")
             events.append(event)
         
-        logger.info(f"Retrieved {len(events)} events from 'events' collection")
-        
-        # Log the first event for debugging
-        if events:
-            logger.info(f"First event theme: {events[0].get('theme', 'Unknown')}")
-            
+        # Cache the events
+        st.session_state.events_cache = events
         return events
     except Exception as e:
-        logger.error(f"Error fetching events from 'events' collection: {str(e)}", exc_info=True)
+        logger.error(f"Error fetching events from 'events' collection: {str(e)}")
         return []
 
 def get_customers() -> List[Dict]:
@@ -358,7 +330,10 @@ def send_invites(event_id: str, customer_ids: List[str]) -> bool:
             'last_invite_sent': datetime.now()
         })
         
-        logger.info(f"Invites sent to {len(customer_ids)} customers for event {event_id}")
+        # Clear events cache to refresh the dashboard
+        if 'events_cache' in st.session_state:
+            del st.session_state.events_cache
+            
         return True
     except Exception as e:
         logger.error(f"Error sending invites: {str(e)}")
@@ -759,6 +734,7 @@ def render_chatbot_ui():
                     if st.button("💾 Save Event Plan", type="primary"):
                         # Prepare event data
                         event_data = {
+                            'id': str(uuid.uuid4()),  # Explicitly set ID
                             'theme': event_plan['theme']['name'],
                             'description': event_plan['theme']['description'],
                             'seating': event_plan['seating'],
@@ -766,15 +742,21 @@ def render_chatbot_ui():
                             'recipes': event_plan['recipe_suggestions'],
                             'invitation': event_plan['invitation'],
                             'query': user_query,
-                            'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'unknown'
+                            'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'unknown',
+                            'created_at': datetime.now()  # Explicitly set timestamp
                         }
                         
                         # Save to Firestore
                         if save_event_to_firestore(event_data):
                             st.success("Event plan saved successfully!")
+                            
+                            # Clear the events cache to force refresh
+                            if 'events_cache' in st.session_state:
+                                del st.session_state.events_cache
+                                
                             # Set a flag to switch to the dashboard tab after saving
-                            if 'switch_to_dashboard' not in st.session_state:
-                                st.session_state.switch_to_dashboard = True
+                            st.session_state.switch_to_dashboard = True
+                            
                             # Force a rerun to refresh the dashboard
                             st.rerun()
                         else:
@@ -828,7 +810,12 @@ def render_event_dashboard():
             if events_raw:
                 st.json(events_raw[0])
 
-    # Fetch events
+    # Fetch events - force refresh by clearing cache
+    if st.button("🔄 Refresh Events"):
+        if 'events_cache' in st.session_state:
+            del st.session_state.events_cache
+        st.rerun()
+
     events = get_all_events()
 
     if not events:
@@ -876,7 +863,8 @@ def render_event_dashboard():
                         selected_customers = st.multiselect(
                             "Select customers to invite:",
                             options=[c['user_id'] for c in customers],
-                            format_func=lambda x: next((c['username'] for c in customers if c['user_id'] == x), x)
+                            format_func=lambda x: next((c['username'] for c in customers if c['user_id'] == x), x),
+                            key=f"select_customers_{event.get('id', '')}"
                         )
                         
                         if selected_customers:
@@ -886,41 +874,6 @@ def render_event_dashboard():
                                     st.rerun()
                                 else:
                                     st.error("Failed to send invites. Please try again.")
-
-def add_test_event():
-    """
-    Add a test event directly to the events collection
-    For admin debugging purposes
-    """
-    try:
-        db = get_event_db()
-        if not db:
-            return False
-            
-        test_event = {
-            'id': 'test-event-' + str(uuid.uuid4()),
-            'theme': 'Test Event ' + datetime.now().strftime("%H:%M:%S"),
-            'description': 'This is a test event added directly to the events collection.',
-            'seating': {
-                'layout': 'Test layout with round tables',
-                'tables': ['Table 1: 6 guests', 'Table 2: 6 guests', 'Table 3: 4 guests']
-            },
-            'decor': ['Elegant centerpieces', 'Ambient lighting', 'Floral arrangements'],
-            'recipes': ['Spaghetti Carbonara', 'Chicken Stir-Fry', 'Chocolate Chip Cookies'],
-            'invitation': 'You are invited to our test event!',
-            'created_at': datetime.now(),
-            'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'admin'
-        }
-        
-        # Save to Firestore
-        events_ref = db.collection('events')
-        events_ref.document(test_event['id']).set(test_event)
-        
-        logger.info(f"Test event added with ID: {test_event['id']}")
-        return True
-    except Exception as e:
-        logger.error(f"Error adding test event: {str(e)}")
-        return False
 
 def render_user_invites():
     """Render the user's event invites UI"""
@@ -1021,9 +974,6 @@ def event_planner():
 
     # Get user role
     user_role = st.session_state.user.get('role', 'user')
-    
-    # Ensure the events collection exists
-    ensure_events_collection_exists()
 
     # Different views based on role
     if user_role in ['admin', 'staff', 'chef']:
@@ -1042,10 +992,10 @@ def event_planner():
             with tab2:
                 render_event_dashboard()
         else:
-            with tab1:
-                render_chatbot_ui()
             with tab2:
                 render_event_dashboard()
+            with tab1:
+                render_chatbot_ui()
     else:
         # Customer view - only shows their invites
         render_user_invites()
