@@ -19,26 +19,25 @@ def init_event_firebase():
     """Initialize the Firebase Admin SDK for event data"""
     if not firebase_admin._apps or 'event_app' not in [app.name for app in firebase_admin._apps.values()]:
         try:
-            # Use environment variables with EVENT_ prefix
+            # Use environment variables with EVENT_ prefix or Streamlit secrets
             cred = credentials.Certificate({
-                "type": st.secrets["event_firebase_type"],
-                "project_id": st.secrets["event_firebase_project_id"],
-                "private_key_id": st.secrets["event_firebase_private_key_id"],
-                "private_key": st.secrets["event_firebase_private_key"].replace("\\n", "\n"),
-                "client_email": st.secrets["event_firebase_client_email"],
-                "client_id": st.secrets["event_firebase_client_id"],
-                "auth_uri": st.secrets["event_firebase_auth_uri"],
-                "token_uri": st.secrets["event_firebase_token_uri"],
-                "auth_provider_x509_cert_url": st.secrets["event_firebase_auth_provider_x509_cert_url"],
-                "client_x509_cert_url": st.secrets["event_firebase_client_x509_cert_url"],
+                "type": os.getenv("EVENT_FIREBASE_TYPE", st.secrets.get("event_firebase_type")),
+                "project_id": os.getenv("EVENT_FIREBASE_PROJECT_ID", st.secrets.get("event_firebase_project_id")),
+                "private_key_id": os.getenv("EVENT_FIREBASE_PRIVATE_KEY_ID", st.secrets.get("event_firebase_private_key_id")),
+                "private_key": os.getenv("EVENT_FIREBASE_PRIVATE_KEY", st.secrets.get("event_firebase_private_key", "")).replace("\\n", "\n"),
+                "client_email": os.getenv("EVENT_FIREBASE_CLIENT_EMAIL", st.secrets.get("event_firebase_client_email")),
+                "client_id": os.getenv("EVENT_FIREBASE_CLIENT_ID", st.secrets.get("event_firebase_client_id")),
+                "auth_uri": os.getenv("EVENT_FIREBASE_AUTH_URI", st.secrets.get("event_firebase_auth_uri")),
+                "token_uri": os.getenv("EVENT_FIREBASE_TOKEN_URI", st.secrets.get("event_firebase_token_uri")),
+                "auth_provider_x509_cert_url": os.getenv("EVENT_FIREBASE_AUTH_PROVIDER_X509_CERT_URL", st.secrets.get("event_firebase_auth_provider_x509_cert_url")),
+                "client_x509_cert_url": os.getenv("EVENT_FIREBASE_CLIENT_X509_CERT_URL", st.secrets.get("event_firebase_client_x509_cert_url")),
             })
             firebase_admin.initialize_app(cred, name='event_app')
             logger.info("Event Firebase initialized successfully")
             return True
         except Exception as e:
             logger.error(f"Failed to initialize Event Firebase: {str(e)}")
-            # Fallback to display error in UI
-            st.error(f"Failed to initialize Event Firebase. Please check your credentials.")
+            st.error(f"Failed to initialize Event Firebase. Please check your credentials: {str(e)}")
             return False
     return True
 
@@ -149,11 +148,9 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
         # Generate a unique ID if not provided
         event_id = event_data.get('id', str(uuid.uuid4()))
 
-        # Format the current timestamp in the exact format shown in your Firestore
+        # Format the current timestamp
         current_time = datetime.utcnow()
-        formatted_time = current_time.strftime('%d %B %Y at %H:%M:%S UTC+%z')
-        if not formatted_time.endswith('UTC+'):
-            formatted_time = current_time.strftime('%d %B %Y at %H:%M:%S UTC')
+        formatted_time = current_time.strftime('%d %B %Y at %H:%M:%S UTC')
 
         # Prepare the data exactly as seen in your Firestore screenshot
         firestore_data = {
@@ -162,8 +159,8 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
             'decor': event_data.get('decor', []),
             'invitation': event_data.get('invitation', ''),
             'created_by': event_data.get('created_by', 'admin'),
-            'created_at': formatted_time,  # Use formatted string instead of timestamp
-            'menu': event_data.get('menu', []),  # This should match your Firestore structure
+            'created_at': formatted_time,
+            'menu': event_data.get('menu', []),  # Match Firestore structure
             'seating': event_data.get('seating', {}),
             'theme': event_data.get('theme', ''),
         }
@@ -171,25 +168,15 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
         # Debug logging
         logger.info(f"Attempting to save event with data: {firestore_data}")
 
-        # Save to Firestore using the event_id as document ID
+        # Save to Firestore
         events_ref = db.collection('events')
         doc_ref = events_ref.document(event_id)
-        
-        # Use set with merge=False to ensure clean write
-        doc_ref.set(firestore_data, merge=False)
+        doc_ref.set(firestore_data, merge=True)  # Use merge=True to avoid overwriting existing fields
 
-        logger.info(f"Event document created with ID: {event_id}")
-
-        # Add a small delay to ensure write completion
-        import time
-        time.sleep(1)
-
-        # Verify the document was actually saved
+        # Verify the document was saved
         saved_doc = doc_ref.get()
         if saved_doc.exists:
-            saved_data = saved_doc.to_dict()
-            logger.info(f"Event verification successful: {event_id}")
-            logger.info(f"Saved data: {saved_data}")
+            logger.info(f"Event document saved successfully with ID: {event_id}")
             return True, event_id
         else:
             logger.error(f"Event not found after saving: {event_id}")
@@ -216,27 +203,18 @@ def get_all_events() -> List[Dict]:
             return []
             
         events_ref = db.collection('events')
-        # Order by created_at descending (newest first) - but handle string timestamps
-        events_docs = events_ref.get()  # Get all first, then sort in Python
+        events_docs = events_ref.get()  # Get all events
         
         events = []
         for doc in events_docs:
             event = doc.to_dict()
-            event['doc_id'] = doc.id  # Store the document ID
-            
-            # Handle timestamp - keep as string since that's how it's stored
+            event['doc_id'] = doc.id
             if 'created_at' not in event:
                 event['created_at'] = "Unknown date"
-                
             events.append(event)
         
-        # Sort by created_at (newest first) - handle string dates
-        try:
-            events.sort(key=lambda x: datetime.strptime(x.get('created_at', '01 January 1970 at 00:00:00 UTC').split(' at ')[0], '%d %B %Y'), reverse=True)
-        except:
-            # If sorting fails, just return as is
-            pass
-            
+        # Sort by created_at (newest first)
+        events.sort(key=lambda x: datetime.strptime(x.get('created_at', '01 January 1970 at 00:00:00 UTC').split(' at ')[0], '%d %B %Y'), reverse=True)
         logger.info(f"Retrieved {len(events)} events from Firestore")
         return events
         
@@ -522,29 +500,23 @@ def render_chatbot_ui():
                     with col1:
                         if st.button("💾 Save Event Plan", type="primary", key="save_event_btn"):
                             with st.spinner("Saving event..."):
-                                # Prepare event data with correct field mapping
                                 event_data = {
                                     'description': event_plan['theme']['description'],
                                     'decor': event_plan['decor'],
                                     'menu': event_plan['recipe_suggestions'],  # Use 'menu' to match Firestore
                                     'invitation': event_plan['invitation'],
                                     'seating': event_plan['seating'],
-                                    'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'admin',
+                                    'created_by': st.session_state.user.get('user_id', 'admin'),
                                     'theme': event_plan['theme']['name']
                                 }
-                                
-                                # Debug logging
-                                st.write("Debug: Saving event data:", event_data)
-                                
-                                # Save to Firestore
+                                logger.info(f"Saving event data: {event_data}")
                                 success, result = save_event_to_firestore(event_data)
                                 if success:
                                     st.success(f"✅ Event plan saved successfully! Event ID: {result}")
                                     st.balloons()
-                                    # Clear the current plan
+                                    # Clear the current plan but avoid immediate rerun
                                     st.session_state.current_event_plan = None
-                                    # Force refresh by clearing cache and rerunning
-                                    time.sleep(2)
+                                    time.sleep(1)  # Small delay to ensure save
                                     st.rerun()
                                 else:
                                     st.error(f"❌ Failed to save event plan: {result}")
