@@ -47,5 +47,5 @@ def check_event_firebase_config():
     if missing_vars:
         st.error(f"Missing required environment variables for Event Firebase: {', '.join(missing_vars)}")
         return False
-    
+
     return True
