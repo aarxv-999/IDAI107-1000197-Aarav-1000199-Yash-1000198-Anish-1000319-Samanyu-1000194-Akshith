@@ -67,6 +67,12 @@ def leftover_management():
     """Leftover management feature"""
     st.title("♻️ Leftover Management")
     
+    # Initialize session state for recipes if it doesn't exist
+    if 'recipes' not in st.session_state:
+        st.session_state.recipes = []
+    if 'recipe_generation_attempted' not in st.session_state:
+        st.session_state.recipe_generation_attempted = False
+    
     # Sidebar for input methods
     st.sidebar.header("Input Methods")
     
@@ -77,6 +83,9 @@ def leftover_management():
     
     # Combine leftovers from all sources
     all_leftovers = csv_leftovers + manual_leftovers + firebase_leftovers
+    
+    # Store leftovers in session state to preserve them
+    st.session_state.all_leftovers = all_leftovers
     
     # Main content
     if all_leftovers:
@@ -102,33 +111,53 @@ def leftover_management():
                                        min_value=1, 
                                        max_value=10, 
                                        value=3,
-                                       help="Select how many recipe suggestions you want")
+                                       help="Select how many recipe suggestions you want",
+                                       key="num_suggestions")
         
         with col2:
             # Additional notes or requirements
             notes = st.text_area("Additional notes or requirements", 
                                 placeholder="E.g., vegetarian only, quick meals, kid-friendly, etc.",
-                                help="Add any specific requirements for your recipes")
+                                help="Add any specific requirements for your recipes",
+                                key="recipe_notes")
         
         # Generate recipe button
-        if st.button("Generate Recipe Suggestions", type="primary"):
+        if st.button("Generate Recipe Suggestions", type="primary", key="generate_recipes"):
+            st.session_state.recipe_generation_attempted = True
+            
+            # Log the attempt for debugging
+            logging.info(f"Recipe generation attempted with {len(all_leftovers)} ingredients")
+            logging.info(f"Ingredients: {all_leftovers}")
+            
             with st.spinner("Generating recipes..."):
-                recipes = suggest_recipes(all_leftovers, num_suggestions, notes)
+                try:
+                    recipes = suggest_recipes(all_leftovers, num_suggestions, notes)
+                    st.session_state.recipes = recipes
+                    
+                    # Log success for debugging
+                    logging.info(f"Generated {len(recipes)} recipes successfully")
+                except Exception as e:
+                    st.error(f"Error generating recipes: {str(e)}")
+                    logging.error(f"Recipe generation error: {str(e)}")
+                    st.session_state.recipes = []
+        
+        # Display recipes if they exist in session state
+        if st.session_state.recipe_generation_attempted:
+            if st.session_state.recipes:
+                st.success(f"Generated {len(st.session_state.recipes)} recipe suggestions!")
                 
-                if recipes:
-                    st.success(f"Generated {len(recipes)} recipe suggestions!")
-                    
-                    # Display recipes
-                    st.subheader("Recipe Suggestions")
-                    for i, recipe in enumerate(recipes):
-                        st.write(f"{i+1}. {recipe}")
-                    
-                    # Award XP for generating recipes
-                    user = get_current_user()
-                    if user and user.get('user_id'):
-                        award_recipe_generation_xp(user['user_id'], len(recipes))
-                else:
-                    st.error("Could not generate recipes with these ingredients. Try adding more ingredients.")
+                # Display recipes
+                st.subheader("Recipe Suggestions")
+                for i, recipe in enumerate(st.session_state.recipes):
+                    st.write(f"{i+1}. {recipe}")
+                
+                # Award XP for generating recipes
+                user = get_current_user()
+                if user and user.get('user_id'):
+                    award_recipe_generation_xp(user['user_id'], len(st.session_state.recipes))
+            else:
+                if st.session_state.recipe_generation_attempted:
+                    st.error("Could not generate recipes with these ingredients. Try adding more ingredients or check your API key.")
     else:
         st.info("Please add ingredients using the sidebar options.")
         
