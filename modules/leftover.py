@@ -58,6 +58,41 @@ def parse_manual_leftovers(input_text: str) -> List[str]:
     ingredients = [ing.strip() for ing in ingredients if ing.strip()]
     return ingredients
 
+def fetch_ingredients_from_firebase() -> List[Dict]:
+    '''
+    Fetches ingredients from Firebase ingredient_inventory collection
+    
+    RETURN - List[Dict]: a list of ingredient dictionaries with their details
+    '''
+    try:
+        from firebase_admin import firestore
+        db = firestore.client()
+        inventory_ref = db.collection('ingredient_inventory')
+        inventory_docs = inventory_ref.get()
+        
+        ingredients = []
+        for doc in inventory_docs:
+            item = doc.to_dict()
+            item['id'] = doc.id
+            ingredients.append(item)
+            
+        return ingredients
+    except Exception as e:
+        raise Exception(f"Error fetching ingredients from Firebase: {str(e)}")
+
+def parse_firebase_ingredients(firebase_ingredients: List[Dict]) -> List[str]:
+    '''
+    Parses ingredients fetched from Firebase into a simple list of ingredient names
+    
+    ARGUMENT - firebase_ingredients (List[Dict]): List of ingredient dictionaries from Firebase
+    RETURN - List[str]: a list of ingredient names
+    '''
+    ingredients = []
+    for item in firebase_ingredients:
+        if 'Ingredient' in item and item['Ingredient']:
+            ingredients.append(item['Ingredient'])
+    return ingredients
+
 def suggest_recipes(leftovers: List[str], max_suggestions: int = 3) -> List[str]:
     '''
     Suggest recipes based on the leftover ingredients.
@@ -171,10 +206,10 @@ def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int =
         response_text = response.text.strip()
 
         # Clean up the response to extract JSON
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0]
+        if "\`\`\`json" in response_text:
+            response_text = response_text.split("\`\`\`json")[1].split("\`\`\`")[0]
+        elif "\`\`\`" in response_text:
+            response_text = response_text.split("\`\`\`")[1].split("\`\`\`")[0]
 
         try:
             questions = json.loads(response_text)
