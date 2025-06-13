@@ -545,7 +545,7 @@ def render_chatbot_ui():
                     # Save event button
                     col1, col2 = st.columns([1, 1])
                     with col1:
-                        if st.button("💾 Save Event Plan", type="primary", key="save_event_btn"):
+                        if st.button("💾 Save Event Plan", type="primary", key="save_event_btn_chatbot"):
                             with st.spinner("Saving event to Firestore..."):
                                 try:
                                     # Generate a unique ID for this event
@@ -593,7 +593,7 @@ def render_chatbot_ui():
                                         st.code(traceback.format_exc())
                     
                     with col2:
-                        if st.button("🔄 Generate New Plan", key="new_plan_btn"):
+                        if st.button("🔄 Generate New Plan", key="new_plan_btn_chatbot"):
                             st.session_state.current_event_plan = None
                             st.rerun()
                     
@@ -617,7 +617,7 @@ def render_event_dashboard():
     
     # Add diagnostic section
     with st.expander("🔧 Diagnostics"):
-        if st.button("Test Firestore Connection"):
+        if st.button("Test Firestore Connection", key="test_connection_dashboard"):
             with st.spinner("Testing Firestore connection..."):
                 success, message = test_firestore_connection()
                 if success:
@@ -626,7 +626,7 @@ def render_event_dashboard():
                     st.error(f"❌ {message}")
                     
         # Add a direct save test
-        if st.button("Test Direct Save"):
+        if st.button("Test Direct Save", key="test_direct_save_dashboard"):
             with st.spinner("Testing direct save to Firestore..."):
                 try:
                     test_id = f"manual_test_{uuid.uuid4()}"
@@ -651,7 +651,7 @@ def render_event_dashboard():
     # Add refresh button
     col1, col2 = st.columns([1, 4])
     with col1:
-        if st.button("🔄 Refresh Dashboard"):
+        if st.button("🔄 Refresh Dashboard", key="refresh_dashboard_btn"):
             st.rerun()
 
     # Fetch events
@@ -785,7 +785,7 @@ def render_user_invites():
         st.success(f"📧 You have {len(invites)} event invites")
         
         # Display invites
-        for invite in invites:
+        for i, invite in enumerate(invites):
             event = invite.get('event', {})
             
             with st.expander(f"🎉 {event.get('theme', 'Event')} - Status: {invite.get('status', 'Unknown').title()}"):
@@ -813,7 +813,7 @@ def render_user_invites():
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        if st.button("✅ Accept", key=f"accept_{invite.get('event_id', '')}"):
+                        if st.button("✅ Accept", key=f"accept_invite_{invite.get('event_id', '')}_{i}"):
                             # Update invite status
                             invite_id = f"{invite.get('event_id', '')}_{user_id}"
                             db.collection('invites').document(invite_id).update({
@@ -824,7 +824,7 @@ def render_user_invites():
                             st.rerun()
                     
                     with col2:
-                        if st.button("❌ Decline", key=f"decline_{invite.get('event_id', '')}"):
+                        if st.button("❌ Decline", key=f"decline_invite_{invite.get('event_id', '')}_{i}"):
                             # Update invite status
                             invite_id = f"{invite.get('event_id', '')}_{user_id}"
                             db.collection('invites').document(invite_id).update({
@@ -856,7 +856,7 @@ def event_planner():
     # Add a diagnostic section for admins
     if user_role == 'admin':
         with st.expander("🔧 Firebase Diagnostics"):
-            if st.button("Test Firestore Connection"):
+            if st.button("Test Firestore Connection", key="test_connection_admin"):
                 with st.spinner("Testing Firestore connection..."):
                     success, message = test_firestore_connection()
                     if success:
@@ -865,7 +865,7 @@ def event_planner():
                         st.error(f"❌ {message}")
                         
             # Add a direct save test
-            if st.button("Test Direct Save"):
+            if st.button("Test Direct Save", key="test_direct_save_admin"):
                 with st.spinner("Testing direct save to Firestore..."):
                     try:
                         test_id = f"manual_test_{uuid.uuid4()}"
