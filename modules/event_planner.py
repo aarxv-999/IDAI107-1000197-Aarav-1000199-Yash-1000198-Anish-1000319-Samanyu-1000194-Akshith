@@ -209,7 +209,10 @@ def get_all_events() -> List[Dict]:
         for doc in events_docs:
             event = doc.to_dict()
             event['doc_id'] = doc.id
-            if 'created_at' not in event:
+            # Handle Firestore timestamp for created_at
+            if 'created_at' in event and isinstance(event['created_at'], datetime):
+                event['created_at'] = event['created_at'].strftime('%d %B %Y at %H:%M:%S UTC')
+            elif 'created_at' not in event:
                 event['created_at'] = "Unknown date"
             events.append(event)
         
