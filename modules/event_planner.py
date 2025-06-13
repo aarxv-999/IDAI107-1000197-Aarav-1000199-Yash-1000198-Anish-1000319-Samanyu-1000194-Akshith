@@ -132,11 +132,11 @@ def get_available_ingredients() -> List[Dict]:
 
 def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
     """
-    Save event data to Firestore
+    Save event data to Firestore in the correct format as per dashboard requirements.
 
     Args:
         event_data: Dictionary containing event details
-        
+
     Returns:
         Tuple of (success_boolean, event_id_or_error_message)
     """
@@ -145,35 +145,30 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
         if not db:
             logger.error("Failed to get database connection")
             return False, "Database connection failed"
-            
+
         # Generate a unique ID if not provided
         event_id = event_data.get('id', str(uuid.uuid4()))
-        
-        # Prepare the data with proper timestamp and structure
+
+        # Prepare the data as seen in your Firestore screenshot
         firestore_data = {
             'id': event_id,
             'description': event_data.get('description', ''),
             'decor': event_data.get('decor', []),
             'invitation': event_data.get('invitation', ''),
-            'created_by': event_data.get('created_by', 'unknown'),
-            'created_at': firestore.SERVER_TIMESTAMP,  # Use server timestamp
-            'seating': {
-                'layout': event_data.get('seating', {}).get('layout', ''),
-                'tables': event_data.get('seating', {}).get('tables', []),
-                'themes': []  # Add empty themes array as required
-            },
-            'menu': event_data.get('recipes', [])  # Rename recipes to menu as expected
+            'created_by': event_data.get('created_by', 'admin'),
+            'created_at': datetime.utcnow().strftime('%d %B %Y at %H:%M:%S UTC'),
+            'menu': event_data.get('menu', []),
+            'seating': event_data.get('seating', {}),
+            'theme': event_data.get('theme', ''),
         }
-        
+
         # Save to Firestore using the event_id as document ID
         events_ref = db.collection('events')
         doc_ref = events_ref.document(event_id)
-        
-        # Use set() method with merge=False to ensure data is written
         doc_ref.set(firestore_data)
-        
+
         logger.info(f"Event saved successfully with ID: {event_id}")
-        
+
         # Verify the document was actually saved
         saved_doc = doc_ref.get()
         if saved_doc.exists:
@@ -182,7 +177,7 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
         else:
             logger.error(f"Event not found after saving: {event_id}")
             return False, "Event was not saved properly"
-            
+
     except Exception as e:
         error_msg = f"Error saving event: {str(e)}"
         logger.error(error_msg)
