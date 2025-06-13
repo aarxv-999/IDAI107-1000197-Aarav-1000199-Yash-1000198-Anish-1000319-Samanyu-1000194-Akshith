@@ -156,14 +156,19 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
         firestore_data = {
             'id': event_id,
             'description': event_data.get('description', ''),
+            'theme': event_data.get('theme', 'Untitled Event'),  # ✅ Add this line
             'decor': event_data.get('decor', []),
             'invitation': event_data.get('invitation', ''),
-            'created_by': event_data.get('created_by', 'admin'),
-            'created_at': formatted_time,
-            'menu': event_data.get('menu', []),
-            'seating': event_data.get('seating', {}),
-            'theme': event_data.get('theme', ''),
+            'created_by': event_data.get('created_by', 'unknown'),
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'seating': {
+                'layout': event_data.get('seating', {}).get('layout', ''),
+                'tables': event_data.get('seating', {}).get('tables', []),
+                'themes': []
+            },
+            'menu': event_data.get('recipes', [])
         }
+
 
         # Log the data being saved
         logger.info(f"Attempting to save event with ID: {event_id}")
@@ -507,14 +512,15 @@ def render_chatbot_ui():
                         if st.button("💾 Save Event Plan", type="primary", key="save_event_btn"):
                             with st.spinner("Saving event..."):
                                 event_data = {
+                                    'theme': event_plan['theme']['name'],  # ✅ Include theme name
                                     'description': event_plan['theme']['description'],
                                     'decor': event_plan['decor'],
-                                    'menu': event_plan['recipe_suggestions'],  # Use 'menu' to match Firestore
+                                    'recipes': event_plan['recipe_suggestions'],
                                     'invitation': event_plan['invitation'],
                                     'seating': event_plan['seating'],
-                                    'created_by': st.session_state.user.get('user_id', 'admin'),
-                                    'theme': event_plan['theme']['name']
+                                    'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'unknown'
                                 }
+
                                 logger.info(f"Saving event data: {event_data}")
                                 success, result = save_event_to_firestore(event_data)
                                 if success:
