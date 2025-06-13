@@ -626,28 +626,64 @@ def render_event_dashboard():
                     st.error(f"❌ {message}")
                     
         # Add a direct save test
-        if st.button("Test Direct Save", key="test_direct_save_dashboard"):
+        # Add a direct save test button and functionality
+        if st.button("Test Direct Save", key="test_direct_save_btn"):
             with st.spinner("Testing direct save to Firestore..."):
                 try:
-                    test_id = f"manual_test_{uuid.uuid4()}"
+                    # Generate a unique test ID
+                    test_id = f"test-event-{uuid.uuid4()}"
+                    current_time = datetime.utcnow()
+                    formatted_time = current_time.strftime('%d %B %Y at %H:%M:%S UTC+5:30')
+                    
+                    # Create test data matching the structure in the screenshot
                     test_data = {
                         'id': test_id,
-                        'theme': 'Test Event',
-                        'description': 'This is a test event',
-                        'created_at': datetime.utcnow(),
-                        'created_by': 'admin_test'
+                        'theme': f"Test Event {current_time.strftime('%H:%M:%S')}",
+                        'description': "This is a test event added directly to the events collection.",
+                        'created_at': current_time,
+                        'created_by': "936a327e-bbdf-41e5-87ce-8af279215bb6",  # User ID
+                        'invitation': "You are invited to our test event!",
+                        'decor': [
+                            "Elegant centerpieces",
+                            "Ambient lighting",
+                            "Floral arrangements"
+                        ],
+                        'recipes': [
+                            "Spaghetti Carbonara",
+                            "Chicken Stir Fry", 
+                            "Chocolate Chip Cookies"
+                        ],
+                        'seating': {
+                            'layout': "Test layout with round tables",
+                            'tables': [
+                                "Table 1: 6 guests",
+                                "Table 2: 6 guests",
+                                "Table 3: 4 guests"
+                            ]
+                        }
                     }
                     
+                    # Get Firestore database reference
                     db = get_event_db()
                     if db:
                         # Direct save to Firestore
                         db.collection('events').document(test_id).set(test_data)
-                        st.success(f"✅ Test event saved with ID: {test_id}")
+                        
+                        # Verify the save was successful
+                        saved_doc = db.collection('events').document(test_id).get()
+                        
+                        if saved_doc.exists:
+                            st.success(f"✅ Test event saved successfully with ID: {test_id}")
+                            st.write("Saved data:", saved_doc.to_dict())
+                        else:
+                            st.error(f"❌ Document was not found after save operation")
                     else:
                         st.error("❌ Failed to get database connection")
                 except Exception as e:
                     st.error(f"❌ Error: {str(e)}")
-    
+                    import traceback
+                    st.code(traceback.format_exc(), language="python")
+            
     # Add refresh button
     col1, col2 = st.columns([1, 4])
     with col1:
