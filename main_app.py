@@ -16,6 +16,7 @@ from modules.leftover import get_user_stats, award_recipe_xp  # Import gamificat
 from firebase_init import init_firebase
 
 # Import the event planner integration
+# We keep the same import structure for compatibility
 from app_integration import integrate_event_planner, check_event_firebase_config
 
 # Import the dashboard module
@@ -201,6 +202,7 @@ def main():
         st.session_state.selected_feature = "Dashboard"
     
     # Check Event Firebase configuration
+    # This now always returns True and sets a session state flag
     check_event_firebase_config()
     
     # Render authentication UI in sidebar
