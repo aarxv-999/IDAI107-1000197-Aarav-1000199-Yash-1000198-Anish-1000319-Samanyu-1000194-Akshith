@@ -152,7 +152,7 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
         current_time = datetime.utcnow()
         formatted_time = current_time.strftime('%d %B %Y at %H:%M:%S UTC')
 
-        # Prepare the data exactly as seen in your Firestore screenshot
+        # Prepare the data
         firestore_data = {
             'id': event_id,
             'description': event_data.get('description', ''),
@@ -160,23 +160,26 @@ def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
             'invitation': event_data.get('invitation', ''),
             'created_by': event_data.get('created_by', 'admin'),
             'created_at': formatted_time,
-            'menu': event_data.get('menu', []),  # Match Firestore structure
+            'menu': event_data.get('menu', []),
             'seating': event_data.get('seating', {}),
             'theme': event_data.get('theme', ''),
         }
 
-        # Debug logging
-        logger.info(f"Attempting to save event with data: {firestore_data}")
+        # Log the data being saved
+        logger.info(f"Attempting to save event with ID: {event_id}")
+        logger.info(f"Full event data: {firestore_data}")
 
         # Save to Firestore
         events_ref = db.collection('events')
         doc_ref = events_ref.document(event_id)
-        doc_ref.set(firestore_data, merge=True)  # Use merge=True to avoid overwriting existing fields
+        doc_ref.set(firestore_data, merge=True)
 
         # Verify the document was saved
         saved_doc = doc_ref.get()
         if saved_doc.exists:
             logger.info(f"Event document saved successfully with ID: {event_id}")
+            saved_data = saved_doc.to_dict()
+            logger.info(f"Verified saved data: {saved_data}")
             return True, event_id
         else:
             logger.error(f"Event not found after saving: {event_id}")
