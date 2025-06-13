@@ -5,7 +5,7 @@ Created by: v0
 This module provides:
 1. AI-powered event planning chatbot using Gemini API
 2. Event dashboard for viewing and managing events
-3. Integration with Firestore for menu and ingredient data
+3. Integration with Firestore for recipe and ingredient data
 4. Role-based access control for different user types
 """
 
@@ -79,45 +79,45 @@ def configure_ai_model():
         return None
 
 # Firestore Data Functions
-def get_menu_items(dietary_restrictions: Optional[str] = None) -> List[Dict]:
+def get_recipe_items(dietary_restrictions: Optional[str] = None) -> List[Dict]:
     """
-    Fetch menu items from Firestore, optionally filtered by dietary restrictions
-    
+    Fetch recipe items from Firestore, optionally filtered by dietary restrictions
+
     Args:
         dietary_restrictions: Optional filter for dietary needs (e.g., "vegan", "gluten-free")
         
     Returns:
-        List of menu items as dictionaries
+        List of recipe items as dictionaries
     """
     try:
         db = get_event_db()
         if not db:
             return []
             
-        menu_ref = db.collection('menu')
+        recipe_ref = db.collection('recipe_archive')
         
         # Apply dietary filter if provided
         if dietary_restrictions and dietary_restrictions.lower() != "none":
-            query = menu_ref.where('diet', 'array_contains', dietary_restrictions.lower())
-            menu_docs = query.get()
+            query = recipe_ref.where('diet', 'array_contains', dietary_restrictions.lower())
+            recipe_docs = query.get()
         else:
-            menu_docs = menu_ref.get()
+            recipe_docs = recipe_ref.get()
             
-        menu_items = []
-        for doc in menu_docs:
+        recipe_items = []
+        for doc in recipe_docs:
             item = doc.to_dict()
             item['id'] = doc.id
-            menu_items.append(item)
+            recipe_items.append(item)
             
-        return menu_items
+        return recipe_items
     except Exception as e:
-        logger.error(f"Error fetching menu items: {str(e)}")
+        logger.error(f"Error fetching recipe items: {str(e)}")
         return []
 
 def get_available_ingredients() -> List[Dict]:
     """
     Fetch available ingredients from Firestore inventory
-    
+
     Returns:
         List of ingredients as dictionaries
     """
@@ -143,7 +143,7 @@ def get_available_ingredients() -> List[Dict]:
 def save_event_to_firestore(event_data: Dict) -> bool:
     """
     Save event data to Firestore
-    
+
     Args:
         event_data: Dictionary containing event details
         
@@ -175,7 +175,7 @@ def save_event_to_firestore(event_data: Dict) -> bool:
 def get_all_events() -> List[Dict]:
     """
     Fetch all events from Firestore
-    
+
     Returns:
         List of events as dictionaries
     """
@@ -203,7 +203,7 @@ def get_all_events() -> List[Dict]:
 def get_customers() -> List[Dict]:
     """
     Fetch customer data from Firestore
-    
+
     Returns:
         List of customers as dictionaries
     """
@@ -233,7 +233,7 @@ def get_customers() -> List[Dict]:
 def send_invites(event_id: str, customer_ids: List[str]) -> bool:
     """
     Send invites to selected customers (mock function)
-    
+
     Args:
         event_id: ID of the event
         customer_ids: List of customer IDs to invite
@@ -287,7 +287,7 @@ def send_invites(event_id: str, customer_ids: List[str]) -> bool:
 def generate_event_plan(query: str) -> Dict:
     """
     Generate an event plan using AI based on user query
-    
+
     Args:
         query: User's natural language query about event planning
         
@@ -300,44 +300,44 @@ def generate_event_plan(query: str) -> Dict:
             'error': 'AI model configuration failed',
             'success': False
         }
-    
-    # Get available menu items and ingredients for context
-    menu_items = get_menu_items()
-    menu_names = [item.get('name', '') for item in menu_items]
-    
+
+    # Get available recipe items and ingredients for context
+    recipe_items = get_recipe_items()
+    recipe_names = [item.get('name', '') for item in recipe_items]
+
     ingredients = get_available_ingredients()
     ingredient_names = [item.get('Ingredient', '') for item in ingredients]
-    
+
     # Extract dietary restrictions from query
     dietary_keywords = ['vegan', 'vegetarian', 'gluten-free', 'dairy-free', 'nut-free']
     dietary_restrictions = []
-    
+
     for keyword in dietary_keywords:
         if keyword in query.lower():
             dietary_restrictions.append(keyword)
-    
+
     # Extract guest count from query
     import re
     guest_count = 20  # Default
     guest_matches = re.findall(r'(\d+)\s+(?:people|guests|persons)', query)
     if guest_matches:
         guest_count = int(guest_matches[0])
-    
+
     # Prepare prompt for AI
     prompt = f'''
     You are an expert event planner for a restaurant. Plan an event based on this request:
     "{query}"
-    
-    Available menu items at our restaurant: {', '.join(menu_names[:20])}
+
+    Available recipes at our restaurant: {', '.join(recipe_names[:20])}
     Available ingredients: {', '.join(ingredient_names[:20])}
-    
+
     Generate a complete event plan with the following sections:
     1. Theme: A creative name and description for the event theme
     2. Seating: A seating plan for {guest_count} guests (specify table arrangement)
     3. Decor: Decoration and ambiance suggestions
-    4. Menu: 5-7 menu item suggestions from our available items
+    4. Recipes: 5-7 recipe suggestions from our available recipes
     5. Invitation: A short invitation message template
-    
+
     Format your response as a JSON object with these exact keys:
     {{
         "theme": {{
@@ -349,13 +349,12 @@ def generate_event_plan(query: str) -> Dict:
             "tables": [List of tables with guest counts]
         }},
         "decor": [List of decoration ideas],
-        "menu_suggestions": [List of menu item names],
+        "recipe_suggestions": [List of recipe names],
         "invitation": "Invitation text"
     }}
-    
+
     Make sure the JSON is valid and properly formatted.'''
-    
-    
+
     try:
         # Generate response from AI
         response = model.generate_content(prompt)
@@ -375,14 +374,14 @@ def generate_event_plan(query: str) -> Dict:
         # Parse JSON response
         event_plan = json.loads(response_text)
         
-        # Filter menu suggestions based on dietary restrictions
+        # Filter recipe suggestions based on dietary restrictions
         if dietary_restrictions:
-            filtered_menu = get_menu_items(dietary_restrictions[0])
-            filtered_names = [item.get('name', '') for item in filtered_menu]
+            filtered_recipes = get_recipe_items(dietary_restrictions[0])
+            filtered_names = [item.get('name', '') for item in filtered_recipes]
             
             # If we have filtered items, use them instead
             if filtered_names:
-                event_plan['menu_suggestions'] = filtered_names[:7]
+                event_plan['recipe_suggestions'] = filtered_names[:7]
         
         return {
             'plan': event_plan,
@@ -399,7 +398,7 @@ def generate_event_plan(query: str) -> Dict:
 def render_chatbot_ui():
     """Render the event planning chatbot UI"""
     st.markdown("### 🤖 Event Planning Assistant")
-    
+
     # Initialize chat history
     if 'event_chat_history' not in st.session_state:
         st.session_state.event_chat_history = []
@@ -407,17 +406,17 @@ def render_chatbot_ui():
     # Initialize current plan
     if 'current_event_plan' not in st.session_state:
         st.session_state.current_event_plan = None
-    
+
     # Display chat history
     for message in st.session_state.event_chat_history:
         if message['role'] == 'user':
             st.chat_message('user').write(message['content'])
         else:
             st.chat_message('assistant').write(message['content'])
-    
+
     # Chat input
     user_query = st.chat_input("Describe the event you want to plan...", key="event_chat_input")
-    
+
     if user_query:
         # Add user message to chat history
         st.session_state.event_chat_history.append({
@@ -442,7 +441,7 @@ def render_chatbot_ui():
                     st.markdown(event_plan['theme']['description'])
                     
                     # Create tabs for different aspects of the plan
-                    tabs = st.tabs(["💺 Seating", "🎭 Decor", "🍽️ Menu", "✉️ Invitation"])
+                    tabs = st.tabs(["💺 Seating", "🎭 Decor", "🍽️ Recipes", "✉️ Invitation"])
                     
                     with tabs[0]:
                         st.markdown("#### Seating Arrangement")
@@ -459,8 +458,8 @@ def render_chatbot_ui():
                             st.markdown(f"- {item}")
                     
                     with tabs[2]:
-                        st.markdown("#### Menu Suggestions")
-                        for item in event_plan['menu_suggestions']:
+                        st.markdown("#### Recipe Suggestions")
+                        for item in event_plan['recipe_suggestions']:
                             st.markdown(f"- {item}")
                     
                     with tabs[3]:
@@ -475,7 +474,7 @@ def render_chatbot_ui():
                             'description': event_plan['theme']['description'],
                             'seating': event_plan['seating'],
                             'decor': event_plan['decor'],
-                            'menu': event_plan['menu_suggestions'],
+                            'recipes': event_plan['recipe_suggestions'],
                             'invitation': event_plan['invitation'],
                             'query': user_query,
                             'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'unknown'
@@ -504,14 +503,14 @@ def render_chatbot_ui():
 def render_event_dashboard():
     """Render the event dashboard UI"""
     st.markdown("### 📊 Event Dashboard")
-    
+
     # Fetch events
     events = get_all_events()
-    
+
     if not events:
         st.info("No events found. Use the chatbot to create your first event!")
         return
-    
+
     # Display events in an expandable format
     for event in events:
         with st.expander(f"🎭 {event.get('theme', 'Event')} - {event.get('created_at', 'Unknown date')}"):
@@ -528,8 +527,8 @@ def render_event_dashboard():
                 for item in event.get('decor', ['No decor information']):
                     st.markdown(f"- {item}")
                 
-                st.markdown("##### 🍽️ Menu")
-                for item in event.get('menu', ['No menu information']):
+                st.markdown("##### 🍽️ Recipes")
+                for item in event.get('recipes', ['No recipe information']):
                     st.markdown(f"- {item}")
             
             with col2:
@@ -567,15 +566,15 @@ def render_event_dashboard():
 def render_user_invites():
     """Render the user's event invites UI"""
     st.markdown("### 📬 My Event Invites")
-    
+
     # Get current user
     user = st.session_state.get('user')
     if not user:
         st.warning("Please log in to view your invites")
         return
-    
+
     user_id = user.get('user_id')
-    
+
     try:
         # Fetch user's invites
         db = get_event_db()
@@ -613,8 +612,8 @@ def render_user_invites():
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.markdown("##### 🍽️ Menu")
-                    for item in event.get('menu', ['No menu information']):
+                    st.markdown("##### 🍽️ Recipes")
+                    for item in event.get('recipes', ['No recipe information']):
                         st.markdown(f"- {item}")
                 
                 with col2:
@@ -646,7 +645,7 @@ def render_user_invites():
                         })
                         st.success("You've declined the invitation.")
                         st.rerun()
-    
+
     except Exception as e:
         logger.error(f"Error fetching invites: {str(e)}")
         st.error(f"Failed to load invites: {str(e)}")
@@ -655,15 +654,15 @@ def render_user_invites():
 def event_planner():
     """Main function to render the event planner UI based on user role"""
     st.title("🎉 Event Planning System")
-    
+
     # Check if user is logged in
     if 'user' not in st.session_state or not st.session_state.user:
         st.warning("Please log in to access the Event Planning System")
         return
-    
+
     # Get user role
     user_role = st.session_state.user.get('role', 'user')
-    
+
     # Different views based on role
     if user_role in ['admin', 'staff', 'chef']:
         # Staff view with tabs for chatbot and dashboard
@@ -681,7 +680,7 @@ def event_planner():
 # For testing the module independently
 if __name__ == "__main__":
     st.set_page_config(page_title="Event Planning System", layout="wide")
-    
+
     # Mock session state for testing
     if 'user' not in st.session_state:
         st.session_state.user = {
@@ -689,5 +688,5 @@ if __name__ == "__main__":
             'username': 'Test User',
             'role': 'admin'
         }
-    
+
     event_planner()
