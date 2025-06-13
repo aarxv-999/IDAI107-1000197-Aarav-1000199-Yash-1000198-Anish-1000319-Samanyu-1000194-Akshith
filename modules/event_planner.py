@@ -71,28 +71,11 @@ def ensure_events_collection_exists():
         collections = [collection.id for collection in db.collections()]
         
         if 'events' not in collections:
-            logger.warning("Events collection does not exist, creating it with a sample event")
+            logger.warning("Events collection does not exist, creating it")
             
-            # Create a sample event to initialize the collection
-            sample_event = {
-                'id': 'sample-event-' + str(uuid.uuid4()),
-                'theme': 'Sample Event',
-                'description': 'This is a sample event to initialize the events collection.',
-                'seating': {
-                    'layout': 'Sample layout',
-                    'tables': ['Table 1: 8 guests', 'Table 2: 8 guests']
-                },
-                'decor': ['Sample decoration 1', 'Sample decoration 2'],
-                'recipes': ['Sample recipe 1', 'Sample recipe 2'],
-                'invitation': 'Sample invitation text',
-                'created_at': datetime.now(),
-                'created_by': 'system'
-            }
-            
-            # Save the sample event
-            events_ref = db.collection('events')
-            events_ref.document(sample_event['id']).set(sample_event)
-            logger.info("Created events collection with sample event")
+            # Create events collection
+            db.collection('events')
+            logger.info("Created events collection")
             return True
         else:
             logger.info("Events collection already exists")
@@ -197,6 +180,7 @@ def save_event_to_firestore(event_data: Dict) -> bool:
     try:
         db = get_event_db()
         if not db:
+            logger.error("Failed to get Firestore database client")
             return False
             
         # Generate a unique ID if not provided
@@ -206,11 +190,15 @@ def save_event_to_firestore(event_data: Dict) -> bool:
         # Add timestamp
         event_data['created_at'] = datetime.now()
         
+        # Log event data being saved
+        logger.info(f"Saving event with ID: {event_data['id']} to 'events' collection")
+        logger.info(f"Event theme: {event_data.get('theme', 'Unknown')}")
+        
         # Save to Firestore events collection
         events_ref = db.collection('events')
         events_ref.document(event_data['id']).set(event_data)
         
-        # Force a refresh of the session state to ensure the dashboard updates
+        # Clear events cache to force refresh
         if 'events_cache' in st.session_state:
             del st.session_state.events_cache
             
@@ -233,9 +221,13 @@ def get_all_events() -> List[Dict]:
     try:
         db = get_event_db()
         if not db:
+            logger.error("Failed to get Firestore database client")
             return []
             
+        logger.info("Fetching events from 'events' collection")
         events_ref = db.collection('events')
+        
+        # Get all events, ordered by creation time
         events_docs = events_ref.order_by('created_at', direction=firestore.Query.DESCENDING).get()
         
         events = []
@@ -245,6 +237,8 @@ def get_all_events() -> List[Dict]:
             if 'created_at' in event and isinstance(event['created_at'], datetime):
                 event['created_at'] = event['created_at'].strftime("%Y-%m-%d %H:%M")
             events.append(event)
+        
+        logger.info(f"Retrieved {len(events)} events from 'events' collection")
         
         # Cache the events
         st.session_state.events_cache = events
@@ -526,13 +520,9 @@ def generate_event_plan(query: str) -> Dict:
                     "invitation": "You are cordially invited to our special event."
                 }
             
-                # Extract any useful information from the AI response
-                event_plan["ai_response"] = response_text
-            
                 return {
                     'plan': event_plan,
-                    'success': True,
-                    'warning': 'AI response was not in the expected format. Created a basic plan.'
+                    'success': True
                 }
     
         # Parse JSON response with better error handling
@@ -588,13 +578,9 @@ def generate_event_plan(query: str) -> Dict:
                 "invitation": "You are cordially invited to our special event."
             }
         
-            # Include the raw AI response for reference
-            event_plan["ai_response"] = response_text
-        
             return {
                 'plan': event_plan,
-                'success': True,
-                'warning': f'Failed to parse AI response as JSON: {str(e)}. Created a basic plan.'
+                'success': True
             }
     
         # Filter recipe suggestions based on dietary restrictions
@@ -629,33 +615,12 @@ def generate_event_plan(query: str) -> Dict:
     
         return {
             'plan': event_plan,
-            'success': True,
-            'error': str(e),
-            'warning': 'An error occurred while generating the event plan. Created a basic plan.'
+            'success': True
         }
 
 # Streamlit UI Components
 def render_chatbot_ui():
     """Render the event planning chatbot UI"""
-    # Add this at the beginning of render_chatbot_ui function
-    # Debug section for admins
-    user = st.session_state.get('user', {})
-    if user.get('role') == 'admin':
-        with st.expander("🔧 Debug Options"):
-            if st.button("Clear Chat History"):
-                st.session_state.event_chat_history = []
-                st.rerun()
-        
-            if st.button("Test AI Connection"):
-                try:
-                    model = configure_ai_model()
-                    if model:
-                        test_response = model.generate_content("Hello, this is a test.")
-                        st.success(f"AI connection successful. Response: {test_response.text[:100]}...")
-                    else:
-                        st.error("Failed to configure AI model.")
-                except Exception as e:
-                    st.error(f"AI connection test failed: {str(e)}")
     st.markdown("### 🤖 Event Planning Assistant")
 
     # Initialize chat history
@@ -691,14 +656,9 @@ def render_chatbot_ui():
             with st.spinner("Planning your event..."):
                 response = generate_event_plan(user_query)
                 
-                # In the render_chatbot_ui function, modify the if response['success']: block:
                 if response['success']:
                     event_plan = response['plan']
                     st.session_state.current_event_plan = event_plan
-                    
-                    # Display warning if present
-                    if 'warning' in response:
-                        st.warning(response['warning'])
                     
                     # Display response in a user-friendly format
                     st.markdown(f"### 🎉 {event_plan['theme']['name']}")
@@ -780,42 +740,13 @@ def render_event_dashboard():
     """Render the event dashboard UI"""
     st.markdown("### 📊 Event Dashboard")
 
-    # Debug section for admins
-    user = st.session_state.get('user', {})
-    if user.get('role') == 'admin':
-        with st.expander("🔧 Dashboard Debug"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if st.button("Refresh Events"):
-                    st.rerun()
-                    
-                if st.button("Add Test Event"):
-                    if add_test_event():
-                        st.success("Test event added successfully!")
-                        st.rerun()
-                    else:
-                        st.error("Failed to add test event")
-            
-            with col2:
-                if st.button("Check Events Collection"):
-                    if ensure_events_collection_exists():
-                        st.success("Events collection exists or was created")
-                    else:
-                        st.error("Failed to check/create events collection")
-            
-            # Show raw event data
-            events_raw = get_all_events()
-            st.write(f"Found {len(events_raw)} events in database")
-            if events_raw:
-                st.json(events_raw[0])
-
-    # Fetch events - force refresh by clearing cache
+    # Refresh button
     if st.button("🔄 Refresh Events"):
         if 'events_cache' in st.session_state:
             del st.session_state.events_cache
         st.rerun()
 
+    # Fetch events
     events = get_all_events()
 
     if not events:
@@ -975,6 +906,9 @@ def event_planner():
     # Get user role
     user_role = st.session_state.user.get('role', 'user')
 
+    # Ensure the events collection exists
+    ensure_events_collection_exists()
+
     # Different views based on role
     if user_role in ['admin', 'staff', 'chef']:
         # Staff view with tabs for chatbot and dashboard
@@ -986,30 +920,16 @@ def event_planner():
     
         tab1, tab2 = st.tabs(["🤖 Event Planner", "📊 Event Dashboard"])
     
-        if tab_index == 0:
-            with tab1:
-                render_chatbot_ui()
+        if tab_index == 1:
             with tab2:
                 render_event_dashboard()
+            with tab1:
+                render_chatbot_ui()
         else:
-            with tab2:
-                render_event_dashboard()
             with tab1:
                 render_chatbot_ui()
+            with tab2:
+                render_event_dashboard()
     else:
         # Customer view - only shows their invites
         render_user_invites()
-
-# For testing the module independently
-if __name__ == "__main__":
-    st.set_page_config(page_title="Event Planning System", layout="wide")
-
-    # Mock session state for testing
-    if 'user' not in st.session_state:
-        st.session_state.user = {
-            'user_id': 'test_user',
-            'username': 'Test User',
-            'role': 'admin'
-        }
-
-    event_planner()
