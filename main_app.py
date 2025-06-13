@@ -70,12 +70,13 @@ def leftover_management():
     # Sidebar for input methods
     st.sidebar.header("Input Methods")
     
-    # Get leftovers from CSV or manual input
+    # Get leftovers from CSV, manual input, or Firebase
     csv_leftovers = leftover_input_csv()
     manual_leftovers = leftover_input_manual()
+    firebase_leftovers = leftover_input_firebase()  # Add this line
     
-    # Combine leftovers from both sources
-    leftovers = csv_leftovers + manual_leftovers
+    # Combine leftovers from all sources
+    leftovers = csv_leftovers + manual_leftovers + firebase_leftovers  # Update this line
     
     # Main content
     if leftovers:
