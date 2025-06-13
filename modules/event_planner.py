@@ -1,14 +1,4 @@
-"""
-Event Planning Chatbot for Smart Restaurant Management App
-Created by: v0
-
-This module provides:
-1. AI-powered event planning chatbot using Gemini API
-2. Event dashboard for viewing and managing events
-3. Integration with Firestore for recipe and ingredient data
-4. Role-based access control for different user types
-"""
-
+import datetime
 import streamlit as st
 import google.generativeai as genai
 import os
@@ -101,22 +91,7 @@ def get_recipe_items(dietary_restrictions: Optional[str] = None) -> List[Dict]:
             query = recipe_ref.where('diet', 'array_contains', dietary_restrictions.lower())
             recipe_docs = query.get()
         else:
-        # Customer view - only shows their invites
-        render_user_invites()
-
-# For testing the module independently
-if __name__ == "__main__":
-    st.set_page_config(page_title="Event Planning System", layout="wide")
-
-    # Mock session state for testing
-    if 'user' not in st.session_state:
-        st.session_state.user = {
-            'user_id': 'test_user',
-            'username': 'Test User',
-            'role': 'admin'
-        }
-
-    event_planner()    recipe_docs = recipe_ref.get()
+            recipe_docs = recipe_ref.get()
             
         recipe_items = []
         for doc in recipe_docs:
@@ -423,7 +398,7 @@ def generate_event_plan(query: str) -> Dict:
         
         # Extract JSON from response
         import re
-        json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+        json_match = re.search(r'\`\`\`json\s*(.*?)\s*\`\`\`', response_text, re.DOTALL)
         if json_match:
             response_text = json_match.group(1)
         else:
@@ -796,3 +771,173 @@ def event_planner():
         with tab2:
             render_event_dashboard()
     else:
+        # Customer view - only shows their invites
+        render_user_invites()
+
+# For testing the module independently
+if __name__ == "__main__":
+    st.set_page_config(page_title="Event Planning System", layout="wide")
+
+    # Mock session state for testing
+    if 'user' not in st.session_state:
+        st.session_state.user = {
+            'user_id': 'test_user',
+            'username': 'Test User',
+            'role': 'admin'
+        }
+
+    event_planner()
+
+class EventPlanner:
+    def __init__(self):
+        self.events = []
+        self.users = {}  # Dictionary to store user information (e.g., username, password, invites)
+
+    def create_event(self, name, date, location, description, organizer):
+        """Creates a new event."""
+        event_id = len(self.events) + 1
+        event = {
+            'id': event_id,
+            'name': name,
+            'date': date,
+            'location': location,
+            'description': description,
+            'organizer': organizer,
+            'attendees': [],
+            'invites': []
+        }
+        self.events.append(event)
+        print(f"Event '{name}' created successfully with ID: {event_id}")
+        return event_id
+
+    def get_event(self, event_id):
+        """Retrieves an event by its ID."""
+        for event in self.events:
+            if event['id'] == event_id:
+                return event
+        return None
+
+    def update_event(self, event_id, name=None, date=None, location=None, description=None):
+        """Updates an existing event."""
+        event = self.get_event(event_id)
+        if event:
+            if name:
+                event['name'] = name
+            if date:
+                event['date'] = date
+            if location:
+                event['location'] = location
+            if description:
+                event['description'] = description
+            print(f"Event '{event['name']}' updated successfully.")
+        else:
+            print("Event not found.")
+
+    def delete_event(self, event_id):
+        """Deletes an event."""
+        event = self.get_event(event_id)
+        if event:
+            self.events.remove(event)
+            print(f"Event '{event['name']}' deleted successfully.")
+        else:
+            print("Event not found.")
+
+    def add_attendee(self, event_id, attendee_name):
+        """Adds an attendee to an event."""
+        event = self.get_event(event_id)
+        if event:
+            if attendee_name not in event['attendees']:
+                event['attendees'].append(attendee_name)
+                print(f"Attendee '{attendee_name}' added to event '{event['name']}'.")
+            else:
+                print(f"Attendee '{attendee_name}' is already attending event '{event['name']}'.")
+        else:
+            print("Event not found.")
+
+    def remove_attendee(self, event_id, attendee_name):
+        """Removes an attendee from an event."""
+        event = self.get_event(event_id)
+        if event:
+            if attendee_name in event['attendees']:
+                event['attendees'].remove(attendee_name)
+                print(f"Attendee '{attendee_name}' removed from event '{event['name']}'.")
+            else:
+                print(f"Attendee '{attendee_name}' is not attending event '{event['name']}'.")
+        else:
+            print("Event not found.")
+
+    def list_events(self):
+        """Lists all events."""
+        if not self.events:
+            print("No events found.")
+        else:
+            print("Upcoming Events:")
+            for event in self.events:
+                print(f"  ID: {event['id']}, Name: {event['name']}, Date: {event['date']}, Location: {event['location']}")
+
+    def create_user(self, username, password):
+        """Creates a new user."""
+        if username in self.users:
+            print("Username already exists.")
+            return False
+        else:
+            self.users[username] = {'password': password, 'invites': []}
+            print(f"User '{username}' created successfully.")
+            return True
+
+    def login_user(self, username, password):
+        """Logs in an existing user."""
+        if username in self.users and self.users[username]['password'] == password:
+            print(f"User '{username}' logged in successfully.")
+            return True
+        else:
+            print("Invalid username or password.")
+            return False
+
+    def invite_user_to_event(self, event_id, username):
+        """Invites a user to an event."""
+        event = self.get_event(event_id)
+        if not event:
+            print("Event not found.")
+            return False
+
+        if username not in self.users:
+            print("User not found.")
+            return False
+
+        if username in event['invites']:
+            print(f"User '{username}' is already invited to this event.")
+            return False
+
+        event['invites'].append(username)
+        self.users[username]['invites'].append(event_id)
+        print(f"User '{username}' invited to event '{event['name']}'.")
+        return True
+
+    def render_user_invites(self, username):
+        """Renders the invites for a specific user."""
+        if username not in self.users:
+            print("User not found.")
+            return
+
+        invites = self.users[username]['invites']
+        if not invites:
+            print("No invites found for this user.")
+            return
+
+        print(f"Invites for user '{username}':")
+        for event_id in invites:
+            event = self.get_event(event_id)
+            if event:
+                print(f"  Event: {event['name']}, Date: {event['date']}, Location: {event['location']}")
+            else:
+                print(f"  Event ID: {event_id} (Event not found)") # Handle case where event was deleted
+
+    def view_events(self, username, is_admin=False):
+        """Allows users to view events, with admin having full access."""
+        if is_admin:
+            # Admin view - shows all events
+            self.list_events()
+        else:
+            # Customer view - only shows their invites
+            self.render_user_invites(username)
