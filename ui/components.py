@@ -19,7 +19,8 @@ from firebase_init import init_firebase
 from modules.leftover import (
     load_leftovers, parse_manual_leftovers, suggest_recipes,
     generate_dynamic_quiz_questions, calculate_quiz_score, get_user_stats,
-    update_user_stats, get_leaderboard, get_xp_progress, award_recipe_xp
+    update_user_stats, get_leaderboard, get_xp_progress, award_recipe_xp,
+    fetch_ingredients_from_firebase, parse_firebase_ingredients
 )
 
 logger = logging.getLogger(__name__)
@@ -256,6 +257,49 @@ def leftover_input_manual() -> List[str]:
             st.sidebar.success(f"Added {len(leftovers)} ingredients")
         except Exception as err:
             st.sidebar.error(f"Error: {str(err)}")
+    return leftovers
+
+def leftover_input_firebase() -> List[str]:
+    """
+    UI component to fetch ingredients from Firebase inventory
+    
+    Returns:
+        List[str]: List of ingredient names from Firebase
+    """
+    st.sidebar.subheader("Current Inventory")
+    use_firebase = st.sidebar.checkbox("Use current inventory from Firebase", help="Fetch ingredients from your current inventory")
+    leftovers = []
+    
+    if use_firebase:
+        if st.sidebar.button("Fetch Current Ingredients", type="primary"):
+            with st.sidebar.spinner("Fetching ingredients..."):
+                try:
+                    # Fetch ingredients from Firebase
+                    firebase_ingredients = fetch_ingredients_from_firebase()
+                    
+                    if firebase_ingredients:
+                        # Display ingredients with expiry dates
+                        st.sidebar.success(f"Found {len(firebase_ingredients)} ingredients in inventory")
+                        
+                        # Show a preview of ingredients with expiry dates
+                        with st.sidebar.expander("Inventory Preview", expanded=True):
+                            for item in firebase_ingredients:
+                                ingredient = item.get('Ingredient', 'Unknown')
+                                expiry = item.get('Expiry Date', 'No expiry date')
+                                ingredient_type = item.get('Type', 'No type')
+                                
+                                st.sidebar.markdown(f"**{ingredient}**  \n"
+                                                   f"Expires: {expiry}  \n"
+                                                   f"Type: {ingredient_type}")
+                                st.sidebar.divider()
+                        
+                        # Parse ingredients into a simple list
+                        leftovers = parse_firebase_ingredients(firebase_ingredients)
+                    else:
+                        st.sidebar.warning("No ingredients found in inventory")
+                except Exception as err:
+                    st.sidebar.error(f"Error fetching ingredients: {str(err)}")
+    
     return leftovers
 
 def display_leftover_summary(leftovers: List[str]):
