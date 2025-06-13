@@ -360,43 +360,168 @@ def generate_event_plan(query: str) -> Dict:
         response = model.generate_content(prompt)
         response_text = response.text
         
+        # Log the raw response for debugging
+        logger.info(f"Raw AI response received: {response_text[:200]}...")
+        
         # Extract JSON from response
         import re
-        json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+        json_match = re.search(r'\`\`\`json\s*(.*?)\s*\`\`\`', response_text, re.DOTALL)
         if json_match:
             response_text = json_match.group(1)
+            logger.info("JSON extracted from code block")
         else:
             # Try to find JSON without code blocks
             json_match = re.search(r'({.*})', response_text, re.DOTALL)
             if json_match:
                 response_text = json_match.group(1)
+                logger.info("JSON extracted from text")
+            else:
+            # If no JSON found, create a structured response manually
+                logger.warning("No JSON found in response, creating structured response manually")
+                # Create a basic event plan structure
+                event_plan = {
+                    "theme": {
+                        "name": "Custom Event",
+                        "description": "An event based on your requirements."
+                    },
+                    "seating": {
+                        "layout": "Standard layout with tables arranged for optimal conversation.",
+                        "tables": ["Table 1: 8 guests", "Table 2: 8 guests", "Table 3: 4 guests"]
+                    },
+                    "decor": ["Elegant centerpieces", "Ambient lighting", "Themed decorations"],
+                    "recipe_suggestions": recipe_names[:5] if recipe_names else ["No recipes available"],
+                    "invitation": "You are cordially invited to our special event."
+                }
+            
+            # Extract any useful information from the AI response
+                event_plan["ai_response"] = response_text
+            
+                return {
+                    'plan': event_plan,
+                    'success': True,
+                    'warning': 'AI response was not in the expected format. Created a basic plan.'
+                }
+    
+        # Parse JSON response with better error handling
+        try:
+            event_plan = json.loads(response_text)
+            logger.info("Successfully parsed JSON response")
         
-        # Parse JSON response
-        event_plan = json.loads(response_text)
+            # Validate the required fields are present
+            required_fields = ["theme", "seating", "decor", "invitation"]
+            missing_fields = [field for field in required_fields if field not in event_plan]
         
+            # Check for recipe_suggestions or menu_suggestions (for backward compatibility)
+            if "recipe_suggestions" not in event_plan and "menu_suggestions" in event_plan:
+                event_plan["recipe_suggestions"] = event_plan["menu_suggestions"]
+                logger.info("Converted menu_suggestions to recipe_suggestions")
+            elif "recipe_suggestions" not in event_plan:
+                missing_fields.append("recipe_suggestions")
+        
+            if missing_fields:
+                logger.warning(f"Missing required fields in response: {missing_fields}")
+                # Add missing fields with default values
+                if "theme" not in event_plan:
+                    event_plan["theme"] = {
+                        "name": "Custom Event",
+                        "description": "An event based on your requirements."
+                    }
+                if "seating" not in event_plan:
+                    event_plan["seating"] = {
+                        "layout": "Standard layout with tables arranged for optimal conversation.",
+                        "tables": ["Table 1: 8 guests", "Table 2: 8 guests", "Table 3: 4 guests"]
+                    }
+                if "decor" not in event_plan:
+                    event_plan["decor"] = ["Elegant centerpieces", "Ambient lighting", "Themed decorations"]
+                if "recipe_suggestions" not in event_plan:
+                    event_plan["recipe_suggestions"] = recipe_names[:5] if recipe_names else ["No recipes available"]
+                if "invitation" not in event_plan:
+                    event_plan["invitation"] = "You are cordially invited to our special event."
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON: {str(e)}")
+            # Create a fallback event plan
+            event_plan = {
+                "theme": {
+                    "name": "Custom Event",
+                    "description": "An event based on your requirements."
+                },
+                "seating": {
+                    "layout": "Standard layout with tables arranged for optimal conversation.",
+                    "tables": ["Table 1: 8 guests", "Table 2: 8 guests", "Table 3: 4 guests"]
+                },
+                "decor": ["Elegant centerpieces", "Ambient lighting", "Themed decorations"],
+                "recipe_suggestions": recipe_names[:5] if recipe_names else ["No recipes available"],
+                "invitation": "You are cordially invited to our special event."
+            }
+        
+            # Include the raw AI response for reference
+            event_plan["ai_response"] = response_text
+        
+            return {
+                'plan': event_plan,
+                'success': True,
+                'warning': 'Failed to parse AI response as JSON. Created a basic plan.'
+            }
+    
         # Filter recipe suggestions based on dietary restrictions
         if dietary_restrictions:
             filtered_recipes = get_recipe_items(dietary_restrictions[0])
             filtered_names = [item.get('name', '') for item in filtered_recipes]
-            
+        
             # If we have filtered items, use them instead
             if filtered_names:
                 event_plan['recipe_suggestions'] = filtered_names[:7]
-        
+    
         return {
             'plan': event_plan,
             'success': True
         }
     except Exception as e:
-        logger.error(f"Error generating event plan: {str(e)}")
+        logger.error(f"Error generating event plan: {str(e)}", exc_info=True)
+        # Create a fallback event plan
+        event_plan = {
+            "theme": {
+                "name": "Custom Event",
+                "description": "An event based on your requirements."
+            },
+            "seating": {
+                "layout": "Standard layout with tables arranged for optimal conversation.",
+                "tables": ["Table 1: 8 guests", "Table 2: 8 guests", "Table 3: 4 guests"]
+            },
+            "decor": ["Elegant centerpieces", "Ambient lighting", "Themed decorations"],
+            "recipe_suggestions": recipe_names[:5] if recipe_names else ["No recipes available"],
+            "invitation": "You are cordially invited to our special event."
+        }
+    
         return {
+            'plan': event_plan,
+            'success': True,
             'error': str(e),
-            'success': False
+            'warning': 'An error occurred while generating the event plan. Created a basic plan.'
         }
 
 # Streamlit UI Components
 def render_chatbot_ui():
     """Render the event planning chatbot UI"""
+    # Add this at the beginning of render_chatbot_ui function
+    # Debug section for admins
+    user = st.session_state.get('user', {})
+    if user.get('role') == 'admin':
+        with st.expander("🔧 Debug Options"):
+            if st.button("Clear Chat History"):
+                st.session_state.event_chat_history = []
+                st.rerun()
+        
+            if st.button("Test AI Connection"):
+                try:
+                    model = configure_ai_model()
+                    if model:
+                        test_response = model.generate_content("Hello, this is a test.")
+                        st.success(f"AI connection successful. Response: {test_response.text[:100]}...")
+                    else:
+                        st.error("Failed to configure AI model.")
+                except Exception as e:
+                    st.error(f"AI connection test failed: {str(e)}")
     st.markdown("### 🤖 Event Planning Assistant")
 
     # Initialize chat history
@@ -432,9 +557,14 @@ def render_chatbot_ui():
             with st.spinner("Planning your event..."):
                 response = generate_event_plan(user_query)
                 
+                # In the render_chatbot_ui function, modify the if response['success']: block:
                 if response['success']:
                     event_plan = response['plan']
                     st.session_state.current_event_plan = event_plan
+                    
+                    # Display warning if present
+                    if 'warning' in response:
+                        st.warning(response['warning'])
                     
                     # Display response in a user-friendly format
                     st.markdown(f"### 🎉 {event_plan['theme']['name']}")
