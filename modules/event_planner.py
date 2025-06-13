@@ -14,6 +14,7 @@ from firebase_admin import firestore, credentials
 import logging
 import re
 import traceback
+from typing import Dict, List, Any, Optional, Tuple
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -97,7 +98,7 @@ def generate_event_plan(query: str) -> Dict:
         response_text = response.text
         
         # Extract JSON from response
-        json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+        json_match = re.search(r'\`\`\`json\s*(.*?)\s*\`\`\`', response_text, re.DOTALL)
         if json_match:
             response_text = json_match.group(1)
         else:
