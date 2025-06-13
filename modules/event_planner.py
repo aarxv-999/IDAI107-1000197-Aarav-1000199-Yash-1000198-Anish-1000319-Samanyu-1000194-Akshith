@@ -101,7 +101,22 @@ def get_recipe_items(dietary_restrictions: Optional[str] = None) -> List[Dict]:
             query = recipe_ref.where('diet', 'array_contains', dietary_restrictions.lower())
             recipe_docs = query.get()
         else:
-            recipe_docs = recipe_ref.get()
+        # Customer view - only shows their invites
+        render_user_invites()
+
+# For testing the module independently
+if __name__ == "__main__":
+    st.set_page_config(page_title="Event Planning System", layout="wide")
+
+    # Mock session state for testing
+    if 'user' not in st.session_state:
+        st.session_state.user = {
+            'user_id': 'test_user',
+            'username': 'Test User',
+            'role': 'admin'
+        }
+
+    event_planner()    recipe_docs = recipe_ref.get()
             
         recipe_items = []
         for doc in recipe_docs:
@@ -140,7 +155,7 @@ def get_available_ingredients() -> List[Dict]:
         logger.error(f"Error fetching ingredients: {str(e)}")
         return []
 
-def save_event_to_firestore(event_data: Dict) -> bool:
+def save_event_to_firestore(event_data: Dict) -> Tuple[bool, str]:
     """
     Save event data to Firestore
 
@@ -148,29 +163,56 @@ def save_event_to_firestore(event_data: Dict) -> bool:
         event_data: Dictionary containing event details
         
     Returns:
-        Boolean indicating success or failure
+        Tuple of (success_boolean, event_id_or_error_message)
     """
     try:
         db = get_event_db()
         if not db:
-            return False
+            logger.error("Failed to get database connection")
+            return False, "Database connection failed"
             
         # Generate a unique ID if not provided
-        if 'id' not in event_data:
-            event_data['id'] = str(uuid.uuid4())
-            
-        # Add timestamp
-        event_data['created_at'] = datetime.now()
+        event_id = event_data.get('id', str(uuid.uuid4()))
         
-        # Save to Firestore
+        # Prepare the data with proper timestamp
+        firestore_data = {
+            'id': event_id,
+            'theme': event_data.get('theme', 'Untitled Event'),
+            'description': event_data.get('description', ''),
+            'seating': event_data.get('seating', {}),
+            'decor': event_data.get('decor', []),
+            'recipes': event_data.get('recipes', []),
+            'invitation': event_data.get('invitation', ''),
+            'query': event_data.get('query', ''),
+            'created_by': event_data.get('created_by', 'unknown'),
+            'created_at': firestore.SERVER_TIMESTAMP,  # Use server timestamp
+            'status': 'active',
+            'invited_customers': [],
+            'last_invite_sent': None
+        }
+        
+        # Save to Firestore using the event_id as document ID
         events_ref = db.collection('events')
-        events_ref.document(event_data['id']).set(event_data)
+        doc_ref = events_ref.document(event_id)
         
-        logger.info(f"Event saved successfully with ID: {event_data['id']}")
-        return True
+        # Use set() method with merge=False to ensure data is written
+        doc_ref.set(firestore_data)
+        
+        logger.info(f"Event saved successfully with ID: {event_id}")
+        
+        # Verify the document was actually saved
+        saved_doc = doc_ref.get()
+        if saved_doc.exists:
+            logger.info(f"Event verification successful: {event_id}")
+            return True, event_id
+        else:
+            logger.error(f"Event not found after saving: {event_id}")
+            return False, "Event was not saved properly"
+            
     except Exception as e:
-        logger.error(f"Error saving event: {str(e)}")
-        return False
+        error_msg = f"Error saving event: {str(e)}"
+        logger.error(error_msg)
+        return False, error_msg
 
 def get_all_events() -> List[Dict]:
     """
@@ -182,20 +224,39 @@ def get_all_events() -> List[Dict]:
     try:
         db = get_event_db()
         if not db:
+            logger.error("Failed to get database connection")
             return []
             
         events_ref = db.collection('events')
+        # Order by created_at descending (newest first)
         events_docs = events_ref.order_by('created_at', direction=firestore.Query.DESCENDING).get()
         
         events = []
         for doc in events_docs:
             event = doc.to_dict()
-            # Convert Firestore timestamp to datetime for display
-            if 'created_at' in event and isinstance(event['created_at'], datetime):
-                event['created_at'] = event['created_at'].strftime("%Y-%m-%d %H:%M")
+            event['doc_id'] = doc.id  # Store the document ID
+            
+            # Handle timestamp conversion
+            if 'created_at' in event:
+                try:
+                    if hasattr(event['created_at'], 'timestamp'):
+                        # Convert Firestore timestamp to datetime string
+                        event['created_at'] = event['created_at'].strftime("%Y-%m-%d %H:%M:%S")
+                    elif isinstance(event['created_at'], datetime):
+                        event['created_at'] = event['created_at'].strftime("%Y-%m-%d %H:%M:%S")
+                    else:
+                        event['created_at'] = str(event['created_at'])
+                except Exception as timestamp_error:
+                    logger.warning(f"Error converting timestamp: {timestamp_error}")
+                    event['created_at'] = "Unknown date"
+            else:
+                event['created_at'] = "Unknown date"
+                
             events.append(event)
             
+        logger.info(f"Retrieved {len(events)} events from Firestore")
         return events
+        
     except Exception as e:
         logger.error(f"Error fetching events: {str(e)}")
         return []
@@ -232,7 +293,7 @@ def get_customers() -> List[Dict]:
 
 def send_invites(event_id: str, customer_ids: List[str]) -> bool:
     """
-    Send invites to selected customers (mock function)
+    Send invites to selected customers
 
     Args:
         event_id: ID of the event
@@ -266,7 +327,7 @@ def send_invites(event_id: str, customer_ids: List[str]) -> bool:
                 'event_id': event_id,
                 'customer_id': customer_id,
                 'event_name': event_data.get('theme', 'Event'),
-                'sent_at': datetime.now(),
+                'sent_at': firestore.SERVER_TIMESTAMP,
                 'status': 'sent'
             }
             invites_ref.document(invite_id).set(invite_data)
@@ -274,7 +335,7 @@ def send_invites(event_id: str, customer_ids: List[str]) -> bool:
         # Update event with invited customers
         event_ref.update({
             'invited_customers': firestore.ArrayUnion(customer_ids),
-            'last_invite_sent': datetime.now()
+            'last_invite_sent': firestore.SERVER_TIMESTAMP
         })
         
         logger.info(f"Invites sent to {len(customer_ids)} customers for event {event_id}")
@@ -467,29 +528,41 @@ def render_chatbot_ui():
                         st.info(event_plan['invitation'])
                     
                     # Save event button
-                    if st.button("💾 Save Event Plan", type="primary"):
-                        # Prepare event data
-                        event_data = {
-                            'theme': event_plan['theme']['name'],
-                            'description': event_plan['theme']['description'],
-                            'seating': event_plan['seating'],
-                            'decor': event_plan['decor'],
-                            'recipes': event_plan['recipe_suggestions'],
-                            'invitation': event_plan['invitation'],
-                            'query': user_query,
-                            'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'unknown'
-                        }
-                        
-                        # Save to Firestore
-                        if save_event_to_firestore(event_data):
-                            st.success("Event plan saved successfully!")
-                        else:
-                            st.error("Failed to save event plan. Please try again.")
+                    col1, col2 = st.columns([1, 1])
+                    with col1:
+                        if st.button("💾 Save Event Plan", type="primary", key="save_event_btn"):
+                            # Prepare event data
+                            event_data = {
+                                'theme': event_plan['theme']['name'],
+                                'description': event_plan['theme']['description'],
+                                'seating': event_plan['seating'],
+                                'decor': event_plan['decor'],
+                                'recipes': event_plan['recipe_suggestions'],
+                                'invitation': event_plan['invitation'],
+                                'query': user_query,
+                                'created_by': st.session_state.user['user_id'] if 'user' in st.session_state else 'unknown'
+                            }
+                            
+                            # Save to Firestore
+                            success, result = save_event_to_firestore(event_data)
+                            if success:
+                                st.success(f"✅ Event plan saved successfully! Event ID: {result}")
+                                # Clear the current plan after saving
+                                st.session_state.current_event_plan = None
+                                # Force refresh to show in dashboard
+                                st.rerun()
+                            else:
+                                st.error(f"❌ Failed to save event plan: {result}")
+                    
+                    with col2:
+                        if st.button("🔄 Generate New Plan", key="new_plan_btn"):
+                            st.session_state.current_event_plan = None
+                            st.rerun()
                     
                     # Add assistant message to chat history
                     st.session_state.event_chat_history.append({
                         'role': 'assistant',
-                        'content': f"I've created an event plan for '{event_plan['theme']['name']}'. You can view the details above."
+                        'content': f"I've created an event plan for '{event_plan['theme']['name']}'. You can view the details above and save it when ready."
                     })
                 else:
                     st.error(f"Failed to generate event plan: {response.get('error', 'Unknown error')}")
@@ -503,65 +576,104 @@ def render_chatbot_ui():
 def render_event_dashboard():
     """Render the event dashboard UI"""
     st.markdown("### 📊 Event Dashboard")
+    
+    # Add refresh button
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button("🔄 Refresh Dashboard"):
+            st.rerun()
 
     # Fetch events
-    events = get_all_events()
+    with st.spinner("Loading events..."):
+        events = get_all_events()
 
     if not events:
-        st.info("No events found. Use the chatbot to create your first event!")
+        st.info("📝 No events found. Use the Event Planner tab to create your first event!")
         return
+    
+    st.success(f"📋 Found {len(events)} events")
 
     # Display events in an expandable format
-    for event in events:
-        with st.expander(f"🎭 {event.get('theme', 'Event')} - {event.get('created_at', 'Unknown date')}"):
+    for i, event in enumerate(events):
+        event_title = f"🎭 {event.get('theme', 'Untitled Event')}"
+        event_date = event.get('created_at', 'Unknown date')
+        
+        with st.expander(f"{event_title} - Created: {event_date}"):
             col1, col2 = st.columns([2, 1])
             
             with col1:
+                st.markdown(f"**Event ID:** `{event.get('id', 'N/A')}`")
                 st.markdown(f"**Description:** {event.get('description', 'No description')}")
+                st.markdown(f"**Created by:** {event.get('created_by', 'Unknown')}")
+                
+                # Display original query if available
+                if event.get('query'):
+                    st.markdown(f"**Original Request:** _{event.get('query')}_")
                 
                 st.markdown("##### 💺 Seating")
                 seating = event.get('seating', {})
-                st.markdown(seating.get('layout', 'No seating information'))
+                if isinstance(seating, dict):
+                    st.markdown(seating.get('layout', 'No seating information'))
+                    
+                    if 'tables' in seating and seating['tables']:
+                        st.markdown("**Tables:**")
+                        for table in seating['tables']:
+                            st.markdown(f"- {table}")
+                else:
+                    st.markdown("No seating information")
                 
                 st.markdown("##### 🎭 Decor")
-                for item in event.get('decor', ['No decor information']):
-                    st.markdown(f"- {item}")
+                decor_items = event.get('decor', [])
+                if decor_items:
+                    for item in decor_items:
+                        st.markdown(f"- {item}")
+                else:
+                    st.markdown("No decor information")
                 
                 st.markdown("##### 🍽️ Recipes")
-                for item in event.get('recipes', ['No recipe information']):
-                    st.markdown(f"- {item}")
+                recipes = event.get('recipes', [])
+                if recipes:
+                    for item in recipes:
+                        st.markdown(f"- {item}")
+                else:
+                    st.markdown("No recipe information")
             
             with col2:
                 st.markdown("##### ✉️ Invitation")
-                st.info(event.get('invitation', 'No invitation template'))
+                invitation_text = event.get('invitation', 'No invitation template')
+                st.info(invitation_text)
                 
                 # Invite customers section
                 st.markdown("##### 👥 Invite Customers")
                 
                 # Check if invites were already sent
-                if event.get('invited_customers'):
-                    st.success(f"Invites sent to {len(event.get('invited_customers'))} customers")
+                invited_customers = event.get('invited_customers', [])
+                if invited_customers:
+                    st.success(f"✅ Invites sent to {len(invited_customers)} customers")
+                    if event.get('last_invite_sent'):
+                        st.caption(f"Last sent: {event.get('last_invite_sent')}")
                 else:
                     # Get customers
                     customers = get_customers()
                     
                     if not customers:
-                        st.warning("No customers found in the system")
+                        st.warning("⚠️ No customers found in the system")
                     else:
                         # Multi-select for customers
                         selected_customers = st.multiselect(
                             "Select customers to invite:",
                             options=[c['user_id'] for c in customers],
-                            format_func=lambda x: next((c['username'] for c in customers if c['user_id'] == x), x)
+                            format_func=lambda x: next((f"{c['username']} ({c['email']})" for c in customers if c['user_id'] == x), x),
+                            key=f"customer_select_{event.get('id', i)}"
                         )
                         
                         if selected_customers:
-                            if st.button("Send Invites", key=f"send_invite_{event.get('id', '')}"):
+                            if st.button("📧 Send Invites", key=f"send_invite_{event.get('id', i)}"):
                                 if send_invites(event.get('id', ''), selected_customers):
-                                    st.success(f"Invites sent to {len(selected_customers)} customers!")
+                                    st.success(f"✅ Invites sent to {len(selected_customers)} customers!")
                                     st.rerun()
                                 else:
-                                    st.error("Failed to send invites. Please try again.")
+                                    st.error("❌ Failed to send invites. Please try again.")
 
 def render_user_invites():
     """Render the user's event invites UI"""
@@ -570,7 +682,7 @@ def render_user_invites():
     # Get current user
     user = st.session_state.get('user')
     if not user:
-        st.warning("Please log in to view your invites")
+        st.warning("⚠️ Please log in to view your invites")
         return
 
     user_id = user.get('user_id')
@@ -579,7 +691,7 @@ def render_user_invites():
         # Fetch user's invites
         db = get_event_db()
         if not db:
-            st.error("Failed to connect to database")
+            st.error("❌ Failed to connect to database")
             return
             
         invites_ref = db.collection('invites')
@@ -599,56 +711,66 @@ def render_user_invites():
             invites.append(invite)
         
         if not invites:
-            st.info("You don't have any event invites yet.")
+            st.info("📭 You don't have any event invites yet.")
             return
+        
+        st.success(f"📧 You have {len(invites)} event invites")
         
         # Display invites
         for invite in invites:
             event = invite.get('event', {})
             
-            with st.expander(f"🎉 {event.get('theme', 'Event')}"):
+            with st.expander(f"🎉 {event.get('theme', 'Event')} - Status: {invite.get('status', 'Unknown').title()}"):
                 st.markdown(f"**Description:** {event.get('description', 'No description')}")
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
                     st.markdown("##### 🍽️ Recipes")
-                    for item in event.get('recipes', ['No recipe information']):
-                        st.markdown(f"- {item}")
+                    recipes = event.get('recipes', [])
+                    if recipes:
+                        for item in recipes:
+                            st.markdown(f"- {item}")
+                    else:
+                        st.markdown("No recipe information")
                 
                 with col2:
                     st.markdown("##### ✉️ Invitation")
                     st.info(event.get('invitation', 'No invitation template'))
                 
-                # RSVP buttons
-                st.markdown("##### RSVP")
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if st.button("✅ Accept", key=f"accept_{invite.get('event_id', '')}"):
-                        # Update invite status
-                        invite_id = f"{invite.get('event_id', '')}_{user_id}"
-                        db.collection('invites').document(invite_id).update({
-                            'status': 'accepted',
-                            'responded_at': datetime.now()
-                        })
-                        st.success("You've accepted the invitation!")
-                        st.rerun()
-                
-                with col2:
-                    if st.button("❌ Decline", key=f"decline_{invite.get('event_id', '')}"):
-                        # Update invite status
-                        invite_id = f"{invite.get('event_id', '')}_{user_id}"
-                        db.collection('invites').document(invite_id).update({
-                            'status': 'declined',
-                            'responded_at': datetime.now()
-                        })
-                        st.success("You've declined the invitation.")
-                        st.rerun()
+                # RSVP buttons - only show if not already responded
+                current_status = invite.get('status', 'sent')
+                if current_status == 'sent':
+                    st.markdown("##### 📝 RSVP")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if st.button("✅ Accept", key=f"accept_{invite.get('event_id', '')}"):
+                            # Update invite status
+                            invite_id = f"{invite.get('event_id', '')}_{user_id}"
+                            db.collection('invites').document(invite_id).update({
+                                'status': 'accepted',
+                                'responded_at': firestore.SERVER_TIMESTAMP
+                            })
+                            st.success("✅ You've accepted the invitation!")
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button("❌ Decline", key=f"decline_{invite.get('event_id', '')}"):
+                            # Update invite status
+                            invite_id = f"{invite.get('event_id', '')}_{user_id}"
+                            db.collection('invites').document(invite_id).update({
+                                'status': 'declined',
+                                'responded_at': firestore.SERVER_TIMESTAMP
+                            })
+                            st.success("❌ You've declined the invitation.")
+                            st.rerun()
+                else:
+                    st.info(f"✅ You have {current_status} this invitation.")
 
     except Exception as e:
         logger.error(f"Error fetching invites: {str(e)}")
-        st.error(f"Failed to load invites: {str(e)}")
+        st.error(f"❌ Failed to load invites: {str(e)}")
 
 # Main Event Planner Function
 def event_planner():
@@ -657,7 +779,7 @@ def event_planner():
 
     # Check if user is logged in
     if 'user' not in st.session_state or not st.session_state.user:
-        st.warning("Please log in to access the Event Planning System")
+        st.warning("⚠️ Please log in to access the Event Planning System")
         return
 
     # Get user role
@@ -674,19 +796,3 @@ def event_planner():
         with tab2:
             render_event_dashboard()
     else:
-        # Customer view - only shows their invites
-        render_user_invites()
-
-# For testing the module independently
-if __name__ == "__main__":
-    st.set_page_config(page_title="Event Planning System", layout="wide")
-
-    # Mock session state for testing
-    if 'user' not in st.session_state:
-        st.session_state.user = {
-            'user_id': 'test_user',
-            'username': 'Test User',
-            'role': 'admin'
-        }
-
-    event_planner()
