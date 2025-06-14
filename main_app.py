@@ -21,8 +21,14 @@ from app_integration import integrate_event_planner, check_event_firebase_config
 # Import the dashboard module
 from dashboard import render_dashboard, get_feature_description
 
-# Import the new chef recipe components
+# Import the chef recipe components
 from modules.chef_components import render_chef_recipe_suggestions
+
+# Import the promotion generator components
+from modules.promotion_components import render_promotion_generator
+
+# Import the NEW visual menu components
+from modules.visual_menu_components import render_visual_menu_search
 
 init_firebase()
 
@@ -36,16 +42,16 @@ def check_feature_access(feature_name):
     user = get_current_user()
 
     # Public features accessible to all authenticated users
-    public_features = ["Event Planning ChatBot", "Gamification Hub", "Cooking Quiz"]
+    public_features = ["Event Planning ChatBot", "Gamification Hub", "Cooking Quiz", "Visual Menu Search"]
 
-    # Staff/admin only features - UPDATED: Promotion Generator only for Staff and Admin
+    # Staff/admin only features
     staff_admin_features = ["Leftover Management", "Promotion Generator"]
 
     # Chef/admin features
     chef_features = ["Chef Recipe Suggestions"]
 
-    # Admin only features
-    admin_features = ["Visual Menu Search"]
+    # Admin only features (none currently, but keeping structure)
+    admin_features = []
 
     if feature_name in public_features:
         return True
@@ -277,19 +283,18 @@ def event_planning():
 
 @auth_required
 def promotion_generator():
-    """Promotion generator feature - UPDATED WITH INTEGRATED FUNCTIONALITY"""
-    from modules.promotion_components import render_promotion_generator
+    """Promotion generator feature"""
     render_promotion_generator()
 
 @auth_required
 def chef_recipe_suggestions():
-    """Chef recipe suggestions feature - NEW INTEGRATED FUNCTIONALITY"""
+    """Chef recipe suggestions feature"""
     render_chef_recipe_suggestions()
 
+@auth_required
 def visual_menu_search():
-    """Visual menu search feature"""
-    st.title("🔍 Visual Menu Search")
-    st.info("This feature is coming soon!")
+    """Visual menu search feature - UPDATED with full functionality"""
+    render_visual_menu_search()
 
 @auth_required
 def dashboard():
@@ -334,6 +339,8 @@ def main():
         - 📊 **Progress Tracking** and skill development
         - 🎉 **Event Planning** for special occasions
         - 👨‍🍳 **Chef Recipe Management** with AI-powered menu generation
+        - 📣 **Marketing Campaign Generator** for promotions
+        - 📷 **Visual Menu Search** with AI dish detection
         
         Please log in or register to access all features.
         ''')
@@ -343,7 +350,7 @@ def main():
     st.sidebar.divider()
     st.sidebar.header("🚀 Features")
 
-    # List of all available features with enhanced descriptions
+    # List of all available features
     features = [
         "Dashboard",
         "Leftover Management",
@@ -351,8 +358,8 @@ def main():
         "Cooking Quiz",
         "Event Planning ChatBot",
         "Promotion Generator", 
-        "Chef Recipe Suggestions",  # Updated feature
-        "Visual Menu Search"
+        "Chef Recipe Suggestions",
+        "Visual Menu Search"  # Updated feature name
     ]
 
     # Filter features based on user role
@@ -393,9 +400,9 @@ def main():
     elif selected_feature == "Promotion Generator":
         promotion_generator()
     elif selected_feature == "Chef Recipe Suggestions":
-        chef_recipe_suggestions()  # Updated to call new integrated function
+        chef_recipe_suggestions()
     elif selected_feature == "Visual Menu Search":
-        visual_menu_search()
+        visual_menu_search()  # Updated to call new integrated function
 
 if __name__ == "__main__":
     main()
