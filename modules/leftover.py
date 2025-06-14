@@ -323,7 +323,7 @@ def get_firestore_db():
     return firestore.client()
 
 def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int = 5) -> List[Dict]:
-    """Generate quiz questions"""
+    """Generate completely random and different quiz questions each time"""
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -332,285 +332,299 @@ def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int =
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
 
-        prompt = f'''
-        Generate {num_questions} cooking quiz questions.
+        # Generate a random seed for completely different questions each time
+        import random
+        import time
+        random_seed = int(time.time() * 1000) % 10000
         
-        Format as JSON array:
-        [
-            {{
-                "question": "Question text?",
-                "options": ["A", "B", "C", "D"],
-                "correct": 0,
-                "difficulty": "easy",
-                "xp_reward": 10,
-                "explanation": "Explanation"
-            }}
+        # Completely random cooking topics - different each time
+        all_cooking_topics = [
+            "food safety and temperatures",
+            "knife skills and cutting techniques", 
+            "baking and pastry fundamentals",
+            "sauce making and emulsions",
+            "meat cooking and doneness",
+            "vegetable preparation methods",
+            "spice and herb knowledge",
+            "cooking equipment and tools",
+            "food storage and preservation",
+            "international cuisine techniques",
+            "fermentation and pickling",
+            "grilling and barbecue methods",
+            "soup and stock preparation",
+            "bread making techniques",
+            "egg cooking methods",
+            "dairy and cheese knowledge",
+            "seafood preparation",
+            "nutrition and dietary needs",
+            "kitchen safety protocols",
+            "food presentation and plating",
+            "wine and beverage pairing",
+            "molecular gastronomy basics",
+            "smoking and curing techniques",
+            "pasta and noodle preparation",
+            "dessert and confection making"
         ]
+        
+        # Randomly select different topics each time
+        random.shuffle(all_cooking_topics)
+        selected_topics = all_cooking_topics[:num_questions]
+        
+        prompt = f'''Generate {num_questions} COMPLETELY DIFFERENT and RANDOM cooking quiz questions. 
 
-        XP: easy=10, medium=15, hard=20
-        '''
+IMPORTANT: Each question must be about a COMPLETELY DIFFERENT cooking topic. No similar or related questions.
+
+Random seed: {random_seed}
+Topics to cover (one question per topic): {", ".join(selected_topics)}
+
+Requirements:
+1. Generate exactly {num_questions} questions
+2. Each question must be about a COMPLETELY different cooking concept
+3. Make questions random and unpredictable
+4. Mix difficulty levels randomly
+5. Cover diverse cooking knowledge areas
+6. No repeated or similar question types
+
+Return as valid JSON array:
+[
+    {{
+        "question": "Completely unique cooking question here?",
+        "options": ["Option A", "Option B", "Option C", "Option D"],
+        "correct": 0,
+        "difficulty": "easy",
+        "xp_reward": 10,
+        "explanation": "Brief explanation"
+    }}
+]
+
+XP Rewards: easy=10, medium=15, hard=20
+
+Make each question completely unique and random - no patterns or similarities!'''
 
         response = model.generate_content(prompt)
         response_text = response.text.strip()
 
+        # Clean up the response
         if "\`\`\`json" in response_text:
             response_text = response_text.split("\`\`\`json")[1].split("\`\`\`")[0]
+        elif "\`\`\`" in response_text:
+            response_text = response_text.split("\`\`\`")[1].split("\`\`\`")[0]
 
         try:
             questions = json.loads(response_text)
-            if isinstance(questions, list) and len(questions) > 0:
-                return questions[:num_questions]
+            
+            if isinstance(questions, list) and len(questions) >= num_questions:
+                # Take exactly the requested number of questions
+                selected_questions = questions[:num_questions]
+                
+                # Validate each question has required fields
+                valid_questions = []
+                for q in selected_questions:
+                    if (isinstance(q, dict) and 
+                        'question' in q and 
+                        'options' in q and 
+                        'correct' in q and
+                        isinstance(q['options'], list) and 
+                        len(q['options']) == 4):
+                        valid_questions.append(q)
+                
+                if len(valid_questions) >= num_questions:
+                    logger.info(f"Generated {len(valid_questions)} completely random quiz questions")
+                    return valid_questions[:num_questions]
+                else:
+                    logger.warning(f"Only {len(valid_questions)} valid questions generated, using random fallback")
+                    return generate_random_fallback_questions(num_questions)
             else:
-                return generate_fallback_questions(num_questions)
-        except json.JSONDecodeError:
-            return generate_fallback_questions(num_questions)
+                logger.warning(f"Expected {num_questions} questions, got {len(questions) if isinstance(questions, list) else 0}")
+                return generate_random_fallback_questions(num_questions)
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {str(e)}")
+            return generate_random_fallback_questions(num_questions)
 
     except Exception as e:
-        return generate_fallback_questions(num_questions)
+        logger.error(f"Error generating quiz questions: {str(e)}")
+        return generate_random_fallback_questions(num_questions)
 
-def generate_fallback_questions(num_questions: int = 5) -> List[Dict]:
-    """Generate fallback quiz questions"""
+def generate_random_fallback_questions(num_questions: int = 5) -> List[Dict]:
+    """Generate completely random fallback quiz questions"""
     all_questions = [
         {
-            "question": "What is the safe minimum temperature for cooking ground beef?",
-            "options": ["145°F", "160°F", "165°F", "180°F"],
+            "question": "What is the safe minimum internal temperature for cooking ground beef?",
+            "options": ["145°F (63°C)", "160°F (71°C)", "165°F (74°C)", "180°F (82°C)"],
             "correct": 1,
             "difficulty": "easy",
             "xp_reward": 10,
-            "explanation": "Ground beef should be cooked to 160°F to eliminate bacteria."
+            "explanation": "Ground beef should be cooked to 160°F to eliminate harmful bacteria."
         },
         {
-            "question": "Which cooking method uses dry heat?",
-            "options": ["Braising", "Steaming", "Roasting", "Poaching"],
+            "question": "Which knife cut produces small cubes approximately 1/4 inch?",
+            "options": ["Julienne", "Brunoise", "Chiffonade", "Batonnet"],
+            "correct": 1,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Brunoise is a precise knife cut that creates small 1/4 inch cubes."
+        },
+        {
+            "question": "What type of flour has the highest protein content?",
+            "options": ["All-purpose flour", "Cake flour", "Bread flour", "Pastry flour"],
+            "correct": 2,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Bread flour has the highest protein content, making it ideal for yeast breads."
+        },
+        {
+            "question": "Which mother sauce is made with a blonde roux and white stock?",
+            "options": ["Béchamel", "Velouté", "Espagnole", "Hollandaise"],
+            "correct": 1,
+            "difficulty": "hard",
+            "xp_reward": 20,
+            "explanation": "Velouté is made with blonde roux and white stock (chicken, fish, or vegetable)."
+        },
+        {
+            "question": "At what temperature should a medium-rare steak be cooked?",
+            "options": ["120°F (49°C)", "130°F (54°C)", "140°F (60°C)", "150°F (66°C)"],
+            "correct": 1,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Medium-rare steak should reach an internal temperature of 130°F."
+        },
+        {
+            "question": "What does 'mise en place' mean in cooking?",
+            "options": ["Seasoning food", "Everything in its place", "Cooking technique", "Plating method"],
+            "correct": 1,
+            "difficulty": "easy",
+            "xp_reward": 10,
+            "explanation": "Mise en place means 'everything in its place' - having all ingredients prepared."
+        },
+        {
+            "question": "Which cooking method involves cooking food in its own fat at low temperature?",
+            "options": ["Braising", "Confit", "Poaching", "Steaming"],
+            "correct": 1,
+            "difficulty": "hard",
+            "xp_reward": 20,
+            "explanation": "Confit involves slow-cooking food submerged in its own fat."
+        },
+        {
+            "question": "What is the 'danger zone' temperature range for food safety?",
+            "options": ["32-40°F", "40-140°F", "140-180°F", "180-212°F"],
+            "correct": 1,
+            "difficulty": "easy",
+            "xp_reward": 10,
+            "explanation": "The danger zone is 40-140°F where bacteria multiply rapidly."
+        },
+        {
+            "question": "Which spice is derived from the Crocus flower?",
+            "options": ["Turmeric", "Paprika", "Saffron", "Cardamom"],
+            "correct": 2,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Saffron comes from the stigmas of the Crocus sativus flower."
+        },
+        {
+            "question": "What does 'al dente' mean when cooking pasta?",
+            "options": ["Very soft", "Firm to the bite", "Overcooked", "Raw"],
+            "correct": 1,
+            "difficulty": "easy",
+            "xp_reward": 10,
+            "explanation": "Al dente means pasta that is firm to the bite, not mushy."
+        },
+        {
+            "question": "Which technique involves cooking vegetables quickly in boiling water then ice water?",
+            "options": ["Sautéing", "Blanching", "Braising", "Roasting"],
+            "correct": 1,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Blanching involves brief boiling followed by ice water to stop cooking."
+        },
+        {
+            "question": "What is the main ingredient in a traditional roux?",
+            "options": ["Butter and cream", "Flour and fat", "Eggs and oil", "Milk and starch"],
+            "correct": 1,
+            "difficulty": "easy",
+            "xp_reward": 10,
+            "explanation": "A roux is made from equal parts flour and fat, cooked together."
+        },
+        {
+            "question": "Which wine is traditionally used in Coq au Vin?",
+            "options": ["White wine", "Red wine", "Champagne", "Port"],
+            "correct": 1,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Coq au Vin traditionally uses red wine, usually Burgundy."
+        },
+        {
+            "question": "What is the ideal water temperature for brewing green tea?",
+            "options": ["160-180°F", "180-200°F", "200-212°F", "Boiling"],
+            "correct": 0,
+            "difficulty": "hard",
+            "xp_reward": 20,
+            "explanation": "Green tea should be brewed with water at 160-180°F to avoid bitterness."
+        },
+        {
+            "question": "Which cut of beef is used for making traditional carpaccio?",
+            "options": ["Ribeye", "Tenderloin", "Sirloin", "Chuck"],
+            "correct": 1,
+            "difficulty": "hard",
+            "xp_reward": 20,
+            "explanation": "Tenderloin (beef fillet) is traditionally used for carpaccio due to its tenderness."
+        },
+        {
+            "question": "What does 'flambé' mean in cooking?",
+            "options": ["Deep frying", "Igniting alcohol", "Grilling over flame", "Smoking food"],
+            "correct": 1,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Flambé involves igniting alcohol to burn off the alcohol and add flavor."
+        },
+        {
+            "question": "Which herb is the main ingredient in pesto?",
+            "options": ["Parsley", "Cilantro", "Basil", "Oregano"],
             "correct": 2,
             "difficulty": "easy",
             "xp_reward": 10,
-            "explanation": "Roasting uses dry heat in an oven."
+            "explanation": "Traditional pesto is made primarily with fresh basil leaves."
         },
         {
-            "question": "What does 'sauté' mean?",
-            "options": ["Boil rapidly", "Cook quickly in fat", "Cook slowly", "Bake"],
+            "question": "What is the smoking point of extra virgin olive oil?",
+            "options": ["325°F", "375°F", "425°F", "475°F"],
             "correct": 1,
-            "difficulty": "easy",
-            "xp_reward": 10,
-            "explanation": "Sauté means to cook quickly in fat over high heat."
+            "difficulty": "hard",
+            "xp_reward": 20,
+            "explanation": "Extra virgin olive oil has a smoking point around 375°F."
+        },
+        {
+            "question": "Which fermented fish sauce is essential in Vietnamese cuisine?",
+            "options": ["Soy sauce", "Fish sauce", "Oyster sauce", "Hoisin sauce"],
+            "correct": 1,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Fish sauce (nuoc mam) is a fundamental ingredient in Vietnamese cooking."
+        },
+        {
+            "question": "What is the main difference between stock and broth?",
+            "options": ["Cooking time", "Bones vs meat", "Temperature", "Seasoning"],
+            "correct": 1,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Stock is made primarily from bones, while broth is made from meat."
         }
     ]
     
+    # Completely randomize the questions each time
+    import random
+    import time
+    
+    # Use current time as seed for true randomness
+    random.seed(int(time.time() * 1000))
     random.shuffle(all_questions)
-    return all_questions[:num_questions]
+    
+    # Take random questions
+    selected_questions = all_questions[:num_questions]
+    
+    logger.info(f"Using {len(selected_questions)} random fallback questions")
+    return selected_questions
 
-def calculate_quiz_score(answers: List[int], questions: List[Dict]) -> Tuple[int, int, int]:
-    """Calculate quiz score and XP"""
-    correct_answers = 0
-    xp_earned = 0
-
-    for i, question in enumerate(questions):
-        if i < len(answers) and answers[i] == question["correct"]:
-            correct_answers += 1
-            xp_earned += question["xp_reward"]
-
-    if correct_answers == len(questions):
-        bonus_xp = len(questions) * 5
-        xp_earned += bonus_xp
-
-    return correct_answers, len(questions), xp_earned
-
-def get_user_stats(user_id: str) -> Dict:
-    """Get user's gamification stats"""
-    try:
-        db = get_firestore_db()
-        user_stats_ref = db.collection('user_stats').document(user_id)
-        doc = user_stats_ref.get()
-
-        if doc.exists:
-            return doc.to_dict()
-        else:
-            initial_stats = {
-                'user_id': user_id,
-                'total_xp': 0,
-                'level': 1,
-                'quizzes_taken': 0,
-                'correct_answers': 0,
-                'total_questions': 0,
-                'recipes_generated': 0,
-                'perfect_scores': 0,
-                'last_quiz_date': None,
-                'achievements': []
-            }
-            user_stats_ref.set(initial_stats)
-            return initial_stats
-
-    except Exception as e:
-        logger.error(f"Error getting user stats: {str(e)}")
-        return {
-            'user_id': user_id,
-            'total_xp': 0,
-            'level': 1,
-            'quizzes_taken': 0,
-            'correct_answers': 0,
-            'total_questions': 0,
-            'recipes_generated': 0,
-            'perfect_scores': 0,
-            'last_quiz_date': None,
-            'achievements': []
-        }
-
-def update_user_stats(user_id: str, xp_gained: int, correct: int, total: int) -> Dict:
-    """Update user stats after quiz"""
-    try:
-        db = get_firestore_db()
-        user_stats_ref = db.collection('user_stats').document(user_id)
-
-        current_stats = get_user_stats(user_id)
-        old_level = current_stats['level']
-
-        new_total_xp = current_stats['total_xp'] + xp_gained
-        new_level = calculate_level(new_total_xp)
-        new_quizzes = current_stats['quizzes_taken'] + 1
-        new_correct = current_stats['correct_answers'] + correct
-        new_total_questions = current_stats['total_questions'] + total
-        new_perfect_scores = current_stats['perfect_scores'] + (1 if correct == total else 0)
-
-        current_achievements = current_stats.get('achievements', [])
-        new_achievements = check_achievements(
-            new_quizzes, new_perfect_scores, new_level, old_level, current_achievements
-        )
-
-        updated_stats = {
-            'user_id': user_id,
-            'total_xp': new_total_xp,
-            'level': new_level,
-            'quizzes_taken': new_quizzes,
-            'correct_answers': new_correct,
-            'total_questions': new_total_questions,
-            'recipes_generated': current_stats.get('recipes_generated', 0),
-            'perfect_scores': new_perfect_scores,
-            'last_quiz_date': firestore.SERVER_TIMESTAMP,
-            'achievements': new_achievements
-        }
-
-        user_stats_ref.set(updated_stats)
-        return updated_stats
-
-    except Exception as e:
-        logger.error(f"Error updating user stats: {str(e)}")
-        return current_stats
-
-def check_achievements(quizzes: int, perfect_scores: int, new_level: int, old_level: int, current_achievements: List[str]) -> List[str]:
-    """Check for new achievements"""
-    achievements = current_achievements.copy()
-
-    quiz_milestones = [
-        (1, "First Quiz"),
-        (5, "Quiz Novice"),
-        (10, "Quiz Enthusiast"),
-        (25, "Quiz Master"),
-        (50, "Quiz Legend")
-    ]
-
-    for milestone, title in quiz_milestones:
-        if quizzes >= milestone and title not in achievements:
-            achievements.append(title)
-
-    perfect_milestones = [
-        (1, "Perfectionist"),
-        (5, "Streak Master"),
-        (10, "Flawless Chef")
-    ]
-
-    for milestone, title in perfect_milestones:
-        if perfect_scores >= milestone and title not in achievements:
-            achievements.append(title)
-
-    level_milestones = [
-        (5, "Rising Star"),
-        (10, "Kitchen Pro"),
-        (15, "Culinary Expert"),
-        (20, "Master Chef")
-    ]
-
-    for milestone, title in level_milestones:
-        if new_level >= milestone and title not in achievements:
-            achievements.append(title)
-
-    return achievements
-
-def calculate_level(total_xp: int) -> int:
-    """Calculate user level based on XP"""
-    import math
-    return max(1, int(math.sqrt(total_xp / 100)) + 1)
-
-def get_xp_progress(current_xp: int, current_level: int) -> Tuple[int, int]:
-    """Calculate XP progress within current level"""
-    previous_level_xp = ((current_level - 1) ** 2) * 100
-    next_level_xp = (current_level ** 2) * 100
-    current_level_xp = current_xp - previous_level_xp
-    xp_needed = next_level_xp - current_xp
-
-    return current_level_xp, xp_needed
-
-def get_leaderboard(limit: int = 10) -> List[Dict]:
-    """Get top users leaderboard"""
-    try:
-        db = get_firestore_db()
-
-        stats_query = db.collection('user_stats').order_by('total_xp', direction=firestore.Query.DESCENDING).limit(limit)
-        stats_docs = stats_query.get()
-
-        users_ref = db.collection('users')
-        leaderboard = []
-
-        for i, stat_doc in enumerate(stats_docs):
-            stat_data = stat_doc.to_dict()
-            user_id = stat_data['user_id']
-
-            try:
-                user_doc = users_ref.document(user_id).get()
-                username = user_doc.to_dict().get('username', 'Unknown') if user_doc.exists else 'Unknown'
-            except:
-                username = 'Unknown'
-
-            leaderboard.append({
-                'rank': i + 1,
-                'username': username,
-                'total_xp': stat_data.get('total_xp', 0),
-                'level': stat_data.get('level', 1),
-                'quizzes_taken': stat_data.get('quizzes_taken', 0),
-                'perfect_scores': stat_data.get('perfect_scores', 0),
-                'achievements': len(stat_data.get('achievements', []))
-            })
-
-        return leaderboard
-
-    except Exception as e:
-        logger.error(f"Error getting leaderboard: {str(e)}")
-        return []
-
-def award_recipe_xp(user_id: str, num_recipes: int) -> Dict:
-    """Award XP for generating recipes"""
-    try:
-        xp_per_recipe = 5
-        total_xp = num_recipes * xp_per_recipe
-
-        db = get_firestore_db()
-        user_stats_ref = db.collection('user_stats').document(user_id)
-        current_stats = get_user_stats(user_id)
-
-        new_total_xp = current_stats['total_xp'] + total_xp
-        new_level = calculate_level(new_total_xp)
-        new_recipes = current_stats.get('recipes_generated', 0) + num_recipes
-
-        updated_stats = current_stats.copy()
-        updated_stats.update({
-            'total_xp': new_total_xp,
-            'level': new_level,
-            'recipes_generated': new_recipes
-        })
-
-        user_stats_ref.set(updated_stats)
-        return updated_stats
-
-    except Exception as e:
-        logger.error(f"Error awarding recipe XP: {str(e)}")
-        return get_user_stats(user_id)
+def generate_fallback_questions(num_questions: int = 5) -> List[Dict]:
+    """Wrapper for backward compatibility"""
+    return generate_random_fallback_questions(num_questions)
