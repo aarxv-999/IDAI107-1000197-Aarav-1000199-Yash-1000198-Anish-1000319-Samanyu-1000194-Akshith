@@ -177,54 +177,11 @@ def generate_campaign(staff_name, promotion_type, promotion_goal, target_audienc
         logger.error(f"Error generating campaign: {str(e)}")
         return None
 
-def score_campaign(campaign_text, staff_name):
-    """Score a campaign using AI"""
-    try:
-        model = configure_promotion_gemini_ai()
-        if not model:
-            return 5.0  # Default score if AI unavailable
-            
-        prompt = f"""
-        You are an expert in marketing strategy evaluation.
-        Rate the following campaign out of 10 (decimals allowed). Only output the number.
-        Consider creativity, clarity, focus on reducing food waste, and how persuasive it is.
-
-        Campaign:
-        \"\"\"
-        {campaign_text}
-        \"\"\"
-        """
-        
-        response = model.generate_content(prompt)
-        score_text = response.text.strip()
-        
-        # Extract numeric score
-        score_match = re.findall(r"[0-9]+(?:\.[0-9]+)?", score_text)
-        if score_match:
-            score = float(score_match[0])
-            score = round(min(score, 10.0), 2)
-            logger.info(f"Scored campaign by {staff_name}: {score}/10")
-            return score
-        else:
-            logger.warning(f"Could not extract score from AI response: {score_text}")
-            return 5.0
-            
-    except Exception as e:
-        logger.error(f"Error scoring campaign: {str(e)}")
-        return 5.0
-
 def save_campaign(db, staff_name, campaign_data):
-    """Save campaign to database and automatically score it"""
+    """Save campaign to database"""
     try:
         current_month = datetime.now().strftime("%Y-%m")
         campaign_doc_id = f"{staff_name}_{current_month}"
-        
-        # Generate AI score automatically
-        campaign_text = campaign_data.get("campaign", "")
-        if campaign_text:
-            ai_score = score_campaign(campaign_text, staff_name)
-            campaign_data["ai_score"] = ai_score
-            logger.info(f"Auto-scored campaign by {staff_name}: {ai_score}/10")
         
         campaign_data.update({
             "timestamp": firestore.SERVER_TIMESTAMP,
@@ -232,12 +189,12 @@ def save_campaign(db, staff_name, campaign_data):
         })
         
         db.collection("staff_campaigns").document(campaign_doc_id).set(campaign_data)
-        logger.info(f"Saved campaign for {staff_name} to database with auto-score")
-        return True, ai_score if campaign_text else None
+        logger.info(f"Saved campaign for {staff_name} to database")
+        return True
         
     except Exception as e:
         logger.error(f"Error saving campaign: {str(e)}")
-        return False, None
+        return False
 
 def get_existing_campaign(db, staff_name):
     """Check if user already has a campaign for current month"""
@@ -269,3 +226,25 @@ def get_campaigns_for_month(db, month=None):
     except Exception as e:
         logger.error(f"Error retrieving campaigns: {str(e)}")
         return []
+
+def award_promotion_xp(user_id, campaign_quality="good"):
+    """Award XP for creating a promotion campaign"""
+    try:
+        from modules.leftover import award_recipe_xp
+        
+        # Award different XP based on campaign quality
+        xp_amounts = {
+            "excellent": 50,
+            "good": 30,
+            "basic": 20
+        }
+        
+        xp_to_award = xp_amounts.get(campaign_quality, 30)
+        award_recipe_xp(user_id, xp_to_award, "promotion_campaign")
+        
+        logger.info(f"Awarded {xp_to_award} XP to user {user_id} for promotion campaign")
+        return xp_to_award
+        
+    except Exception as e:
+        logger.error(f"Error awarding promotion XP: {str(e)}")
+        return 0
