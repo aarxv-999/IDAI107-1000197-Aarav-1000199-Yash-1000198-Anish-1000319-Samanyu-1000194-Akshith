@@ -10,7 +10,7 @@ from datetime import datetime
 from modules.promotion_services import (
     get_promotion_firebase_db, filter_valid_ingredients, find_possible_dishes,
     generate_campaign, save_campaign, get_existing_campaign, get_campaigns_for_month,
-    award_promotion_xp
+    award_promotion_xp, delete_campaign
 )
 from ui.components import show_xp_notification
 import logging
@@ -65,7 +65,7 @@ def render_campaign_creation(db, staff_name, user_id):
     existing_campaign = get_existing_campaign(db, staff_name)
     
     if existing_campaign:
-        st.success(f"✅ **Campaign Already Created for {month_name}**")
+        st.warning(f"⚠️ **Campaign Already Created for {month_name}**")
         
         # Show existing campaign
         with st.expander("👀 View Your Current Campaign", expanded=True):
@@ -80,10 +80,51 @@ def render_campaign_creation(db, staff_name, user_id):
                 st.write(f"**Target:** {existing_campaign.get('target_audience', 'N/A')}")
                 st.write(f"**Duration:** {existing_campaign.get('campaign_duration', 'N/A')}")
         
-        st.info("💡 You can create a new campaign next month!")
+        # Campaign regeneration section
+        st.markdown("#### 🔄 Campaign Management")
+        st.info("You can delete your current campaign and create a new one if needed.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🗑️ Delete Current Campaign & Create New", type="primary", key="delete_campaign"):
+                delete_and_regenerate_campaign(db, staff_name, user_id)
+        
+        with col2:
+            if st.button("✅ Keep Current Campaign", key="keep_campaign"):
+                st.success("✅ Current campaign preserved")
+        
         return
     
-    # Campaign creation form
+    # No existing campaign - show creation form
+    st.success("✅ No existing campaign found for this month")
+    render_campaign_form(db, staff_name, user_id, month_name)
+
+def delete_and_regenerate_campaign(db, staff_name, user_id):
+    """Delete existing campaign and allow creation of new one"""
+    try:
+        with st.spinner("🗑️ Deleting existing campaign..."):
+            success = delete_campaign(db, staff_name)
+            
+            if success:
+                st.success("✅ Campaign deleted successfully!")
+                st.info("🚀 You can now create a new campaign below.")
+                
+                # Clear any session state related to campaigns
+                if "campaign_created" in st.session_state:
+                    del st.session_state.campaign_created
+                
+                # Show the creation form
+                month_name = datetime.now().strftime("%B %Y")
+                render_campaign_form(db, staff_name, user_id, month_name)
+            else:
+                st.error("❌ Failed to delete campaign. Please try again.")
+                
+    except Exception as e:
+        logger.error(f"Error during campaign deletion: {str(e)}")
+        st.error(f"❌ Error during campaign deletion: {str(e)}")
+
+def render_campaign_form(db, staff_name, user_id, month_name):
+    """Render the campaign creation form"""
     st.markdown(f"#### 📅 New Campaign for {month_name}")
     
     with st.form("campaign_form", clear_on_submit=True):
@@ -188,6 +229,9 @@ def create_campaign_with_xp(db, staff_name, user_id, promotion_type, promotion_g
                 st.code(campaign, language=None)
                 
                 st.info("💡 **Tip:** Your campaign has been saved and you've earned XP! Check your profile to see your progress.")
+                
+                # Force a rerun to refresh the campaign status
+                st.rerun()
             else:
                 st.error("❌ Failed to save campaign. Please try again.")
                 
