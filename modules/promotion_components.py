@@ -188,14 +188,9 @@ def generate_and_submit_campaign(db, staff_name, promotion_type, promotion_goal,
                 st.markdown("---")
                 st.write(campaign)
                 
-                # Quick actions
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("📊 View Leaderboard", key="view_leaderboard_after_submit"):
-                        st.info("Switch to the Leaderboard tab to view current rankings")
-                
-                with col2:
-                    st.code(campaign, language=None)
+                # Quick actions (no buttons in form context)
+                st.info("💡 **Tip:** Switch to the Leaderboard tab to view current rankings!")
+                st.code(campaign, language=None)
             else:
                 st.error("❌ Failed to save campaign. Please try again.")
                 
