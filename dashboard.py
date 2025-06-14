@@ -41,10 +41,10 @@ def render_dashboard():
     
     if user_role in ['admin', 'staff', 'chef']:
         features.append({
-            "title": "Leftover Management",
-            "description": "Generate recipes from leftover ingredients",
-            "icon": "♻️",
-            "key": "Leftover Management"
+            "title": "Kitchen Management",  # Updated name
+            "description": "Generate recipes from leftovers & take cooking quizzes",
+            "icon": "🍽️",
+            "key": "Kitchen Management"
         })
     
     if user_role in ['admin', 'staff']:
@@ -79,10 +79,10 @@ def render_dashboard():
             "key": "Gamification Hub"
         },
         {
-            "title": "Cooking Quiz",
-            "description": "Test culinary knowledge",
-            "icon": "🧠",
-            "key": "Cooking Quiz"
+            "title": "Event Planning ChatBot",
+            "description": "AI-powered event planning assistance",
+            "icon": "🎉",
+            "key": "Event Planning ChatBot"
         }
     ])
     
@@ -101,8 +101,8 @@ def render_dashboard():
     
     if user_role in ['admin', 'chef', 'staff']:
         activities = [
-            "New recipes added to archive",
-            "5 recipes generated from leftovers",
+            "New recipes generated from leftovers",
+            "5 cooking quizzes completed by staff",
             "Menu updated with seasonal items"
         ]
     else:
@@ -118,9 +118,9 @@ def render_dashboard():
 def get_feature_description(feature_name: str) -> str:
     """Get simplified feature descriptions"""
     descriptions = {
-        "Leftover Management": "♻️ Generate recipes from leftovers",
+        "Kitchen Management": "🍽️ Generate recipes from leftovers & take cooking quizzes",
         "Gamification Hub": "🎮 View achievements and progress",
-        "Cooking Quiz": "🧠 Test culinary knowledge",
+        "Event Planning ChatBot": "🎉 AI-powered event planning assistance",
         "Promotion Generator": "📣 Create marketing campaigns",
         "Chef Recipe Suggestions": "👨‍🍳 Professional recipes",
         "Visual Menu Search": "🔍 Search with images"
