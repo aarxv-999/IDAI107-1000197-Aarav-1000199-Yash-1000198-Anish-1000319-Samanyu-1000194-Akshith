@@ -1087,27 +1087,60 @@ IMPORTANT: Return ONLY the JSON object above. No other text.'''
 
 # PDF Generation Functions (restored working versions)
 def create_event_pdf(event_plan: Dict) -> bytes:
-    """Create PDF with proper formatting"""
+    """Create PDF with proper Unicode handling - FIXED VERSION"""
     try:
         pdf = FPDF()
         pdf.add_page()
         
+        # Helper function to clean text for PDF
+        def clean_text_for_pdf(text: str) -> str:
+            """Replace Unicode characters with ASCII equivalents"""
+            if not isinstance(text, str):
+                text = str(text)
+            
+            # Replace common Unicode characters
+            replacements = {
+                '•': '* ',  # Bullet point
+                '–': '-',   # En dash
+                '—': '-',   # Em dash
+                ''': "'",   # Left single quote
+                ''': "'",   # Right single quote
+                '"': '"',   # Left double quote
+                '"': '"',   # Right double quote
+                '…': '...',  # Ellipsis
+                '₹': 'Rs. ', # Rupee symbol
+                '°': ' deg', # Degree symbol
+            }
+            
+            for unicode_char, ascii_replacement in replacements.items():
+                text = text.replace(unicode_char, ascii_replacement)
+            
+            # Remove any remaining non-ASCII characters
+            text = text.encode('ascii', 'ignore').decode('ascii')
+            
+            return text
+        
         # Title
         pdf.set_font("Arial", "B", 16)
-        pdf.cell(0, 10, f"EVENT PLAN: {event_plan['theme']['name'].upper()}", ln=True, align="C")
+        title_text = clean_text_for_pdf(f"EVENT PLAN: {event_plan['theme']['name'].upper()}")
+        pdf.cell(0, 10, title_text, ln=True, align="C")
         pdf.ln(5)
         
         # Event details
         pdf.set_font("Arial", "", 12)
-        pdf.cell(0, 8, f"Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}", ln=True)
-        pdf.cell(0, 8, f"Expected Guests: {event_plan.get('guest_count', 'Not specified')}", ln=True)
+        date_text = clean_text_for_pdf(f"Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}")
+        pdf.cell(0, 8, date_text, ln=True)
+        
+        guest_text = clean_text_for_pdf(f"Expected Guests: {event_plan.get('guest_count', 'Not specified')}")
+        pdf.cell(0, 8, guest_text, ln=True)
         pdf.ln(5)
         
         # Theme
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "THEME & CONCEPT", ln=True)
         pdf.set_font("Arial", "", 11)
-        pdf.multi_cell(0, 6, event_plan['theme']['description'])
+        theme_desc = clean_text_for_pdf(event_plan['theme']['description'])
+        pdf.multi_cell(0, 6, theme_desc)
         pdf.ln(3)
         
         # Budget
@@ -1117,19 +1150,24 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         
         budget = event_plan.get('budget', {})
         if budget:
-            pdf.cell(0, 6, f"Total Cost: Rs. {budget.get('total_cost', 0):,}", ln=True)
-            pdf.cell(0, 6, f"Cost per Person: Rs. {budget.get('cost_per_person', 0):,}", ln=True)
+            total_cost_text = clean_text_for_pdf(f"Total Cost: Rs. {budget.get('total_cost', 0):,}")
+            pdf.cell(0, 6, total_cost_text, ln=True)
+            
+            cost_per_person_text = clean_text_for_pdf(f"Cost per Person: Rs. {budget.get('cost_per_person', 0):,}")
+            pdf.cell(0, 6, cost_per_person_text, ln=True)
             pdf.ln(2)
             
             for item in budget.get('breakdown', []):
-                pdf.cell(0, 5, f"• {item.get('item', '')}: Rs. {item.get('cost', 0):,}", ln=True)
+                item_text = clean_text_for_pdf(f"* {item.get('item', '')}: Rs. {item.get('cost', 0):,}")
+                pdf.cell(0, 5, item_text, ln=True)
             pdf.ln(3)
         
         # Seating
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "SEATING ARRANGEMENT", ln=True)
         pdf.set_font("Arial", "", 11)
-        pdf.multi_cell(0, 6, event_plan['seating']['layout'])
+        seating_text = clean_text_for_pdf(event_plan['seating']['layout'])
+        pdf.multi_cell(0, 6, seating_text)
         pdf.ln(3)
         
         # Decoration
@@ -1137,7 +1175,8 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         pdf.cell(0, 10, "DECORATION", ln=True)
         pdf.set_font("Arial", "", 11)
         for item in event_plan['decor']:
-            pdf.cell(0, 5, f"• {item}", ln=True)
+            decor_text = clean_text_for_pdf(f"* {item}")
+            pdf.cell(0, 5, decor_text, ln=True)
         pdf.ln(3)
         
         # Menu
@@ -1145,16 +1184,26 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         pdf.cell(0, 10, "MENU SUGGESTIONS", ln=True)
         pdf.set_font("Arial", "", 11)
         for item in event_plan['recipe_suggestions']:
-            pdf.cell(0, 5, f"• {item}", ln=True)
+            menu_text = clean_text_for_pdf(f"* {item}")
+            pdf.cell(0, 5, menu_text, ln=True)
         pdf.ln(3)
         
         # Invitation
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "INVITATION", ln=True)
         pdf.set_font("Arial", "", 11)
-        pdf.multi_cell(0, 6, event_plan['invitation'])
+        invitation_text = clean_text_for_pdf(event_plan['invitation'])
+        pdf.multi_cell(0, 6, invitation_text)
         
-        return pdf.output(dest="S").encode("latin1")
+        # Generate PDF bytes with proper encoding
+        pdf_output = pdf.output(dest="S")
+        
+        # Convert to bytes properly
+        if isinstance(pdf_output, str):
+            return pdf_output.encode("latin1", errors='ignore')
+        else:
+            return pdf_output
+            
     except Exception as e:
         logger.error(f"Error creating PDF: {str(e)}")
         return b""
