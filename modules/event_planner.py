@@ -1087,7 +1087,7 @@ IMPORTANT: Return ONLY the JSON object above. No other text.'''
 
 # PDF Generation Functions (restored working versions)
 def create_event_pdf(event_plan: Dict) -> bytes:
-    """Create PDF with proper Unicode handling - FIXED VERSION"""
+    """Create a visually appealing PDF with proper formatting and tables"""
     try:
         pdf = FPDF()
         pdf.add_page()
@@ -1098,107 +1098,212 @@ def create_event_pdf(event_plan: Dict) -> bytes:
             if not isinstance(text, str):
                 text = str(text)
             
-            # Replace common Unicode characters
             replacements = {
-                '•': '* ',  # Bullet point
-                '–': '-',   # En dash
-                '—': '-',   # Em dash
-                ''': "'",   # Left single quote
-                ''': "'",   # Right single quote
-                '"': '"',   # Left double quote
-                '"': '"',   # Right double quote
-                '…': '...',  # Ellipsis
-                '₹': 'Rs. ', # Rupee symbol
-                '°': ' deg', # Degree symbol
+                '•': '* ', '–': '-', '—': '-', ''': "'", ''': "'",
+                '"': '"', '"': '"', '…': '...', '₹': 'Rs. ', '°': ' deg',
             }
             
             for unicode_char, ascii_replacement in replacements.items():
                 text = text.replace(unicode_char, ascii_replacement)
             
-            # Remove any remaining non-ASCII characters
             text = text.encode('ascii', 'ignore').decode('ascii')
-            
             return text
         
-        # Title
+        def add_section_header(title: str, y_offset: int = 5):
+            """Add a styled section header"""
+            pdf.ln(y_offset)
+            pdf.set_fill_color(230, 230, 230)  # Light gray background
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 8, title, ln=True, align="L", fill=True)
+            pdf.ln(2)
+        
+        def add_info_box(label: str, value: str, width: int = 90):
+            """Add an info box with label and value"""
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(width, 6, f"{label}:", border=1, align="L")
+            pdf.set_font("Arial", "", 10)
+            pdf.cell(0, 6, f" {value}", border=1, ln=True, align="L")
+        
+        # === HEADER SECTION ===
+        pdf.set_fill_color(41, 128, 185)  # Blue background
+        pdf.set_text_color(255, 255, 255)  # White text
+        pdf.set_font("Arial", "B", 18)
+        title_text = clean_text_for_pdf(f"EVENT PLANNING PROPOSAL")
+        pdf.cell(0, 15, title_text, ln=True, align="C", fill=True)
+        
+        # Reset colors
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(5)
+        
+        # === EVENT OVERVIEW ===
         pdf.set_font("Arial", "B", 16)
-        title_text = clean_text_for_pdf(f"EVENT PLAN: {event_plan['theme']['name'].upper()}")
-        pdf.cell(0, 10, title_text, ln=True, align="C")
+        event_name = clean_text_for_pdf(event_plan['theme']['name'])
+        pdf.cell(0, 10, event_name, ln=True, align="C")
+        pdf.ln(3)
+        
+        # Event details in a box
+        pdf.set_draw_color(100, 100, 100)
+        pdf.rect(10, pdf.get_y(), 190, 25)  # Draw border
+        pdf.ln(3)
+        
+        # Event info in columns
+        current_y = pdf.get_y()
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(45, 6, "Date:", align="L")
+        pdf.set_font("Arial", "", 10)
+        date_text = clean_text_for_pdf(str(event_plan.get('date', 'TBD')))
+        pdf.cell(50, 6, date_text, align="L")
+        
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(30, 6, "Guests:", align="L")
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(0, 6, str(event_plan.get('guest_count', 'TBD')), ln=True, align="L")
+        
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(45, 6, "Complexity:", align="L")
+        pdf.set_font("Arial", "", 10)
+        complexity = clean_text_for_pdf(str(event_plan.get('complexity', 'Standard')).title())
+        pdf.cell(0, 6, complexity, ln=True, align="L")
         pdf.ln(5)
         
-        # Event details
-        pdf.set_font("Arial", "", 12)
-        date_text = clean_text_for_pdf(f"Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}")
-        pdf.cell(0, 8, date_text, ln=True)
-        
-        guest_text = clean_text_for_pdf(f"Expected Guests: {event_plan.get('guest_count', 'Not specified')}")
-        pdf.cell(0, 8, guest_text, ln=True)
-        pdf.ln(5)
-        
-        # Theme
-        pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, "THEME & CONCEPT", ln=True)
+        # === THEME & CONCEPT ===
+        add_section_header("THEME & CONCEPT")
         pdf.set_font("Arial", "", 11)
         theme_desc = clean_text_for_pdf(event_plan['theme']['description'])
         pdf.multi_cell(0, 6, theme_desc)
-        pdf.ln(3)
         
-        # Budget
-        pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, "BUDGET (INR)", ln=True)
-        pdf.set_font("Arial", "", 11)
-        
+        # === BUDGET BREAKDOWN ===
+        add_section_header("BUDGET ANALYSIS")
         budget = event_plan.get('budget', {})
-        if budget:
-            total_cost_text = clean_text_for_pdf(f"Total Cost: Rs. {budget.get('total_cost', 0):,}")
-            pdf.cell(0, 6, total_cost_text, ln=True)
-            
-            cost_per_person_text = clean_text_for_pdf(f"Cost per Person: Rs. {budget.get('cost_per_person', 0):,}")
-            pdf.cell(0, 6, cost_per_person_text, ln=True)
-            pdf.ln(2)
-            
-            for item in budget.get('breakdown', []):
-                item_text = clean_text_for_pdf(f"* {item.get('item', '')}: Rs. {item.get('cost', 0):,}")
-                pdf.cell(0, 5, item_text, ln=True)
-            pdf.ln(3)
         
-        # Seating
-        pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, "SEATING ARRANGEMENT", ln=True)
+        if budget:
+            # Budget summary boxes
+            pdf.set_font("Arial", "B", 11)
+            pdf.set_fill_color(240, 248, 255)  # Light blue
+            
+            # Total cost box
+            pdf.cell(95, 8, f"TOTAL COST: Rs. {budget.get('total_cost', 0):,}", 
+                    border=1, align="C", fill=True)
+            pdf.cell(95, 8, f"COST PER PERSON: Rs. {budget.get('cost_per_person', 0):,}", 
+                    border=1, align="C", fill=True, ln=True)
+            pdf.ln(3)
+            
+            # Budget breakdown table
+            pdf.set_font("Arial", "B", 10)
+            pdf.set_fill_color(220, 220, 220)
+            pdf.cell(120, 8, "BUDGET CATEGORY", border=1, align="C", fill=True)
+            pdf.cell(70, 8, "AMOUNT (Rs.)", border=1, align="C", fill=True, ln=True)
+            
+            pdf.set_font("Arial", "", 10)
+            pdf.set_fill_color(250, 250, 250)
+            
+            for i, item in enumerate(budget.get('breakdown', [])):
+                fill = i % 2 == 0  # Alternate row colors
+                item_name = clean_text_for_pdf(str(item.get('item', '')))
+                pdf.cell(120, 6, item_name, border=1, align="L", fill=fill)
+                pdf.cell(70, 6, f"Rs. {item.get('cost', 0):,}", border=1, align="R", fill=fill, ln=True)
+        
+        # === SEATING ARRANGEMENT ===
+        add_section_header("SEATING ARRANGEMENT")
+        
+        # Seating description
         pdf.set_font("Arial", "", 11)
         seating_text = clean_text_for_pdf(event_plan['seating']['layout'])
         pdf.multi_cell(0, 6, seating_text)
-        pdf.ln(3)
+        pdf.ln(2)
         
-        # Decoration
-        pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, "DECORATION", ln=True)
-        pdf.set_font("Arial", "", 11)
-        for item in event_plan['decor']:
-            decor_text = clean_text_for_pdf(f"* {item}")
+        # Seating table if tables data exists
+        if 'tables' in event_plan['seating'] and event_plan['seating']['tables']:
+            pdf.set_font("Arial", "B", 10)
+            pdf.set_fill_color(220, 220, 220)
+            
+            # Table headers
+            pdf.cell(30, 8, "TABLE #", border=1, align="C", fill=True)
+            pdf.cell(40, 8, "SHAPE", border=1, align="C", fill=True)
+            pdf.cell(30, 8, "SEATS", border=1, align="C", fill=True)
+            pdf.cell(90, 8, "LOCATION", border=1, align="C", fill=True, ln=True)
+            
+            pdf.set_font("Arial", "", 9)
+            pdf.set_fill_color(250, 250, 250)
+            
+            for i, table in enumerate(event_plan['seating']['tables']):
+                fill = i % 2 == 0
+                if isinstance(table, dict):
+                    table_num = str(table.get("table_number", i+1))
+                    shape = clean_text_for_pdf(str(table.get("shape", "Round")))
+                    seats = str(table.get("seats", "8"))
+                    location = clean_text_for_pdf(str(table.get("location", "Main area")))
+                else:
+                    table_num = str(i+1)
+                    shape = "Round"
+                    seats = "8"
+                    location = "Main area"
+                
+                pdf.cell(30, 6, table_num, border=1, align="C", fill=fill)
+                pdf.cell(40, 6, shape, border=1, align="C", fill=fill)
+                pdf.cell(30, 6, seats, border=1, align="C", fill=fill)
+                pdf.cell(90, 6, location, border=1, align="L", fill=fill, ln=True)
+            
+            # Total capacity
+            total_seats = sum(table.get("seats", 8) if isinstance(table, dict) else 8 
+                            for table in event_plan['seating']['tables'])
+            pdf.ln(2)
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(0, 6, f"Total Seating Capacity: {total_seats} guests", ln=True, align="R")
+        
+        # === DECORATION PLAN ===
+        add_section_header("DECORATION & AMBIANCE")
+        
+        pdf.set_font("Arial", "", 10)
+        for i, item in enumerate(event_plan['decor'], 1):
+            decor_text = clean_text_for_pdf(f"{i}. {item}")
             pdf.cell(0, 5, decor_text, ln=True)
-        pdf.ln(3)
         
-        # Menu
-        pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, "MENU SUGGESTIONS", ln=True)
-        pdf.set_font("Arial", "", 11)
-        for item in event_plan['recipe_suggestions']:
-            menu_text = clean_text_for_pdf(f"* {item}")
-            pdf.cell(0, 5, menu_text, ln=True)
-        pdf.ln(3)
+        # === MENU SUGGESTIONS ===
+        add_section_header("CURATED MENU")
         
-        # Invitation
-        pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, "INVITATION", ln=True)
-        pdf.set_font("Arial", "", 11)
+        # Menu in a nice format
+        pdf.set_font("Arial", "B", 10)
+        pdf.set_fill_color(255, 248, 220)  # Light yellow
+        pdf.cell(0, 8, "RECOMMENDED DISHES", border=1, align="C", fill=True, ln=True)
+        
+        pdf.set_font("Arial", "", 10)
+        pdf.set_fill_color(250, 250, 250)
+        
+        for i, item in enumerate(event_plan['recipe_suggestions']):
+            fill = i % 2 == 0
+            menu_text = clean_text_for_pdf(f"{i+1}. {item}")
+            pdf.cell(0, 6, menu_text, border=1, align="L", fill=fill, ln=True)
+        
+        # === INVITATION TEMPLATE ===
+        add_section_header("INVITATION TEMPLATE")
+        
+        # Invitation in a decorative box
+        pdf.set_draw_color(150, 150, 150)
+        pdf.rect(15, pdf.get_y(), 180, 40, style='D')  # Decorative border
+        pdf.ln(3)
+        pdf.set_font("Arial", "I", 10)  # Italic for invitation
         invitation_text = clean_text_for_pdf(event_plan['invitation'])
-        pdf.multi_cell(0, 6, invitation_text)
+        
+        # Split invitation into lines and center them
+        lines = invitation_text.split('\n')
+        for line in lines:
+            if line.strip():
+                pdf.cell(0, 5, line.strip(), ln=True, align="C")
+        
+        pdf.ln(5)
+        
+        # === FOOTER ===
+        pdf.ln(10)
+        pdf.set_font("Arial", "I", 8)
+        pdf.set_text_color(100, 100, 100)
+        footer_text = f"Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}"
+        pdf.cell(0, 5, footer_text, ln=True, align="C")
+        pdf.cell(0, 5, "AI-Powered Event Planning System", ln=True, align="C")
         
         # Generate PDF bytes with proper encoding
         pdf_output = pdf.output(dest="S")
         
-        # Convert to bytes properly
         if isinstance(pdf_output, str):
             return pdf_output.encode("latin1", errors='ignore')
         else:
