@@ -1,6 +1,6 @@
 """
 Promotion Campaign UI Components for the Smart Restaurant Menu Management App.
-Integrated into the existing component structure.
+Integrated with the main gamification system.
 """
 
 import streamlit as st
@@ -9,28 +9,28 @@ import plotly.express as px
 from datetime import datetime
 from modules.promotion_services import (
     get_promotion_firebase_db, filter_valid_ingredients, find_possible_dishes,
-    generate_campaign, save_campaign, get_existing_campaign, get_campaigns_for_month
+    generate_campaign, save_campaign, get_existing_campaign, get_campaigns_for_month,
+    award_promotion_xp
 )
+from ui.components import show_xp_notification
 import logging
 
 logger = logging.getLogger(__name__)
 
 def render_promotion_generator():
-    """Main function to render Promotion Generator with tabs"""
+    """Main function to render Promotion Generator"""
     st.title("📣 AI Marketing Campaign Generator")
     
     # Get current user for role-based access
     user = st.session_state.get('user', {})
     user_role = user.get('role', 'user')
     staff_name = user.get('username', 'Unknown User')
+    user_id = user.get('user_id')
     
     # Check access permissions - ONLY Admin and Staff
     if user_role not in ['staff', 'admin']:
         st.warning("⚠️ You don't have access to the Marketing Campaign Generator. This feature is available for Staff and Administrators only.")
         return
-    
-    # Create tabs - no admin panel needed since scoring is automatic
-    tabs = st.tabs(["📝 Submit Campaign", "🏆 Leaderboard"])
     
     # Initialize database connection
     db = get_promotion_firebase_db()
@@ -38,15 +38,17 @@ def render_promotion_generator():
         st.error("❌ Database connection failed. Please check your configuration.")
         return
     
-    # Render tabs
+    # Create tabs
+    tabs = st.tabs(["📝 Create Campaign", "📊 Campaign History"])
+    
     with tabs[0]:
-        render_campaign_submission(db, staff_name)
+        render_campaign_creation(db, staff_name, user_id)
     with tabs[1]:
-        render_leaderboard(db)
+        render_campaign_history(db, staff_name)
 
-def render_campaign_submission(db, staff_name):
-    """Render the campaign submission form"""
-    st.markdown("### 📝 Submit Your Marketing Campaign")
+def render_campaign_creation(db, staff_name, user_id):
+    """Render the campaign creation form"""
+    st.markdown("### 📝 Create Marketing Campaign")
     
     current_month = datetime.now().strftime("%Y-%m")
     month_name = datetime.now().strftime("%B %Y")
@@ -56,36 +58,33 @@ def render_campaign_submission(db, staff_name):
     **How it works:**
     1. Enter your campaign preferences below
     2. AI will generate a personalized campaign based on available inventory
-    3. Your campaign will be automatically submitted and scored
-    4. Check the leaderboard to see your AI score!
+    3. Earn XP for creating effective marketing campaigns!
     """)
     
-    # Check if user already submitted
+    # Check if user already submitted this month
     existing_campaign = get_existing_campaign(db, staff_name)
     
     if existing_campaign:
-        st.warning(f"⚠️ **Campaign Already Submitted for {month_name}**")
-    
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write(f"**Submitted on:** {existing_campaign.get('timestamp', 'Unknown date')}")
-            st.write(f"**Campaign Type:** {existing_campaign.get('promotion_type', 'N/A')}")
-        with col2:
-            if 'ai_score' in existing_campaign:
-                st.success(f"🎯 **AI Score:** {existing_campaign['ai_score']}/10")
-            else:
-                st.info("⏳ Score processing...")
-    
+        st.success(f"✅ **Campaign Already Created for {month_name}**")
+        
         # Show existing campaign
-        with st.expander("👀 View Your Submitted Campaign"):
+        with st.expander("👀 View Your Current Campaign", expanded=True):
             st.write("**Campaign Content:**")
-            st.text_area("", existing_campaign.get('campaign', 'No campaign content found'), 
-                        height=200, disabled=True, key="existing_campaign_display")
-    
+            st.write(existing_campaign.get('campaign', 'No campaign content found'))
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"**Type:** {existing_campaign.get('promotion_type', 'N/A')}")
+                st.write(f"**Goal:** {existing_campaign.get('goal', 'N/A')}")
+            with col2:
+                st.write(f"**Target:** {existing_campaign.get('target_audience', 'N/A')}")
+                st.write(f"**Duration:** {existing_campaign.get('campaign_duration', 'N/A')}")
+        
+        st.info("💡 You can create a new campaign next month!")
         return
     
-    # Campaign submission form
-    st.markdown(f"#### 📅 Campaign Submission for {month_name}")
+    # Campaign creation form
+    st.markdown(f"#### 📅 New Campaign for {month_name}")
     
     with st.form("campaign_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -121,16 +120,16 @@ def render_campaign_submission(db, staff_name):
                 help="How long should this promotion run?"
             )
         
-        submitted = st.form_submit_button("🚀 Generate and Submit Campaign", type="primary")
+        submitted = st.form_submit_button("🚀 Generate Campaign", type="primary")
         
         if submitted:
-            generate_and_submit_campaign(
-                db, staff_name, promotion_type, promotion_goal, 
+            create_campaign_with_xp(
+                db, staff_name, user_id, promotion_type, promotion_goal, 
                 target_audience, campaign_duration
             )
 
-def generate_and_submit_campaign(db, staff_name, promotion_type, promotion_goal, target_audience, campaign_duration):
-    """Generate and submit a new campaign with automatic AI scoring"""
+def create_campaign_with_xp(db, staff_name, user_id, promotion_type, promotion_goal, target_audience, campaign_duration):
+    """Create campaign and award XP"""
     with st.spinner('🤖 AI is crafting your perfect campaign...'):
         try:
             # Get available ingredients and possible dishes
@@ -154,7 +153,7 @@ def generate_and_submit_campaign(db, staff_name, promotion_type, promotion_goal,
                 st.error("❌ Failed to generate campaign. Please try again.")
                 return
             
-            # Save campaign data (with automatic scoring)
+            # Save campaign data
             campaign_data = {
                 "name": staff_name,
                 "campaign": campaign,
@@ -164,33 +163,31 @@ def generate_and_submit_campaign(db, staff_name, promotion_type, promotion_goal,
                 "campaign_duration": campaign_duration
             }
             
-            success, ai_score = save_campaign(db, staff_name, campaign_data)
+            success = save_campaign(db, staff_name, campaign_data)
             
             if success:
-                # Success message with automatic score
-                st.success("🎉 **Campaign Successfully Submitted & Scored!**")
-                if ai_score:
-                    st.info(f"🎯 **Your AI Score:** {ai_score}/10")
+                # Award XP based on campaign quality (simple heuristic)
+                campaign_quality = "excellent" if len(campaign) > 200 else "good" if len(campaign) > 100 else "basic"
+                xp_earned = award_promotion_xp(user_id, campaign_quality) if user_id else 0
                 
-                st.info("""
-                **What happened:**
-                - Your campaign was generated using available inventory
-                - AI automatically scored your campaign
-                - Check the leaderboard to see your ranking!
-                """)
+                # Success message
+                st.success("🎉 **Campaign Created Successfully!**")
+                
+                # Show XP notification
+                if xp_earned > 0:
+                    show_xp_notification(xp_earned, "Creating Marketing Campaign")
                 
                 # Display generated campaign
                 st.markdown("#### 📢 Your Generated Campaign")
                 st.write(f"**Campaign by:** {staff_name}")
                 st.write(f"**Type:** {promotion_type} | **Goal:** {promotion_goal}")
-                if ai_score:
-                    st.write(f"**AI Score:** {ai_score}/10")
                 st.markdown("---")
                 st.write(campaign)
                 
-                # Quick actions (no buttons in form context)
-                st.info("💡 **Tip:** Switch to the Leaderboard tab to view current rankings!")
+                # Show campaign in a nice format
                 st.code(campaign, language=None)
+                
+                st.info("💡 **Tip:** Your campaign has been saved and you've earned XP! Check your profile to see your progress.")
             else:
                 st.error("❌ Failed to save campaign. Please try again.")
                 
@@ -198,129 +195,77 @@ def generate_and_submit_campaign(db, staff_name, promotion_type, promotion_goal,
             logger.error(f"Error in campaign generation: {str(e)}")
             st.error(f"❌ Failed to generate campaign: {str(e)}")
 
-def render_leaderboard(db):
-    """Render the campaign leaderboard"""
-    st.markdown("### 🏆 AI Campaign Leaderboard")
+def render_campaign_history(db, staff_name):
+    """Render campaign history and statistics"""
+    st.markdown("### 📊 Campaign History")
     
-    current_month = datetime.now().strftime("%Y-%m")
-    month_name = datetime.now().strftime("%B %Y")
-    
-    # Load campaigns with scores
-    with st.spinner('Loading campaign data...'):
-        all_campaigns = get_campaigns_for_month(db, current_month)
-        scored_campaigns = [c for c in all_campaigns if "ai_score" in c]
-    
-    if not scored_campaigns:
-        st.info(f"""
-        **📊 No Scored Campaigns**
+    # Load all campaigns for this user
+    try:
+        all_user_campaigns = []
+        # Get campaigns from multiple months
+        for month_offset in range(6):  # Last 6 months
+            check_date = datetime.now().replace(day=1)
+            if month_offset > 0:
+                # Go back months
+                year = check_date.year
+                month = check_date.month - month_offset
+                if month <= 0:
+                    month += 12
+                    year -= 1
+                check_month = f"{year}-{month:02d}"
+            else:
+                check_month = check_date.strftime("%Y-%m")
+            
+            month_campaigns = get_campaigns_for_month(db, check_month)
+            user_campaigns = [c for c in month_campaigns if c.get('name') == staff_name]
+            all_user_campaigns.extend(user_campaigns)
         
-        No campaigns have been scored for {month_name}.
-        Submit a campaign to get started!
+        if not all_user_campaigns:
+            st.info("📝 No campaigns created yet. Create your first campaign in the 'Create Campaign' tab!")
+            return
+        
+        # Display statistics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Total Campaigns", len(all_user_campaigns))
+        
+        with col2:
+            # Most used promotion type
+            promo_types = [c.get('promotion_type', 'Unknown') for c in all_user_campaigns]
+            most_common = max(set(promo_types), key=promo_types.count) if promo_types else "None"
+            st.metric("Favorite Type", most_common)
+        
+        with col3:
+            # Most targeted goal
+            goals = [c.get('goal', 'Unknown') for c in all_user_campaigns]
+            most_common_goal = max(set(goals), key=goals.count) if goals else "None"
+            st.metric("Main Focus", most_common_goal.split()[0] + "...")  # Truncate for display
+        
+        # Campaign timeline
+        st.markdown("#### 📅 Your Campaign Timeline")
+        
+        # Create a simple timeline
+        for i, campaign in enumerate(reversed(all_user_campaigns[-5:])):  # Show last 5
+            month = campaign.get('month', 'Unknown')
+            month_name = datetime.strptime(month + "-01", "%Y-%m-%d").strftime("%B %Y") if month != 'Unknown' else 'Unknown'
+            
+            with st.expander(f"📋 {month_name} - {campaign.get('promotion_type', 'Unknown Type')}", expanded=False):
+                st.write(f"**Goal:** {campaign.get('goal', 'N/A')}")
+                st.write(f"**Target Audience:** {campaign.get('target_audience', 'N/A')}")
+                st.write(f"**Duration:** {campaign.get('campaign_duration', 'N/A')}")
+                st.markdown("**Campaign Content:**")
+                st.write(campaign.get('campaign', 'No content available'))
+        
+        # Tips for improvement
+        st.markdown("#### 💡 Tips for Better Campaigns")
+        st.info("""
+        - **Vary your promotion types** to reach different customer segments
+        - **Focus on seasonal ingredients** to reduce waste and costs
+        - **Target specific audiences** for more effective campaigns
+        - **Track which goals work best** for your restaurant
         """)
-        return
-    
-    # Create DataFrame and sort by score
-    df = pd.DataFrame(scored_campaigns)
-    df = df.sort_values(by="ai_score", ascending=False).reset_index(drop=True)
-    df['rank'] = range(1, len(df) + 1)
-    
-    # Metrics row
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Campaigns", len(df))
-    with col2:
-        st.metric("Average Score", f"{df['ai_score'].mean():.1f}/10")
-    with col3:
-        st.metric("Top Score", f"{df['ai_score'].max():.1f}/10")
-    with col4:
-        st.metric("Month", month_name)
-    
-    # Winner highlight
-    top_performer = df.iloc[0]
-    st.success(f"""
-    **🥇 Top Performer: {top_performer['name']}**
-    
-    **Score:** {top_performer['ai_score']}/10  
-    **Campaign Type:** {top_performer['promotion_type']}
-    """)
-    
-    # Score distribution chart
-    st.markdown("#### 📈 Score Distribution")
-    fig = px.bar(
-        df,
-        x='name',
-        y='ai_score',
-        color='ai_score',
-        color_continuous_scale='Blues',
-        title="Campaign Scores by Staff Member"
-    )
-    fig.update_layout(
-        xaxis_title="Staff Member",
-        yaxis_title="AI Score",
-        showlegend=False,
-        height=400
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Leaderboard table
-    st.markdown("#### 🏅 Detailed Rankings")
-    
-    # Prepare display dataframe
-    display_df = df[["rank", "name", "promotion_type", "goal", "ai_score"]].copy()
-    display_df.columns = ["Rank", "Staff Name", "Promotion Type", "Goal", "Score"]
-    display_df["Score"] = display_df["Score"].apply(lambda x: f"{x}/10")
-    
-    # Add rank emojis
-    rank_emojis = {1: "🥇", 2: "🥈", 3: "🥉"}
-    display_df["Rank"] = display_df["Rank"].apply(lambda x: f"{rank_emojis.get(x, '🏅')} {x}")
-    
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
-    
-    # Export section
-    st.markdown("#### 📥 Export Data")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        csv = df.to_csv(index=False)
-        st.download_button(
-            label="📊 Download Full Data (CSV)",
-            data=csv,
-            file_name=f"campaign_leaderboard_{current_month}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-    
-    with col2:
-        summary_data = {
-            "Month": [month_name],
-            "Total Campaigns": [len(df)],
-            "Winner": [top_performer['name']],
-            "Top Score": [f"{top_performer['ai_score']}/10"],
-            "Average Score": [f"{df['ai_score'].mean():.1f}/10"]
-        }
-        summary_csv = pd.DataFrame(summary_data).to_csv(index=False)
-        st.download_button(
-            label="📋 Download Summary (CSV)",
-            data=summary_csv,
-            file_name=f"campaign_summary_{current_month}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-    
-    # Campaign details section
-    st.markdown("#### 📝 Campaign Details")
-    selected_staff = st.selectbox(
-        "Select staff member to view their campaign:",
-        options=df['name'].tolist()
-    )
-    
-    if selected_staff:
-        staff_campaign = df[df['name'] == selected_staff].iloc[0]
         
-        st.markdown(f"**Campaign by:** {staff_campaign['name']}")
-        st.markdown(f"**Score:** {staff_campaign['ai_score']}/10")
-        st.markdown(f"**Type:** {staff_campaign['promotion_type']} | **Goal:** {staff_campaign['goal']}")
-        st.markdown("---")
-        st.write(staff_campaign['campaign'])
+    except Exception as e:
+        logger.error(f"Error loading campaign history: {str(e)}")
+        st.error("❌ Failed to load campaign history.")
