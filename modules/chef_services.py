@@ -15,11 +15,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Constants
+# Constants - Updated to make rating and rating_comment optional for AI-generated dishes
 REQUIRED_MENU_FIELDS = [
     "name", "description", "ingredients", "cook_time", "cuisine", "diet", 
-    "category", "types", "source", "rating", "rating_comment", "timestamp"
+    "category", "types", "source", "timestamp"
 ]
+
+# Optional fields that will be set if missing
+OPTIONAL_MENU_FIELDS = ["rating", "rating_comment"]
 
 DIET_TYPES = [
     "Vegan", "Vegetarian", "Keto", "Gluten-Free", "Nut-Free",
@@ -81,6 +84,37 @@ def generate_dish(prompt: str) -> dict:
     except Exception as e:
         logger.error(f"Gemini Error: {str(e)}")
         return None
+
+def validate_and_fix_dish(dish):
+    """Validate and fix a dish object, adding missing optional fields"""
+    # Check required fields
+    missing_required = [f for f in REQUIRED_MENU_FIELDS if f not in dish or not dish[f]]
+    if missing_required:
+        logger.warning(f"Dish '{dish.get('name', 'Unknown')}' missing required fields: {missing_required}")
+        return None, missing_required
+    
+    # Add missing optional fields with defaults
+    for field in OPTIONAL_MENU_FIELDS:
+        if field not in dish:
+            if field == "rating":
+                dish[field] = None
+            elif field == "rating_comment":
+                dish[field] = ""
+            logger.info(f"Added missing optional field '{field}' to dish '{dish.get('name')}'")
+    
+    # Ensure ingredients is a list
+    if isinstance(dish.get("ingredients"), str):
+        dish["ingredients"] = [ingredient.strip() for ingredient in dish["ingredients"].split(",")]
+    
+    # Ensure diet is a list
+    if isinstance(dish.get("diet"), str):
+        dish["diet"] = [dish["diet"]]
+    
+    # Ensure types is a list
+    if isinstance(dish.get("types"), str):
+        dish["types"] = [dish["types"]]
+    
+    return dish, []
 
 def generate_dish_rating(dish_name, description, ingredients, cook_time, cuisine):
     """Generate AI rating for a chef's dish submission"""
