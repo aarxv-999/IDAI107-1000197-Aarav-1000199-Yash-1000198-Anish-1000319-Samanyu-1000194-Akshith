@@ -38,10 +38,10 @@ def check_feature_access(feature_name):
     # Public features accessible to all authenticated users
     public_features = ["Event Planning ChatBot", "Gamification Hub", "Cooking Quiz"]
 
-    # Staff/admin only features
-    staff_features = ["Leftover Management", "Promotion Generator"]
+    # Staff/admin only features - UPDATED: Promotion Generator only for Staff and Admin
+    staff_admin_features = ["Leftover Management", "Promotion Generator"]
 
-    # Chef/admin features (updated for new chef recipe suggestions)
+    # Chef/admin features
     chef_features = ["Chef Recipe Suggestions"]
 
     # Admin only features
@@ -53,7 +53,7 @@ def check_feature_access(feature_name):
     if not user:
         return False
         
-    if feature_name in staff_features and user['role'] in ['staff', 'manager', 'chef', 'admin']:
+    if feature_name in staff_admin_features and user['role'] in ['staff', 'admin']:
         return True
         
     if feature_name in chef_features and user['role'] in ['chef', 'admin']:
@@ -275,10 +275,11 @@ def event_planning():
     # Call the integrated event planner function
     integrate_event_planner()
 
+@auth_required
 def promotion_generator():
-    """Promotion generator feature"""
-    st.title("📣 Promotion Generator")
-    st.info("This feature is coming soon!")
+    """Promotion generator feature - UPDATED WITH INTEGRATED FUNCTIONALITY"""
+    from modules.promotion_components import render_promotion_generator
+    render_promotion_generator()
 
 @auth_required
 def chef_recipe_suggestions():
