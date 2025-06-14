@@ -9,9 +9,10 @@ import plotly.express as px
 from datetime import datetime, timedelta
 from modules.chef_services import (
     get_chef_firebase_db, generate_dish_rating, parse_ingredients, generate_dish,
-    DIET_TYPES, MENU_CATEGORIES, REQUIRED_MENU_FIELDS, create_chef_sub_ratings_collection
+    DIET_TYPES, MENU_CATEGORIES, REQUIRED_MENU_FIELDS
 )
 import logging
+from google.cloud import firestore
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,11 @@ def render_menu_generator(db):
     """Render the menu generator component (Admin only)"""
     st.markdown("### 🍽️ Weekly Menu Generator")
     st.markdown("Generate weekly restaurant menus using available ingredients and AI")
+    
+    # Check for force regeneration flag
+    force_regenerate = st.session_state.get('force_regenerate', False)
+    if force_regenerate:
+        st.session_state.force_regenerate = False  # Reset the flag
     
     # Ingredient Analysis
     st.markdown("#### 📦 Ingredient Analysis")
@@ -116,23 +122,22 @@ def render_menu_generator(db):
     with col2:
         generate_button = st.button("Generate Menu", type="primary", use_container_width=True)
 
-    if generate_button:
-        # Check if menu already exists for this week
+    if generate_button or force_regenerate:
+        # Check if menu already exists for this week (only if not force regenerating)
         today = datetime.now()
         start_of_week = today - timedelta(days=today.weekday())
         
-        existing_query = db.collection("menu").where("created_at", ">=", start_of_week.isoformat()).limit(1)
-        existing_docs = list(existing_query.stream())
-        
-        if existing_docs:
-            st.warning("⚠️ A menu for this week has already been generated.")
+        if not force_regenerate:
+            existing_query = db.collection("menu").where("created_at", ">=", start_of_week.isoformat()).limit(1)
+            existing_docs = list(existing_query.stream())
             
-            # Confirmation for regeneration
-            if st.button("🔄 Regenerate Menu (This will replace the current menu)", type="secondary"):
-                if confirm_menu_replacement(db, start_of_week):
-                    generate_new_menu(db, sorted_ingredients, priority_ingredients)
-        else:
-            generate_new_menu(db, sorted_ingredients, priority_ingredients)
+            if existing_docs:
+                st.warning("⚠️ A menu for this week has already been generated.")
+                confirm_menu_replacement(db, start_of_week)
+                return
+        
+        # Generate new menu
+        generate_new_menu(db, sorted_ingredients, priority_ingredients)
 
     # Display generated menu if exists
     if "generated_menu" in st.session_state:
@@ -144,19 +149,31 @@ def confirm_menu_replacement(db, start_of_week):
     
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("✅ Yes, Replace Menu", type="primary"):
+        if st.button("✅ Yes, Replace Menu", type="primary", key="confirm_replace"):
             # Delete current week's menu
-            current_menus = db.collection("menu").where("created_at", ">=", start_of_week.isoformat()).stream()
-            deleted_count = 0
-            for doc in current_menus:
-                doc.reference.delete()
-                deleted_count += 1
-            
-            st.success(f"✅ Deleted {deleted_count} existing menu items")
-            return True
+            try:
+                current_menus = db.collection("menu").where("created_at", ">=", start_of_week.isoformat()).stream()
+                deleted_count = 0
+                for doc in current_menus:
+                    doc.reference.delete()
+                    deleted_count += 1
+                
+                st.success(f"✅ Deleted {deleted_count} existing menu items")
+                
+                # Clear the generated menu from session state to force regeneration
+                if "generated_menu" in st.session_state:
+                    del st.session_state.generated_menu
+                
+                # Set a flag to trigger regeneration
+                st.session_state.force_regenerate = True
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Error deleting menu: {str(e)}")
+                return False
     
     with col2:
-        if st.button("❌ Cancel"):
+        if st.button("❌ Cancel", key="cancel_replace"):
             st.info("Menu generation cancelled")
             return False
     
@@ -291,9 +308,6 @@ def render_chef_submission(db):
     • All dishes automatically rated by AI
     • Approved recipes added to restaurant menu
     """)
-    
-    # Ensure chef_sub_ratings collection exists
-    create_chef_sub_ratings_collection(db)
     
     # Form
     with st.form("chef_form", clear_on_submit=True):
