@@ -9,8 +9,7 @@ import plotly.express as px
 from datetime import datetime
 from modules.promotion_services import (
     get_promotion_firebase_db, filter_valid_ingredients, find_possible_dishes,
-    generate_campaign, save_campaign, get_existing_campaign, get_campaigns_for_month,
-    score_all_unscored_campaigns
+    generate_campaign, save_campaign, get_existing_campaign, get_campaigns_for_month
 )
 import logging
 
@@ -30,11 +29,8 @@ def render_promotion_generator():
         st.warning("⚠️ You don't have access to the Marketing Campaign Generator. This feature is available for Staff and Administrators only.")
         return
     
-    # Create tabs based on user role
-    if user_role == 'admin':
-        tabs = st.tabs(["📝 Submit Campaign", "🏆 Leaderboard"])
-    else:
-        tabs = st.tabs(["📝 Submit Campaign", "🏆 Leaderboard"])
+    # Create tabs - no admin panel needed since scoring is automatic
+    tabs = st.tabs(["📝 Submit Campaign", "🏆 Leaderboard"])
     
     # Initialize database connection
     db = get_promotion_firebase_db()
@@ -42,7 +38,7 @@ def render_promotion_generator():
         st.error("❌ Database connection failed. Please check your configuration.")
         return
     
-    # Render tabs - no admin panel needed since scoring is automatic
+    # Render tabs
     with tabs[0]:
         render_campaign_submission(db, staff_name)
     with tabs[1]:
@@ -60,7 +56,7 @@ def render_campaign_submission(db, staff_name):
     **How it works:**
     1. Enter your campaign preferences below
     2. AI will generate a personalized campaign based on available inventory
-    3. Your campaign will be automatically submitted for evaluation
+    3. Your campaign will be automatically submitted and scored
     4. Check the leaderboard to see your AI score!
     """)
     
@@ -224,7 +220,7 @@ def render_leaderboard(db):
         **📊 No Scored Campaigns**
         
         No campaigns have been scored for {month_name}.
-        Check back later or contact admin to run AI scoring.
+        Submit a campaign to get started!
         """)
         return
     
