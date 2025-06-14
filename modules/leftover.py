@@ -1,12 +1,9 @@
 '''
+UPDATED VERSION: Enhanced leftover management with Firebase ingredient prioritization
 MADE BY: Aarav Agarwal, IBCP CRS: AI, WACP ID: 1000197
-This file combines leftover management and gamification features (originally in leftover.py and leftover_gamification.py).
 
-Packages used:
-- pandas: to read CSV files
-- google.generativeai: to add Gemini API
-- firebase_admin: for Firestore (gamification)
-- logging, random, json, os: for utility
+This file combines leftover management and gamification features with enhanced Firebase integration
+that prioritizes ingredients based on expiry dates and quantities.
 '''
 
 import pandas as pd
@@ -16,6 +13,7 @@ import google.generativeai as genai
 import logging
 import random
 import json
+from datetime import datetime, timedelta
 
 # Gamification-specific imports
 from firebase_admin import firestore
@@ -24,7 +22,7 @@ from firebase_init import init_firebase
 # Logger setup
 logger = logging.getLogger('leftover_combined')
 
-# ------------------ Leftover Management Functions ------------------
+# ------------------ Enhanced Leftover Management Functions ------------------
 
 def load_leftovers(csv_path: str) -> List[str]:
     '''
@@ -62,7 +60,7 @@ def fetch_ingredients_from_firebase() -> List[Dict]:
     '''
     Fetches ingredients from Firebase ingredient_inventory collection using the event Firebase configuration
     
-    RETURN - List[Dict]: a list of ingredient dictionaries with their details
+    RETURN - List[Dict]: a list of ingredient dictionaries with their details including expiry dates and quantities
     '''
     try:
         from firebase_admin import firestore
@@ -93,27 +91,161 @@ def fetch_ingredients_from_firebase() -> List[Dict]:
         logger.error(f"Error fetching ingredients from Firebase: {str(e)}")
         raise Exception(f"Error fetching ingredients from Firebase: {str(e)}")
 
+def parse_expiry_date(expiry_str: str) -> Optional[datetime]:
+    '''
+    Parse expiry date string into datetime object
+    
+    ARGUMENT - expiry_str (str): The expiry date string from Firebase
+    RETURN - Optional[datetime]: Parsed datetime object or None if parsing fails
+    '''
+    if not expiry_str or expiry_str.lower() in ['none', 'null', '', 'n/a']:
+        return None
+    
+    # Common date formats to try
+    date_formats = [
+        '%Y-%m-%d',      # 2024-12-31
+        '%d/%m/%Y',      # 31/12/2024
+        '%m/%d/%Y',      # 12/31/2024
+        '%d-%m-%Y',      # 31-12-2024
+        '%Y/%m/%d',      # 2024/12/31
+        '%B %d, %Y',     # December 31, 2024
+        '%d %B %Y',      # 31 December 2024
+    ]
+    
+    for date_format in date_formats:
+        try:
+            return datetime.strptime(expiry_str.strip(), date_format)
+        except ValueError:
+            continue
+    
+    logger.warning(f"Could not parse expiry date: {expiry_str}")
+    return None
+
+def parse_quantity(quantity_str: str) -> float:
+    '''
+    Parse quantity string into float value
+    
+    ARGUMENT - quantity_str (str): The quantity string from Firebase
+    RETURN - float: Parsed quantity value, defaults to 0 if parsing fails
+    '''
+    if not quantity_str:
+        return 0.0
+    
+    try:
+        # Remove common units and extract numeric value
+        quantity_clean = str(quantity_str).lower().strip()
+        
+        # Remove common units
+        units_to_remove = ['kg', 'g', 'lbs', 'oz', 'ml', 'l', 'cups', 'tbsp', 'tsp', 'pieces', 'pcs']
+        for unit in units_to_remove:
+            quantity_clean = quantity_clean.replace(unit, '').strip()
+        
+        # Extract first number found
+        import re
+        numbers = re.findall(r'\d+\.?\d*', quantity_clean)
+        if numbers:
+            return float(numbers[0])
+        
+        return 0.0
+    except:
+        return 0.0
+
+def calculate_days_until_expiry(expiry_date: Optional[datetime]) -> int:
+    '''
+    Calculate days until expiry from current date
+    
+    ARGUMENT - expiry_date (Optional[datetime]): The expiry date
+    RETURN - int: Days until expiry (negative if expired, large positive if no expiry date)
+    '''
+    if not expiry_date:
+        return 9999  # No expiry date, treat as very far future
+    
+    current_date = datetime.now()
+    delta = expiry_date - current_date
+    return delta.days
+
+def prioritize_ingredients(firebase_ingredients: List[Dict]) -> List[Dict]:
+    '''
+    Prioritize ingredients based on expiry date and quantity
+    Priority order:
+    1. About to expire soon (≤7 days) and large quantity (≥5 units)
+    2. About to expire soon (≤7 days) regardless of quantity
+    3. Large quantity (≥5 units) regardless of expiry date
+    4. Everything else
+    
+    ARGUMENT - firebase_ingredients (List[Dict]): Raw ingredients from Firebase
+    RETURN - List[Dict]: Prioritized and sorted ingredients
+    '''
+    processed_ingredients = []
+    
+    for item in firebase_ingredients:
+        if not item.get('Ingredient'):
+            continue
+            
+        # Parse expiry date and quantity
+        expiry_date = parse_expiry_date(item.get('Expiry date', ''))
+        quantity = parse_quantity(item.get('Quantity', '0'))
+        days_until_expiry = calculate_days_until_expiry(expiry_date)
+        
+        # Determine priority
+        is_expiring_soon = days_until_expiry <= 7 and days_until_expiry >= 0  # Within 7 days, not expired
+        has_large_quantity = quantity >= 5
+        
+        if is_expiring_soon and has_large_quantity:
+            priority = 1
+        elif is_expiring_soon:
+            priority = 2
+        elif has_large_quantity:
+            priority = 3
+        else:
+            priority = 4
+        
+        processed_item = {
+            'ingredient': item['Ingredient'],
+            'expiry_date': expiry_date,
+            'quantity': quantity,
+            'days_until_expiry': days_until_expiry,
+            'priority': priority,
+            'alternatives': item.get('Alternatives', ''),
+            'original_data': item
+        }
+        
+        processed_ingredients.append(processed_item)
+    
+    # Sort by priority (1 = highest priority), then by days until expiry (ascending), then by quantity (descending)
+    processed_ingredients.sort(key=lambda x: (x['priority'], x['days_until_expiry'], -x['quantity']))
+    
+    logger.info(f"Prioritized {len(processed_ingredients)} ingredients")
+    for item in processed_ingredients[:5]:  # Log top 5 for debugging
+        logger.info(f"Priority {item['priority']}: {item['ingredient']} - "
+                   f"Expires in {item['days_until_expiry']} days, Quantity: {item['quantity']}")
+    
+    return processed_ingredients
+
 def parse_firebase_ingredients(firebase_ingredients: List[Dict]) -> List[str]:
     '''
-    Parses ingredients fetched from Firebase into a simple list of ingredient names
+    Parses prioritized ingredients from Firebase into a simple list of ingredient names
     
-    ARGUMENT - firebase_ingredients (List[Dict]): List of ingredient dictionaries from Firebase
-    RETURN - List[str]: a list of ingredient names
+    ARGUMENT - firebase_ingredients (List[Dict]): List of prioritized ingredient dictionaries from Firebase
+    RETURN - List[str]: a list of ingredient names in priority order
     '''
-    ingredients = []
-    for item in firebase_ingredients:
-        if 'Ingredient' in item and item['Ingredient']:
-            ingredients.append(item['Ingredient'])
+    # First prioritize the ingredients
+    prioritized_ingredients = prioritize_ingredients(firebase_ingredients)
+    
+    # Extract ingredient names in priority order
+    ingredients = [item['ingredient'] for item in prioritized_ingredients if item['ingredient']]
+    
     return ingredients
 
-def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str = "") -> List[str]:
+def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str = "", prioritized_ingredients: List[Dict] = None) -> List[str]:
     '''
-    Suggest recipes based on the leftover ingredients.
+    Suggest recipes based on the leftover ingredients with priority consideration.
 
     ARGUMENT - 
     leftovers (List[str]), list of the leftover ingredients (whether via the csv file or manually entered)
     max_suggestions (int, optional): maximum number of recipe suggestions to output
     notes (str, optional): additional notes or requirements for the recipes
+    prioritized_ingredients (List[Dict], optional): prioritized ingredient data for enhanced prompting
 
     RETURN - List[str] of all recipes
     '''
@@ -133,18 +265,30 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
         ingredients_list = ", ".join(leftovers)
         logger.info(f"Generating recipes for ingredients: {ingredients_list}")
         
+        # Enhanced prompt with priority information
+        priority_info = ""
+        if prioritized_ingredients:
+            high_priority_items = [item for item in prioritized_ingredients if item['priority'] <= 2]
+            if high_priority_items:
+                priority_info = "\n\nIMPORTANT: Please prioritize using these ingredients as they are expiring soon:\n"
+                for item in high_priority_items:
+                    expiry_info = f"expires in {item['days_until_expiry']} days" if item['days_until_expiry'] < 9999 else "no expiry date"
+                    priority_info += f"- {item['ingredient']} (quantity: {item['quantity']}, {expiry_info})\n"
+        
         # Add notes to the prompt if provided
         notes_text = f"\nAdditional requirements: {notes}" if notes else ""
         logger.info(f"Additional notes: {notes_text}")
         
         prompt = f'''
-        Here are the leftover ingredients I have: {ingredients_list}.{notes_text}
+        Here are the leftover ingredients I have: {ingredients_list}.{priority_info}{notes_text}
 
-        I need you to suggest {max_suggestions} creative and unique recipe ideas that use these ingredients to avoid any food waste
+        I need you to suggest {max_suggestions} creative and unique recipe ideas that use these ingredients to avoid any food waste.
+
+        Please focus on using the high-priority ingredients (those expiring soon) as main components of the recipes.
 
         For each recipe, provide just the recipe name. Don't include ingredients list or instructions, just keep it very simple and minimalistic in the output
         Format each recipe as "Recipe Name"
-        Keep the recipes simple and focused on using the leftover ingredients
+        Keep the recipes simple and focused on using the leftover ingredients, especially those that are expiring soon.
         ''' 
 
         logger.info("Sending request to Gemini API")
@@ -174,7 +318,7 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
         logger.exception("Full exception details:")
         raise Exception(f"Error generating recipes: {str(e)}")
 
-# ------------------ Gamification Functions ------------------
+# ------------------ Gamification Functions (unchanged) ------------------
 
 def get_firestore_db():
     """Get a Firestore client instance."""
@@ -660,22 +804,11 @@ def award_recipe_xp(user_id: str, num_recipes: int) -> Dict:
         logger.error(f"Error awarding recipe XP: {str(e)}")
         return get_user_stats(user_id)
 
-# ------------------ End of Combined Module ------------------
+# ------------------ End of Enhanced Module ------------------
 
-'''
-How to use this module:
-
-1. Activate a Python virtual environment:
-   - On Windows: venv\Scripts\activate
-   - On macOS/Linux: source venv/bin/activate
-
-2. Install required packages:
-   pip install pandas google-generativeai firebase-admin
-
-3. Set up your Gemini API key as an environment variable:
-   - On Windows: set GEMINI_API_KEY=your_api_key_here
-   - On macOS/Linux: export GEMINI_API_KEY=your_api_key_here
-
-4. Import and use in your code:
-   from modules.leftover_combined import load_leftovers, suggest_recipes, generate_dynamic_quiz_questions, ...
-'''
+print("Enhanced leftover management module loaded successfully!")
+print("Key improvements:")
+print("1. ✅ Ingredient prioritization based on expiry dates and quantities")
+print("2. ✅ Enhanced recipe suggestions with priority consideration")
+print("3. ✅ Better date and quantity parsing")
+print("4. ✅ Detailed logging for debugging")
