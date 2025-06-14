@@ -628,3 +628,218 @@ def generate_random_fallback_questions(num_questions: int = 5) -> List[Dict]:
 def generate_fallback_questions(num_questions: int = 5) -> List[Dict]:
     """Wrapper for backward compatibility"""
     return generate_random_fallback_questions(num_questions)
+
+def calculate_quiz_score(answers: List[int], questions: List[Dict]) -> Tuple[int, int, int]:
+    """Calculate quiz score and XP"""
+    correct_answers = 0
+    xp_earned = 0
+
+    for i, question in enumerate(questions):
+        if i < len(answers) and answers[i] == question["correct"]:
+            correct_answers += 1
+            xp_earned += question["xp_reward"]
+
+    if correct_answers == len(questions):
+        bonus_xp = len(questions) * 5
+        xp_earned += bonus_xp
+
+    return correct_answers, len(questions), xp_earned
+
+def get_user_stats(user_id: str) -> Dict:
+    """Get user's gamification stats"""
+    try:
+        db = get_firestore_db()
+        user_stats_ref = db.collection('user_stats').document(user_id)
+        doc = user_stats_ref.get()
+
+        if doc.exists:
+            return doc.to_dict()
+        else:
+            initial_stats = {
+                'user_id': user_id,
+                'total_xp': 0,
+                'level': 1,
+                'quizzes_taken': 0,
+                'correct_answers': 0,
+                'total_questions': 0,
+                'recipes_generated': 0,
+                'perfect_scores': 0,
+                'last_quiz_date': None,
+                'achievements': []
+            }
+            user_stats_ref.set(initial_stats)
+            return initial_stats
+
+    except Exception as e:
+        logger.error(f"Error getting user stats: {str(e)}")
+        return {
+            'user_id': user_id,
+            'total_xp': 0,
+            'level': 1,
+            'quizzes_taken': 0,
+            'correct_answers': 0,
+            'total_questions': 0,
+            'recipes_generated': 0,
+            'perfect_scores': 0,
+            'last_quiz_date': None,
+            'achievements': []
+        }
+
+def update_user_stats(user_id: str, xp_gained: int, correct: int, total: int) -> Dict:
+    """Update user stats after quiz"""
+    try:
+        db = get_firestore_db()
+        user_stats_ref = db.collection('user_stats').document(user_id)
+
+        current_stats = get_user_stats(user_id)
+        old_level = current_stats['level']
+
+        new_total_xp = current_stats['total_xp'] + xp_gained
+        new_level = calculate_level(new_total_xp)
+        new_quizzes = current_stats['quizzes_taken'] + 1
+        new_correct = current_stats['correct_answers'] + correct
+        new_total_questions = current_stats['total_questions'] + total
+        new_perfect_scores = current_stats['perfect_scores'] + (1 if correct == total else 0)
+
+        current_achievements = current_stats.get('achievements', [])
+        new_achievements = check_achievements(
+            new_quizzes, new_perfect_scores, new_level, old_level, current_achievements
+        )
+
+        updated_stats = {
+            'user_id': user_id,
+            'total_xp': new_total_xp,
+            'level': new_level,
+            'quizzes_taken': new_quizzes,
+            'correct_answers': new_correct,
+            'total_questions': new_total_questions,
+            'recipes_generated': current_stats.get('recipes_generated', 0),
+            'perfect_scores': new_perfect_scores,
+            'last_quiz_date': firestore.SERVER_TIMESTAMP,
+            'achievements': new_achievements
+        }
+
+        user_stats_ref.set(updated_stats)
+        return updated_stats
+
+    except Exception as e:
+        logger.error(f"Error updating user stats: {str(e)}")
+        return current_stats
+
+def check_achievements(quizzes: int, perfect_scores: int, new_level: int, old_level: int, current_achievements: List[str]) -> List[str]:
+    """Check for new achievements"""
+    achievements = current_achievements.copy()
+
+    quiz_milestones = [
+        (1, "First Quiz"),
+        (5, "Quiz Novice"),
+        (10, "Quiz Enthusiast"),
+        (25, "Quiz Master"),
+        (50, "Quiz Legend")
+    ]
+
+    for milestone, title in quiz_milestones:
+        if quizzes >= milestone and title not in achievements:
+            achievements.append(title)
+
+    perfect_milestones = [
+        (1, "Perfectionist"),
+        (5, "Streak Master"),
+        (10, "Flawless Chef")
+    ]
+
+    for milestone, title in perfect_milestones:
+        if perfect_scores >= milestone and title not in achievements:
+            achievements.append(title)
+
+    level_milestones = [
+        (5, "Rising Star"),
+        (10, "Kitchen Pro"),
+        (15, "Culinary Expert"),
+        (20, "Master Chef")
+    ]
+
+    for milestone, title in level_milestones:
+        if new_level >= milestone and title not in achievements:
+            achievements.append(title)
+
+    return achievements
+
+def calculate_level(total_xp: int) -> int:
+    """Calculate user level based on XP"""
+    import math
+    return max(1, int(math.sqrt(total_xp / 100)) + 1)
+
+def get_xp_progress(current_xp: int, current_level: int) -> Tuple[int, int]:
+    """Calculate XP progress within current level"""
+    previous_level_xp = ((current_level - 1) ** 2) * 100
+    next_level_xp = (current_level ** 2) * 100
+    current_level_xp = current_xp - previous_level_xp
+    xp_needed = next_level_xp - current_xp
+
+    return current_level_xp, xp_needed
+
+def get_leaderboard(limit: int = 10) -> List[Dict]:
+    """Get top users leaderboard"""
+    try:
+        db = get_firestore_db()
+
+        stats_query = db.collection('user_stats').order_by('total_xp', direction=firestore.Query.DESCENDING).limit(limit)
+        stats_docs = stats_query.get()
+
+        users_ref = db.collection('users')
+        leaderboard = []
+
+        for i, stat_doc in enumerate(stats_docs):
+            stat_data = stat_doc.to_dict()
+            user_id = stat_data['user_id']
+
+            try:
+                user_doc = users_ref.document(user_id).get()
+                username = user_doc.to_dict().get('username', 'Unknown') if user_doc.exists else 'Unknown'
+            except:
+                username = 'Unknown'
+
+            leaderboard.append({
+                'rank': i + 1,
+                'username': username,
+                'total_xp': stat_data.get('total_xp', 0),
+                'level': stat_data.get('level', 1),
+                'quizzes_taken': stat_data.get('quizzes_taken', 0),
+                'perfect_scores': stat_data.get('perfect_scores', 0),
+                'achievements': len(stat_data.get('achievements', []))
+            })
+
+        return leaderboard
+
+    except Exception as e:
+        logger.error(f"Error getting leaderboard: {str(e)}")
+        return []
+
+def award_recipe_xp(user_id: str, num_recipes: int) -> Dict:
+    """Award XP for generating recipes"""
+    try:
+        xp_per_recipe = 5
+        total_xp = num_recipes * xp_per_recipe
+
+        db = get_firestore_db()
+        user_stats_ref = db.collection('user_stats').document(user_id)
+        current_stats = get_user_stats(user_id)
+
+        new_total_xp = current_stats['total_xp'] + total_xp
+        new_level = calculate_level(new_total_xp)
+        new_recipes = current_stats.get('recipes_generated', 0) + num_recipes
+
+        updated_stats = current_stats.copy()
+        updated_stats.update({
+            'total_xp': new_total_xp,
+            'level': new_level,
+            'recipes_generated': new_recipes
+        })
+
+        user_stats_ref.set(updated_stats)
+        return updated_stats
+
+    except Exception as e:
+        logger.error(f"Error awarding recipe XP: {str(e)}")
+        return get_user_stats(user_id)
