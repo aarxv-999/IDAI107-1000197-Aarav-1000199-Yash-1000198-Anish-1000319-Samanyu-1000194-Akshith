@@ -1,242 +1,318 @@
 import streamlit as st
 st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
 
-# Import functions
-from modules.leftover import (
-    load_leftovers, parse_manual_leftovers, fetch_ingredients_from_firebase, 
-    prioritize_ingredients, suggest_recipes, get_user_stats, award_recipe_xp
+from ui.components import (  # Import UI functions
+    leftover_input_csv, leftover_input_manual, leftover_input_firebase
 )
-
 from ui.components import (
-    render_auth_ui, initialize_session_state, auth_required, get_current_user,
-    display_user_stats_sidebar, render_cooking_quiz, display_gamification_dashboard,
-    display_daily_challenge
+    render_auth_ui, initialize_session_state, auth_required, get_current_user, is_user_role
 )
-
+from ui.components import (  # Import gamification UI functions
+    display_user_stats_sidebar, render_cooking_quiz, display_gamification_dashboard,
+    award_recipe_generation_xp, display_daily_challenge, show_xp_notification
+)
+from modules.leftover import suggest_recipes  # Import logic functions
+from modules.leftover import get_user_stats, award_recipe_xp  # Import gamification logic
 from firebase_init import init_firebase
+
+# Import the event planner integration
 from app_integration import integrate_event_planner, check_event_firebase_config
+
+# Import the dashboard module
 from dashboard import render_dashboard, get_feature_description
 
 init_firebase()
 
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Page/feature access control
 def check_feature_access(feature_name):
+    """Check if the current user has access to a specific feature"""
     user = get_current_user()
+    
+    # Public features accessible to all authenticated users
     public_features = ["Event Planning ChatBot", "Gamification Hub", "Cooking Quiz"]
+    
+    # Staff/admin only features
     staff_features = ["Leftover Management", "Promotion Generator"]
+    
+    # Chef only features
     chef_features = ["Chef Recipe Suggestions"]
+    
+    # Admin only features
     admin_features = ["Visual Menu Search"]
     
     if feature_name in public_features:
         return True
+    
     if not user:
         return False
+        
     if feature_name in staff_features and user['role'] in ['staff', 'manager', 'chef', 'admin']:
         return True
+        
     if feature_name in chef_features and user['role'] in ['chef', 'admin']:
         return True
+        
     if feature_name in admin_features and user['role'] in ['admin']:
         return True
+        
     return False
 
+# Individual feature functions
 @auth_required
 def leftover_management():
+    """Leftover management feature"""
     st.title("♻️ Leftover Management")
     
-    # Initialize session state
+    # Initialize session state variables if they don't exist
     if 'all_leftovers' not in st.session_state:
         st.session_state.all_leftovers = []
-    if 'firebase_ingredients_data' not in st.session_state:
-        st.session_state.firebase_ingredients_data = []
     if 'recipes' not in st.session_state:
         st.session_state.recipes = []
     if 'recipe_generation_error' not in st.session_state:
         st.session_state.recipe_generation_error = None
     
-    # Sidebar inputs
-    st.sidebar.header("Add Ingredients")
+    # Sidebar for input methods
+    st.sidebar.header("Input Methods")
     
-    # CSV Upload
-    st.sidebar.subheader("📄 CSV Upload")
-    csv_leftovers = []
-    uploaded_file = st.sidebar.file_uploader("Choose CSV file", type=["csv"])
-    if uploaded_file is not None:
-        try:
-            csv_leftovers = load_leftovers(uploaded_file)
-            st.sidebar.success(f"✅ {len(csv_leftovers)} ingredients")
-        except Exception as e:
-            st.sidebar.error(f"❌ Error: {str(e)}")
+    # Get leftovers from CSV, manual input, or Firebase
+    csv_leftovers = leftover_input_csv()
+    manual_leftovers = leftover_input_manual()
+    firebase_leftovers = leftover_input_firebase()
     
-    # Manual Entry
-    st.sidebar.subheader("✏️ Manual Entry")
-    manual_leftovers = []
-    ingredients_text = st.sidebar.text_area("Enter ingredients (comma-separated)", 
-                                           placeholder="tomatoes, onions, chicken")
-    if ingredients_text:
-        manual_leftovers = parse_manual_leftovers(ingredients_text)
-        st.sidebar.success(f"✅ {len(manual_leftovers)} ingredients")
-    
-    # Firebase
-    st.sidebar.subheader("🔥 Firebase")
-    firebase_leftovers = []
-    if st.sidebar.button("Fetch Ingredients", type="primary"):
-        try:
-            with st.spinner("Fetching..."):
-                raw_ingredients = fetch_ingredients_from_firebase()
-                prioritized_data = prioritize_ingredients(raw_ingredients)
-                st.session_state.firebase_ingredients_data = prioritized_data
-                firebase_leftovers = [item['ingredient'] for item in prioritized_data]
-                st.sidebar.success(f"✅ {len(firebase_leftovers)} ingredients")
-        except Exception as e:
-            st.sidebar.error(f"❌ Error: {str(e)}")
-    else:
-        firebase_leftovers = [item['ingredient'] for item in st.session_state.firebase_ingredients_data]
-    
-    # Combine all ingredients
+    # Combine leftovers from all sources
     all_leftovers = csv_leftovers + manual_leftovers + firebase_leftovers
+    
+    # Store in session state
     st.session_state.all_leftovers = all_leftovers
     
     # Main content
     if all_leftovers:
-        st.success(f"Found {len(all_leftovers)} ingredients")
+        st.write(f"Found {len(all_leftovers)} ingredients")
         
-        # Show ingredients
-        with st.expander("View Ingredients", expanded=False):
+        # Create a dropdown for ingredients
+        with st.expander("Available Ingredients", expanded=False):
+            # Display ingredients in a more compact format
             cols = st.columns(3)
             for i, ingredient in enumerate(all_leftovers):
                 col_idx = i % 3
                 with cols[col_idx]:
                     st.write(f"• {ingredient.title()}")
         
-        # Recipe generation
+        # Recipe generation options
+        st.subheader("Recipe Generation Options")
+        
         col1, col2 = st.columns(2)
+        
         with col1:
-            num_suggestions = st.slider("Number of recipes", 1, 10, 3)
+            # Number of recipe suggestions
+            num_suggestions = st.slider("Number of recipe suggestions", 
+                                       min_value=1, 
+                                       max_value=10, 
+                                       value=3,
+                                       help="Select how many recipe suggestions you want")
+        
         with col2:
-            notes = st.text_area("Requirements", placeholder="vegetarian, quick meals, etc.")
+            # Additional notes or requirements
+            notes = st.text_area("Additional notes or requirements", 
+                                placeholder="E.g., vegetarian only, quick meals, kid-friendly, etc.",
+                                help="Add any specific requirements for your recipes")
         
-        # Generate button
-        if st.button("🚀 Generate Recipes", type="primary", use_container_width=True):
-            try:
-                with st.spinner("Generating recipes..."):
-                    recipes = suggest_recipes(
-                        leftovers=all_leftovers,
-                        max_suggestions=num_suggestions,
-                        notes=notes,
-                        prioritized_ingredients=st.session_state.firebase_ingredients_data
-                    )
-                    st.session_state.recipes = recipes
-                    st.session_state.recipe_generation_error = None
-            except Exception as e:
-                st.session_state.recipe_generation_error = str(e)
-        
-        # Display results
-        if st.session_state.recipe_generation_error:
-            st.error(f"❌ Error: {st.session_state.recipe_generation_error}")
-        elif st.session_state.recipes:
-            st.success(f"🎉 Generated {len(st.session_state.recipes)} recipes!")
+        # Generate recipe button - using a form to prevent page reloads
+        with st.form(key="recipe_form"):
+            submit_button = st.form_submit_button(label="Generate Recipe Suggestions", type="primary")
             
-            # Show priority info only when recipes are generated
-            if st.session_state.firebase_ingredients_data:
-                high_priority = [item for item in st.session_state.firebase_ingredients_data if item['priority'] <= 2]
-                if high_priority:
-                    priority_names = [item['ingredient'] for item in high_priority]
-                    st.info(f"🔥 Prioritized: {', '.join(priority_names)} (expiring soon)")
+            if submit_button:
+                try:
+                    with st.spinner("Generating recipes..."):
+                        # Call the suggest_recipes function
+                        recipes = suggest_recipes(all_leftovers, num_suggestions, notes)
+                        
+                        # Store results in session state
+                        st.session_state.recipes = recipes
+                        st.session_state.recipe_generation_error = None
+                        
+                        # Log for debugging
+                        logging.info(f"Generated {len(recipes)} recipes")
+                except Exception as e:
+                    st.session_state.recipe_generation_error = str(e)
+                    logging.error(f"Recipe generation error: {str(e)}")
+        
+        # Display recipes or error message outside the form
+        if st.session_state.recipe_generation_error:
+            st.error(f"Error generating recipes: {st.session_state.recipe_generation_error}")
+        elif st.session_state.recipes:
+            st.success(f"Generated {len(st.session_state.recipes)} recipe suggestions!")
             
             # Display recipes
             st.subheader("Recipe Suggestions")
             for i, recipe in enumerate(st.session_state.recipes):
-                st.write(f"**{i+1}.** {recipe}")
+                st.write(f"{i+1}. {recipe}")
             
-            # Award XP
+            # Award XP for generating recipes
             user = get_current_user()
             if user and user.get('user_id'):
-                try:
-                    award_recipe_xp(user['user_id'], len(st.session_state.recipes))
-                    st.success(f"🎮 +{len(st.session_state.recipes) * 5} XP earned!")
-                except Exception as e:
-                    logging.error(f"XP error: {str(e)}")
+                award_recipe_generation_xp(user['user_id'], len(st.session_state.recipes))
     else:
-        st.info("Add ingredients using the sidebar to get started.")
+        st.info("Please add ingredients using the sidebar options.")
+        
+        # Example section
+        st.markdown("### How it works")
+        st.markdown("""
+        1. Add leftover ingredients using the sidebar
+        2. Click 'Generate Recipe Suggestions'
+        3. Get AI-powered recipe ideas that use your ingredients
+        4. Reduce food waste and create delicious meals!
+        """)
+        
+        # Example ingredients
+        st.markdown("### Example Ingredients")
+        example_ingredients = ["chicken", "rice", "bell peppers", "onions", "tomatoes", "garlic"]
+        example_cols = st.columns(3)
+        for i, ingredient in enumerate(example_ingredients):
+            col_idx = i % 3
+            with example_cols[col_idx]:
+                st.markdown(f"• {ingredient.title()}")
 
 @auth_required
 def gamification_hub():
+    """Gamification hub feature"""
     user = get_current_user()
     if user and user.get('user_id'):
         display_gamification_dashboard(user['user_id'])
     else:
-        st.warning("Please log in to view stats")
+        st.warning("Please log in to view your gamification stats")
 
 @auth_required
 def cooking_quiz():
-    st.title("🧠 Cooking Quiz")
+    """Cooking quiz feature"""
+    st.title("🧠 Cooking Knowledge Quiz")
+    
     user = get_current_user()
     if not user or not user.get('user_id'):
         st.warning("Please log in to take quizzes")
         return
-    sample_ingredients = ["chicken", "rice", "tomatoes", "onions"]
+        
+    # Sample ingredients for quiz generation
+    sample_ingredients = ["chicken", "rice", "tomatoes", "onions", "garlic", "olive oil"]
+    
+    # Display daily challenge
     display_daily_challenge(user['user_id'])
+    
+    # Render the cooking quiz
     render_cooking_quiz(sample_ingredients, user['user_id'])
 
 @auth_required
 def event_planning():
+    """Event Planning ChatBot feature"""
+    # Call the integrated event planner function
     integrate_event_planner()
 
 def promotion_generator():
+    """Promotion generator feature"""
     st.title("📣 Promotion Generator")
-    st.info("Coming soon!")
+    st.info("This feature is coming soon!")
 
 def chef_recipe_suggestions():
-    st.title("👨‍🍳 Chef Recipes")
-    st.info("Coming soon!")
+    """Chef recipe suggestions feature"""
+    st.title("👨‍🍳 Chef Recipe Suggestions")
+    st.info("This feature is coming soon!")
 
 def visual_menu_search():
-    st.title("🔍 Visual Search")
-    st.info("Coming soon!")
+    """Visual menu search feature"""
+    st.title("🔍 Visual Menu Search")
+    st.info("This feature is coming soon!")
 
 @auth_required
 def dashboard():
+    """Main dashboard feature"""
     render_dashboard()
 
+# Main app function
 def main():
+    # Initialize Firebase and session state for authentication
     initialize_session_state()
     
+    # Initialize gamification session state
+    if 'show_quiz' not in st.session_state:
+        st.session_state.show_quiz = False
+    if 'show_general_quiz' not in st.session_state:
+        st.session_state.show_general_quiz = False
+    if 'show_achievements' not in st.session_state:
+        st.session_state.show_achievements = False
+    
+    # Initialize selected feature state
     if 'selected_feature' not in st.session_state:
         st.session_state.selected_feature = "Dashboard"
     
+    # Check Event Firebase configuration
     check_event_firebase_config()
     
-    # Auth UI
+    # Render authentication UI in sidebar
     st.sidebar.title("🔐 Authentication")
-    render_auth_ui()
+    auth_status = render_auth_ui()
     
+    # Main content
     if not st.session_state.is_authenticated:
-        st.title("🍽️ Smart Restaurant Management")
-        st.markdown("Please log in to access features.")
+        st.title("🍽️ Smart Restaurant Menu Management System")
+        st.markdown('''
+        Welcome to the AI-powered smart restaurant system! 🍽️
+        
+        **Features include:**
+        - 🧠 **Smart Recipe Generation** from leftover ingredients
+        - 🎮 **Gamification System** with quizzes and achievements  
+        - 🏆 **Leaderboards** to compete with other chefs
+        - 📊 **Progress Tracking** and skill development
+        - 🎉 **Event Planning** for special occasions
+        
+        Please log in or register to access all features.
+        ''')
         return
     
-    # Feature selection
+    # Feature selection in sidebar
     st.sidebar.divider()
     st.sidebar.header("🚀 Features")
     
+    # List of all available features with enhanced descriptions
     features = [
-        "Dashboard", "Leftover Management", "Gamification Hub", 
-        "Cooking Quiz", "Event Planning ChatBot", "Promotion Generator", 
-        "Chef Recipe Suggestions", "Visual Menu Search"
+        "Dashboard",
+        "Leftover Management",
+        "Gamification Hub", 
+        "Cooking Quiz",
+        "Event Planning ChatBot",
+        "Promotion Generator", 
+        "Chef Recipe Suggestions",
+        "Visual Menu Search"
     ]
     
+    # Filter features based on user role
     available_features = ["Dashboard"] + [f for f in features[1:] if check_feature_access(f)]
     
+    # Display user gamification stats in sidebar if authenticated
     user = get_current_user()
     if user and user.get('user_id'):
         display_user_stats_sidebar(user['user_id'])
     
-    selected_feature = st.sidebar.selectbox("Choose Feature", available_features)
+    # Feature selection
+    selected_feature = st.sidebar.selectbox(
+        "Choose a Feature",
+        options=available_features,
+        index=available_features.index(st.session_state.selected_feature),
+        help="Select a feature to explore different aspects of the restaurant management system"
+    )
+    
+    # Update session state with selected feature
     st.session_state.selected_feature = selected_feature
     
-    # Display feature
+    # Add feature descriptions in sidebar
+    feature_description = get_feature_description(selected_feature)
+    if feature_description:
+        st.sidebar.info(feature_description)
+    
+    # Display the selected feature
     if selected_feature == "Dashboard":
         dashboard()
     elif selected_feature == "Leftover Management":
@@ -256,5 +332,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-print("✅ Minimalistic app loaded!")
