@@ -1,5 +1,5 @@
 '''
-Simplified leftover management and gamification module
+Enhanced leftover management and gamification module with Firebase integration
 '''
 
 import pandas as pd
@@ -13,6 +13,11 @@ from datetime import datetime, date
 
 from firebase_admin import firestore
 from firebase_init import init_firebase
+from modules.firebase_data import (
+    search_recipes_by_ingredients, search_menu_by_ingredients,
+    format_recipe_for_display, format_menu_item_for_display,
+    get_popular_recipes
+)
 
 logger = logging.getLogger('leftover_combined')
 
@@ -157,14 +162,39 @@ def parse_firebase_ingredients(firebase_ingredients: List[Dict]) -> List[str]:
     return ingredients
 
 def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str = "", priority_ingredients: List[Dict] = None) -> List[str]:
-    '''Suggest recipes based on leftover ingredients'''
+    '''Enhanced recipe suggestions using Firebase data and AI'''
     if not leftovers:
         return []
 
     try:
+        # First, try to find matching recipes from Firebase
+        firebase_recipes = search_recipes_by_ingredients(leftovers, limit=max_suggestions * 2)
+        menu_items = search_menu_by_ingredients(leftovers, limit=max_suggestions)
+        
+        # Format Firebase results
+        firebase_suggestions = []
+        
+        # Add recipe archive matches
+        for recipe in firebase_recipes[:max_suggestions]:
+            formatted = format_recipe_for_display(recipe)
+            firebase_suggestions.append(f"📚 {formatted}")
+        
+        # Add menu item matches
+        for item in menu_items[:max_suggestions - len(firebase_suggestions)]:
+            formatted = format_menu_item_for_display(item)
+            firebase_suggestions.append(f"🍽️ {formatted}")
+        
+        # If we have enough Firebase suggestions, return them
+        if len(firebase_suggestions) >= max_suggestions:
+            return firebase_suggestions[:max_suggestions]
+        
+        # Otherwise, supplement with AI-generated recipes
+        remaining_suggestions = max_suggestions - len(firebase_suggestions)
+        
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            raise ValueError("GEMINI_API_KEY not found!")
+            # If no API key, return only Firebase suggestions
+            return firebase_suggestions if firebase_suggestions else ["No recipes found for these ingredients"]
         
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
@@ -180,11 +210,17 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
                 urgent_details = [f"{ing['name']} (expires in {ing['days_until_expiry']} days)" for ing in urgent_ingredients]
                 priority_text = f"\nPRIORITY: Use these ingredients first: {', '.join(urgent_details)}"
         
+        # Include context about existing recipes
+        context_text = ""
+        if firebase_suggestions:
+            context_text = f"\nExisting restaurant recipes found: {', '.join([s.replace('📚 ', '').replace('🍽️ ', '') for s in firebase_suggestions])}"
+            context_text += f"\nSuggest {remaining_suggestions} DIFFERENT recipes that complement these existing options."
+        
         prompt = f'''
-        Ingredients: {ingredients_list}.{notes_text}{priority_text}
+        Ingredients: {ingredients_list}.{notes_text}{priority_text}{context_text}
 
-        Suggest {max_suggestions} simple recipe names using these ingredients.
-
+        Suggest {remaining_suggestions} simple recipe names using these ingredients.
+        Make them practical for a restaurant kitchen.
         Format each recipe as just the name.
         Keep recipes simple and focused on using the ingredients.
         ''' 
@@ -193,25 +229,32 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
         response_text = response.text
         
         recipe_lines = [line.strip() for line in response_text.split('\n') if line.strip()]
-        recipes = []
+        ai_recipes = []
         for line in recipe_lines:
             if line and line[0].isdigit() and line[1:3] in ['. ', '- ', ') ']:
                 line = line[3:].strip()
             line = line.strip('"\'')
-            if line and len(recipes) < max_suggestions:
-                recipes.append(line)
+            if line and len(ai_recipes) < remaining_suggestions:
+                ai_recipes.append(f"🤖 {line}")
         
-        recipes = recipes[:max_suggestions]
+        # Combine Firebase and AI suggestions
+        all_suggestions = firebase_suggestions + ai_recipes[:remaining_suggestions]
         
-        if not recipes:
-            return []
-        return recipes
+        return all_suggestions[:max_suggestions] if all_suggestions else ["No recipes found for these ingredients"]
 
     except Exception as e:
-        logger.error(f"Error using Gemini API: {str(e)}")
-        raise Exception(f"Error generating recipes: {str(e)}")
+        logger.error(f"Error generating recipe suggestions: {str(e)}")
+        # Fallback to Firebase-only suggestions
+        try:
+            firebase_recipes = search_recipes_by_ingredients(leftovers, limit=max_suggestions)
+            if firebase_recipes:
+                return [format_recipe_for_display(recipe) for recipe in firebase_recipes]
+            else:
+                return ["Unable to generate recipes at this time"]
+        except:
+            return ["Unable to generate recipes at this time"]
 
-# Gamification functions
+# Gamification functions (unchanged)
 def get_firestore_db():
     """Get Firestore client"""
     init_firebase()
