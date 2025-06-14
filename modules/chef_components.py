@@ -60,11 +60,6 @@ def render_menu_generator(db):
     st.markdown("### 🍽️ Weekly Menu Generator")
     st.markdown("Generate weekly restaurant menus using available ingredients and AI")
     
-    # Check for force regeneration flag
-    force_regenerate = st.session_state.get('force_regenerate', False)
-    if force_regenerate:
-        st.session_state.force_regenerate = False  # Reset the flag
-    
     # Ingredient Analysis
     st.markdown("#### 📦 Ingredient Analysis")
     
@@ -115,85 +110,130 @@ def render_menu_generator(db):
     # Menu Generation
     st.markdown("#### 🚀 Generate Menu")
     
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.write("Generate a comprehensive weekly menu with starters, mains, desserts, and beverages.")
-
-    with col2:
-        generate_button = st.button("Generate Menu", type="primary", use_container_width=True)
-
-    if generate_button or force_regenerate:
-        # Check if menu already exists for this week (only if not force regenerating)
-        today = datetime.now()
-        start_of_week = today - timedelta(days=today.weekday())
+    # Check existing menu status
+    today = datetime.now()
+    logger.info(f"Current date: {today}")
+    
+    # Get current week's date range for better debugging
+    start_of_week = today - timedelta(days=today.weekday())
+    end_of_week = start_of_week + timedelta(days=6)
+    
+    st.info(f"📅 Current week: {start_of_week.strftime('%Y-%m-%d')} to {end_of_week.strftime('%Y-%m-%d')}")
+    
+    # Check for existing menu items
+    try:
+        # Query for any menu items from this week
+        existing_query = db.collection("menu").where("created_at", ">=", start_of_week.isoformat()).limit(10)
+        existing_docs = list(existing_query.stream())
         
-        if not force_regenerate:
-            existing_query = db.collection("menu").where("created_at", ">=", start_of_week.isoformat()).limit(1)
-            existing_docs = list(existing_query.stream())
+        logger.info(f"Found {len(existing_docs)} existing menu items for current week")
+        
+        if existing_docs:
+            # Show existing menu info
+            st.warning(f"⚠️ Found {len(existing_docs)} menu items for this week")
             
-            if existing_docs:
-                st.warning("⚠️ A menu for this week has already been generated.")
-                confirm_menu_replacement(db, start_of_week)
-                return
+            # Show some sample existing items for debugging
+            with st.expander("View Existing Menu Items (Debug Info)"):
+                for i, doc in enumerate(existing_docs[:3]):  # Show first 3
+                    data = doc.to_dict()
+                    st.write(f"**{i+1}. {data.get('name', 'Unknown')}**")
+                    st.write(f"   - Created: {data.get('created_at', 'Unknown')}")
+                    st.write(f"   - Source: {data.get('source', 'Unknown')}")
+                    st.write(f"   - Category: {data.get('category', 'Unknown')}")
+                if len(existing_docs) > 3:
+                    st.write(f"... and {len(existing_docs) - 3} more items")
+            
+            # Regeneration section
+            st.markdown("#### 🔄 Menu Regeneration")
+            st.error("⚠️ **WARNING**: This will delete ALL current menu items and generate a completely new menu.")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🗑️ Delete Current Menu & Generate New", type="primary", key="regenerate_menu"):
+                    delete_and_regenerate_menu(db, sorted_ingredients, priority_ingredients)
+            
+            with col2:
+                if st.button("❌ Keep Current Menu", key="keep_menu"):
+                    st.info("✅ Current menu preserved")
+        else:
+            # No existing menu - show generate button
+            st.success("✅ No existing menu found for this week")
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write("Generate a comprehensive weekly menu with starters, mains, desserts, and beverages.")
+
+            with col2:
+                if st.button("🚀 Generate New Menu", type="primary", use_container_width=True):
+                    generate_new_menu(db, sorted_ingredients, priority_ingredients)
+                    
+    except Exception as e:
+        logger.error(f"Error checking existing menu: {str(e)}")
+        st.error(f"Error checking existing menu: {str(e)}")
         
-        # Generate new menu
-        generate_new_menu(db, sorted_ingredients, priority_ingredients)
+        # Fallback - allow generation anyway
+        if st.button("🚀 Generate Menu (Fallback)", type="secondary"):
+            generate_new_menu(db, sorted_ingredients, priority_ingredients)
 
     # Display generated menu if exists
     if "generated_menu" in st.session_state:
         display_generated_menu(db)
 
-def confirm_menu_replacement(db, start_of_week):
-    """Confirm menu replacement with user"""
-    st.error("⚠️ **WARNING**: This will delete the current week's menu and generate a new one.")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("✅ Yes, Replace Menu", type="primary", key="confirm_replace"):
-            # Delete current week's menu
-            try:
-                current_menus = db.collection("menu").where("created_at", ">=", start_of_week.isoformat()).stream()
-                deleted_count = 0
-                for doc in current_menus:
+def delete_and_regenerate_menu(db, sorted_ingredients, priority_ingredients):
+    """Delete existing menu and generate new one"""
+    try:
+        with st.spinner("🗑️ Deleting existing menu items..."):
+            # Get ALL menu items (not just this week) to be thorough
+            all_menu_docs = db.collection("menu").stream()
+            deleted_count = 0
+            
+            for doc in all_menu_docs:
+                try:
+                    doc_data = doc.to_dict()
+                    logger.info(f"Deleting menu item: {doc_data.get('name', 'Unknown')} (ID: {doc.id})")
                     doc.reference.delete()
                     deleted_count += 1
-                
-                st.success(f"✅ Deleted {deleted_count} existing menu items")
-                
-                # Clear the generated menu from session state to force regeneration
-                if "generated_menu" in st.session_state:
-                    del st.session_state.generated_menu
-                
-                # Set a flag to trigger regeneration
-                st.session_state.force_regenerate = True
-                st.rerun()
-                
-            except Exception as e:
-                st.error(f"Error deleting menu: {str(e)}")
-                return False
-    
-    with col2:
-        if st.button("❌ Cancel", key="cancel_replace"):
-            st.info("Menu generation cancelled")
-            return False
-    
-    return False
+                except Exception as e:
+                    logger.error(f"Error deleting document {doc.id}: {str(e)}")
+            
+            logger.info(f"Successfully deleted {deleted_count} menu items")
+            st.success(f"✅ Deleted {deleted_count} existing menu items")
+            
+        # Clear any cached menu data
+        if "generated_menu" in st.session_state:
+            del st.session_state.generated_menu
+            
+        # Generate new menu
+        st.info("🚀 Generating new menu...")
+        generate_new_menu(db, sorted_ingredients, priority_ingredients)
+        
+    except Exception as e:
+        logger.error(f"Error during menu deletion and regeneration: {str(e)}")
+        st.error(f"❌ Error during menu regeneration: {str(e)}")
 
 def generate_new_menu(db, sorted_ingredients, priority_ingredients):
     """Generate new menu using AI"""
+    logger.info("Starting menu generation...")
+    
     with st.spinner("Generating menu with AI..."):
         progress_bar = st.progress(0)
 
         ingredient_names = [i['name'] for i in sorted_ingredients[:50]]
+        logger.info(f"Using {len(ingredient_names)} ingredients for menu generation")
+        logger.info(f"Priority ingredients: {priority_ingredients}")
+        
         prompt = f"""
 You are an AI chef. Generate a full weekly restaurant menu (at least 35 dishes).
 Include:
-- Starters, Mains, Desserts, Beverages
+- Starters (8-10 dishes)
+- Main Course (15-18 dishes) 
+- Desserts (6-8 dishes)
+- Beverages (6-8 dishes)
 - Special dishes using: {', '.join(priority_ingredients)}
 - Seasonal dishes based on the current month and available ingredients: {', '.join(ingredient_names)}
 - Normal dishes based on the same available ingredients
 
-Use this structure for each dish:
+Use this EXACT structure for each dish:
 {{
     "name": "Dish Name",
     "description": "Detailed description",
@@ -209,18 +249,22 @@ Use this structure for each dish:
     "timestamp": "{datetime.now().isoformat()}"
 }}
 
-Return a JSON array of dishes. Do not return any explanation.
+Return ONLY a JSON array of dishes. No explanation or additional text.
 """
         progress_bar.progress(50)
+        logger.info("Sending request to Gemini AI...")
+        
         response = generate_dish(prompt)
         progress_bar.progress(100)
 
         if not isinstance(response, list):
+            logger.error(f"Invalid response type: {type(response)}")
             st.error("❌ Invalid menu format generated")
             if response:
                 st.json(response)
             return
 
+        logger.info(f"Successfully generated {len(response)} dishes")
         st.session_state.generated_menu = response
         st.success(f"✅ Generated {len(response)} dishes successfully!")
 
@@ -257,9 +301,12 @@ def display_generated_menu(db):
 
 def save_menu_to_database(db):
     """Save generated menu to database"""
+    logger.info("Starting menu save to database...")
+    
     with st.spinner("Saving menu..."):
         progress = st.progress(0)
         created_count = 0
+        error_count = 0
         total_dishes = len(st.session_state.generated_menu)
 
         for i, dish in enumerate(st.session_state.generated_menu):
@@ -268,7 +315,8 @@ def save_menu_to_database(db):
             # Validate required fields
             missing = [f for f in REQUIRED_MENU_FIELDS if f not in dish or not dish[f]]
             if missing:
-                st.warning(f"Skipping dish due to missing fields: {missing}")
+                logger.warning(f"Skipping dish '{dish.get('name', 'Unknown')}' due to missing fields: {missing}")
+                error_count += 1
                 continue
 
             # Set metadata
@@ -278,19 +326,32 @@ def save_menu_to_database(db):
 
             try:
                 # Add to menu collection
-                db.collection("menu").add(dish)
+                menu_ref = db.collection("menu").add(dish)
+                logger.info(f"Added dish '{dish.get('name')}' to menu collection with ID: {menu_ref[1].id}")
+                
                 # Add to recipe archive for backup
-                db.collection("recipe_archive").add(dish)
+                archive_ref = db.collection("recipe_archive").add(dish)
+                logger.info(f"Added dish '{dish.get('name')}' to recipe archive with ID: {archive_ref[1].id}")
+                
                 created_count += 1
             except Exception as e:
-                st.error(f"Error saving dish '{dish.get('name', 'Unnamed')}': {e}")
+                logger.error(f"Error saving dish '{dish.get('name', 'Unnamed')}': {e}")
+                error_count += 1
+
+        logger.info(f"Menu save completed: {created_count} saved, {error_count} errors")
 
         if created_count:
             st.success(f"✅ Menu saved successfully! {created_count} dishes added to restaurant menu.")
+            if error_count > 0:
+                st.warning(f"⚠️ {error_count} dishes had errors and were not saved.")
+            
             # Clear the generated menu from session state
             del st.session_state.generated_menu
+            
+            # Force a rerun to refresh the menu status
+            st.rerun()
         else:
-            st.error("❌ No dishes saved. Validation failed for all dishes.")
+            st.error("❌ No dishes saved. All dishes had validation errors.")
 
 def render_chef_submission(db):
     """Render the chef submission form component"""
@@ -360,6 +421,8 @@ def render_chef_submission(db):
 
 def process_chef_submission(db, chef_name, dish_name, description, ingredients, cook_time, cuisine, diet, category):
     """Process chef recipe submission"""
+    logger.info(f"Processing chef submission: {dish_name} by {chef_name}")
+    
     with st.spinner("Processing submission and generating AI rating..."):
         progress_bar = st.progress(0)
 
@@ -370,11 +433,14 @@ def process_chef_submission(db, chef_name, dish_name, description, ingredients, 
             )
             progress_bar.progress(75)
 
-            rating = rating_data.get("rating", "NA")
+            rating = rating_data.get("rating", 3)
             comment = rating_data.get("rating_comment", "No feedback available")
+            
+            logger.info(f"Generated rating for {dish_name}: {rating}/5 - {comment}")
 
         except Exception as e:
-            rating = "NA"
+            logger.error(f"Error generating rating: {str(e)}")
+            rating = 3
             comment = f"Rating unavailable: {str(e)}"
 
         progress_bar.progress(90)
@@ -399,17 +465,22 @@ def process_chef_submission(db, chef_name, dish_name, description, ingredients, 
 
         try:
             # Add to menu and recipe archive
-            db.collection("menu").add(dish_doc)
-            db.collection("recipe_archive").add(dish_doc)
+            menu_ref = db.collection("menu").add(dish_doc)
+            archive_ref = db.collection("recipe_archive").add(dish_doc)
+            
+            logger.info(f"Saved chef submission to menu: {menu_ref[1].id}")
+            logger.info(f"Saved chef submission to archive: {archive_ref[1].id}")
 
             # Add to chef ratings
-            db.collection("chef_sub_ratings").add({
+            rating_ref = db.collection("chef_sub_ratings").add({
                 "dish_name": dish_name,
                 "chef_name": chef_name,
                 "rating": rating,
                 "comment": comment,
                 "timestamp": now
             })
+            
+            logger.info(f"Saved chef rating: {rating_ref[1].id}")
 
             progress_bar.progress(100)
 
@@ -421,6 +492,7 @@ def process_chef_submission(db, chef_name, dish_name, description, ingredients, 
                 st.info(f"**AI Feedback:** {comment}")
                 
         except Exception as e:
+            logger.error(f"Error saving chef submission: {str(e)}")
             st.error(f"❌ Error saving recipe: {str(e)}")
 
 def render_analytics_dashboard(db):
@@ -433,8 +505,11 @@ def render_analytics_dashboard(db):
     def load_menu_data():
         try:
             menu_docs = db.collection("menu").stream()
-            return [doc.to_dict() for doc in menu_docs]
+            data = [doc.to_dict() for doc in menu_docs]
+            logger.info(f"Loaded {len(data)} menu items for analytics")
+            return data
         except Exception as e:
+            logger.error(f"Failed to load menu items: {e}")
             st.error(f"Failed to load menu items: {e}")
             return []
 
