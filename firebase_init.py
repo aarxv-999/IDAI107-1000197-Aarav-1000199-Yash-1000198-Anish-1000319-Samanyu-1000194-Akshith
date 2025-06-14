@@ -8,7 +8,10 @@ from firebase_admin import credentials
 import streamlit as st
 
 def init_firebase():
-    """Initialize Firebase Admin SDK"""
+    """
+    Initialize Firebase Admin SDK with credentials from Streamlit secrets.
+    This should be called once at app startup.
+    """
     if not firebase_admin._apps:
         try:
             cred = credentials.Certificate({
@@ -26,6 +29,6 @@ def init_firebase():
             firebase_admin.initialize_app(cred)
             return True
         except Exception as e:
-            st.error(f"Firebase initialization failed: {str(e)}")
+            st.error(f"WAS NOT ABLE TO INITIALIZE Firebase! {str(e)}")
             return False
     return True
