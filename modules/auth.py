@@ -14,27 +14,11 @@ from firebase_init import init_firebase
 logger = logging.getLogger(__name__)
 
 def hash_password(password: str) -> str:
-    """
-    Hash the password using SHA-256 algorithm.
-    
-    Args:
-        password (str): The password to hash
-    
-    Returns:
-        str: The hashed password
-    """
+    """Hash the password using SHA-256 algorithm."""
     return hashlib.sha256(password.encode()).hexdigest()
 
 def validate_password(password: str) -> Tuple[bool, str]:
-    """
-    Validate that the password meets security requirements.
-    
-    Args:
-        password (str): The password to validate
-    
-    Returns:
-        Tuple[bool, str]: (is_valid, error_message)
-    """
+    """Validate that the password meets security requirements."""
     if len(password) < 5:
         return False, "Password must be at least 5 characters long"
     
@@ -46,40 +30,18 @@ def validate_password(password: str) -> Tuple[bool, str]:
     return True, ""
 
 def validate_email(email: str) -> Tuple[bool, str]:
-    """
-    Validate that the email has a proper format.
-    
-    Args:
-        email (str): The email to validate
-    
-    Returns:
-        Tuple[bool, str]: (is_valid, error_message)
-    """
+    """Validate that the email has a proper format."""
     if '@' not in email or '.' not in email.split('@')[1]:
         return False, "Please use a proper email format"
     return True, ""
 
 def get_firestore_db():
-    """
-    Get a Firestore client instance.
-    
-    Returns:
-        firestore.Client: Firestore database client
-    """
-    # Ensure Firebase is initialized
+    """Get a Firestore client instance."""
     init_firebase()
     return firestore.client()
 
 def email_exists(email: str) -> bool:
-    """
-    Check if an email already exists in the database.
-    
-    Args:
-        email (str): The email to check
-    
-    Returns:
-        bool: True if email exists, False otherwise
-    """
+    """Check if an email already exists in the database."""
     try:
         db = get_firestore_db()
         users_ref = db.collection('users')
@@ -90,15 +52,7 @@ def email_exists(email: str) -> bool:
         return False
 
 def username_exists(username: str) -> bool:
-    """
-    Check if a username already exists in the database.
-    
-    Args:
-        username (str): The username to check
-    
-    Returns:
-        bool: True if username exists, False otherwise
-    """
+    """Check if a username already exists in the database."""
     try:
         db = get_firestore_db()
         users_ref = db.collection('users')
@@ -109,20 +63,8 @@ def username_exists(username: str) -> bool:
         return False
 
 def register_user(username: str, email: str, password: str, role: str = "user") -> Tuple[bool, str]:
-    """
-    Register a new user in the Firebase database.
-    
-    Args:
-        username (str): User's username
-        email (str): User's email
-        password (str): User's password
-        role (str, optional): User's role. Defaults to "user".
-    
-    Returns:
-        Tuple[bool, str]: (success, message)
-    """
+    """Register a new user in the Firebase database."""
     try:
-        # Validate inputs
         is_valid, error_msg = validate_email(email)
         if not is_valid:
             return False, error_msg
@@ -137,12 +79,10 @@ def register_user(username: str, email: str, password: str, role: str = "user") 
         if not is_valid:
             return False, error_msg
             
-        # Hash password and prepare user data
         password_hash = hash_password(password)
         user_id = str(uuid.uuid4())
         time_created = datetime.datetime.now().strftime("%d-%m-%y %H:%M")
         
-        # Store user in Firestore
         db = get_firestore_db()
         users_ref = db.collection('users')
         
@@ -163,37 +103,24 @@ def register_user(username: str, email: str, password: str, role: str = "user") 
         return False, f"User registration unsuccessful: {str(e)}"
 
 def authenticate_user(username_or_email: str, password: str) -> Tuple[bool, Optional[Dict], str]:
-    """
-    Authenticate a user with username/email and password.
-    
-    Args:
-        username_or_email (str): User's username or email
-        password (str): User's password
-    
-    Returns:
-        Tuple[bool, Optional[Dict], str]: (success, user_data, message)
-    """
+    """Authenticate a user with username/email and password."""
     try:
         db = get_firestore_db()
         users_ref = db.collection('users')
         
-        # Try to find user by username
         user_docs = list(users_ref.where('username', '==', username_or_email).limit(1).get())
         
-        # If not found by username, try email
         if not user_docs:
             user_docs = list(users_ref.where('email', '==', username_or_email).limit(1).get())
             
         if not user_docs:
             return False, None, "Invalid username/email or password entered!"
             
-        # Get user data and verify password
         user_data = user_docs[0].to_dict()
         stored_hash = user_data['password_hash']
         provided_hash = hash_password(password)
         
         if stored_hash == provided_hash:
-            # Remove password hash before returning user data
             user_data.pop('password_hash', None)
             logger.info(f"User has been authenticated: {username_or_email}")
             return True, user_data, "Authentication was successful!"
