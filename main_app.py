@@ -28,8 +28,8 @@ def check_feature_access(feature_name):
     """Check if the current user has access to a specific feature"""
     user = get_current_user()
 
-    public_features = ["Event Planning ChatBot", "Gamification Hub", "Cooking Quiz"]
-    staff_features = ["Leftover Management", "Promotion Generator"]
+    public_features = ["Event Planning ChatBot", "Gamification Hub"]
+    staff_features = ["Kitchen Management", "Promotion Generator"]  # Changed name
     chef_features = ["Chef Recipe Suggestions"]
     admin_features = ["Visual Menu Search"]
 
@@ -51,10 +51,26 @@ def check_feature_access(feature_name):
     return False
 
 @auth_required
-def leftover_management():
-    """Simplified leftover management interface"""
-    st.title("♻️ Leftover Management")
+def kitchen_management():
+    """Combined leftover management and cooking quiz interface"""
+    st.title("🍽️ Kitchen Management")
+    
+    user = get_current_user()
+    user_id = user.get('user_id', '') if user else ''
+    
+    # Create tabs for different functions
+    tab1, tab2 = st.tabs(["♻️ Leftover Recipes", "🧠 Cooking Quiz"])
+    
+    with tab1:
+        render_leftover_management(user_id)
+    
+    with tab2:
+        render_cooking_quiz_tab(user_id)
 
+def render_leftover_management(user_id: str):
+    """Leftover management section"""
+    st.markdown("### ♻️ Generate New Recipes from Leftovers")
+    
     if 'all_leftovers' not in st.session_state:
         st.session_state.all_leftovers = []
     if 'detailed_ingredient_info' not in st.session_state:
@@ -64,13 +80,21 @@ def leftover_management():
     if 'recipe_generation_error' not in st.session_state:
         st.session_state.recipe_generation_error = None
 
-    # Simplified sidebar
-    with st.sidebar:
-        st.header("Add Ingredients")
-        
-        # Simplified input methods
+    # Simplified sidebar-style input in columns
+    st.markdown("#### Add Ingredients")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**📁 CSV Upload**")
         csv_leftovers = leftover_input_csv()
+    
+    with col2:
+        st.markdown("**✏️ Manual Entry**")
         manual_leftovers = leftover_input_manual()
+    
+    with col3:
+        st.markdown("**🔥 Current Inventory**")
         firebase_leftovers, firebase_detailed_info = leftover_input_firebase()
 
     all_leftovers = csv_leftovers + manual_leftovers + firebase_leftovers
@@ -78,16 +102,20 @@ def leftover_management():
     st.session_state.detailed_ingredient_info = firebase_detailed_info
 
     if all_leftovers:
-        # Clean ingredient display
-        st.write(f"**{len(all_leftovers)} ingredients found**")
+        st.divider()
         
-        if firebase_detailed_info:
-            urgent_count = len([item for item in firebase_detailed_info if item['days_until_expiry'] <= 3])
-            if urgent_count > 0:
-                st.warning(f"⚠️ {urgent_count} ingredients expire soon")
+        # Clean ingredient display
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.write(f"**{len(all_leftovers)} ingredients found**")
+        with col2:
+            if firebase_detailed_info:
+                urgent_count = len([item for item in firebase_detailed_info if item['days_until_expiry'] <= 3])
+                if urgent_count > 0:
+                    st.warning(f"⚠️ {urgent_count} expire soon")
         
         # Simplified ingredient list
-        with st.expander("View Ingredients"):
+        with st.expander("View All Ingredients"):
             if firebase_detailed_info:
                 for item in firebase_detailed_info:
                     days_left = item['days_until_expiry']
@@ -100,16 +128,17 @@ def leftover_management():
             else:
                 st.write(", ".join(all_leftovers))
         
-        # Simplified recipe generation
+        # Recipe generation controls
+        st.markdown("#### Generate New Recipes")
         col1, col2 = st.columns([2, 1])
         with col1:
             notes = st.text_input("Requirements (optional)", placeholder="e.g., vegetarian, quick meals")
         with col2:
-            num_suggestions = st.selectbox("Recipes", [1, 2, 3, 4, 5], index=2)
+            num_suggestions = st.selectbox("Number of Recipes", [1, 2, 3, 4, 5], index=2)
         
-        if st.button("Generate Recipes", type="primary", use_container_width=True):
+        if st.button("🆕 Generate Creative Recipes", type="primary", use_container_width=True):
             try:
-                with st.spinner("Generating recipes..."):
+                with st.spinner("Creating new recipes from your leftovers..."):
                     recipes = suggest_recipes(
                         all_leftovers, 
                         num_suggestions, 
@@ -118,22 +147,39 @@ def leftover_management():
                     )
                     st.session_state.recipes = recipes
                     st.session_state.recipe_generation_error = None
+                    
+                    # Award XP for recipe generation
+                    if user_id:
+                        award_recipe_generation_xp(user_id, len(recipes))
             except Exception as e:
                 st.session_state.recipe_generation_error = str(e)
         
-        # Clean recipe display
+        # Display results
         if st.session_state.recipe_generation_error:
             st.error(f"Error: {st.session_state.recipe_generation_error}")
         elif st.session_state.recipes:
-            st.success("✨ Recipe Suggestions")
+            st.success("✨ New Creative Recipe Suggestions")
             for i, recipe in enumerate(st.session_state.recipes, 1):
                 st.write(f"{i}. {recipe}")
-            
-            user = get_current_user()
-            if user and user.get('user_id'):
-                award_recipe_generation_xp(user['user_id'], len(st.session_state.recipes))
     else:
-        st.info("Add ingredients using the sidebar to get started")
+        st.info("👆 Add ingredients above to generate creative new recipes")
+
+def render_cooking_quiz_tab(user_id: str):
+    """Cooking quiz section"""
+    st.markdown("### 🧠 Test Your Culinary Knowledge")
+    
+    if not user_id:
+        st.warning("Please log in to take quizzes")
+        return
+    
+    # Display daily challenge
+    display_daily_challenge(user_id)
+    
+    # Sample ingredients for quiz context
+    sample_ingredients = ["chicken", "rice", "tomatoes", "onions", "garlic", "olive oil"]
+    
+    # Render the quiz
+    render_cooking_quiz(sample_ingredients, user_id)
 
 @auth_required
 def gamification_hub():
@@ -143,20 +189,6 @@ def gamification_hub():
         display_gamification_dashboard(user['user_id'])
     else:
         st.warning("Please log in to view stats")
-
-@auth_required
-def cooking_quiz():
-    """Simplified quiz interface"""
-    st.title("🧠 Cooking Quiz")
-
-    user = get_current_user()
-    if not user or not user.get('user_id'):
-        st.warning("Please log in to take quizzes")
-        return
-        
-    sample_ingredients = ["chicken", "rice", "tomatoes", "onions", "garlic", "olive oil"]
-    display_daily_challenge(user['user_id'])
-    render_cooking_quiz(sample_ingredients, user['user_id'])
 
 @auth_required
 def event_planning():
@@ -224,9 +256,8 @@ def main():
 
         features = [
             "Dashboard",
-            "Leftover Management",
+            "Kitchen Management",  # Combined feature
             "Gamification Hub", 
-            "Cooking Quiz",
             "Event Planning ChatBot",
             "Promotion Generator", 
             "Chef Recipe Suggestions",
@@ -250,12 +281,10 @@ def main():
     # Feature routing
     if selected_feature == "Dashboard":
         dashboard()
-    elif selected_feature == "Leftover Management":
-        leftover_management()
+    elif selected_feature == "Kitchen Management":  # Combined feature
+        kitchen_management()
     elif selected_feature == "Gamification Hub":
         gamification_hub()
-    elif selected_feature == "Cooking Quiz":
-        cooking_quiz()
     elif selected_feature == "Event Planning ChatBot":
         event_planning()
     elif selected_feature == "Promotion Generator":
