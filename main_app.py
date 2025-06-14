@@ -1,8 +1,72 @@
+import streamlit as st
+st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
+
+from ui.components import (  # Import UI functions
+    leftover_input_csv, leftover_input_manual, leftover_input_firebase
+)
+from ui.components import (
+    render_auth_ui, initialize_session_state, auth_required, get_current_user, is_user_role
+)
+from ui.components import (  # Import gamification UI functions
+    display_user_stats_sidebar, render_cooking_quiz, display_gamification_dashboard,
+    award_recipe_generation_xp, display_daily_challenge, show_xp_notification
+)
+from modules.leftover import suggest_recipes  # Import logic functions
+from modules.leftover import get_user_stats, award_recipe_xp  # Import gamification logic
+from firebase_init import init_firebase
+
+# Import the event planner integration
+from app_integration import integrate_event_planner, check_event_firebase_config
+
+# Import the dashboard module
+from dashboard import render_dashboard, get_feature_description
+
+init_firebase()
+
+import logging
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Page/feature access control
+def check_feature_access(feature_name):
+    """Check if the current user has access to a specific feature"""
+    user = get_current_user()
+
+    # Public features accessible to all authenticated users
+    public_features = ["Event Planning ChatBot", "Gamification Hub", "Cooking Quiz"]
+
+    # Staff/admin only features
+    staff_features = ["Leftover Management", "Promotion Generator"]
+
+    # Chef only features
+    chef_features = ["Chef Recipe Suggestions"]
+
+    # Admin only features
+    admin_features = ["Visual Menu Search"]
+
+    if feature_name in public_features:
+        return True
+
+    if not user:
+        return False
+        
+    if feature_name in staff_features and user['role'] in ['staff', 'manager', 'chef', 'admin']:
+        return True
+        
+    if feature_name in chef_features and user['role'] in ['chef', 'admin']:
+        return True
+        
+    if feature_name in admin_features and user['role'] in ['admin']:
+        return True
+        
+    return False
+
+# Individual feature functions
 @auth_required
 def leftover_management():
     """Leftover management feature with automatic Firebase integration"""
     st.title("♻️ Leftover Management")
-    
+
     # Initialize session state variables if they don't exist
     if 'all_leftovers' not in st.session_state:
         st.session_state.all_leftovers = []
@@ -12,59 +76,51 @@ def leftover_management():
         st.session_state.recipes = []
     if 'recipe_generation_error' not in st.session_state:
         st.session_state.recipe_generation_error = None
-    
+
     # Sidebar for input methods
     st.sidebar.header("Input Methods")
-    
+
     # Get leftovers from CSV, manual input, or Firebase
     csv_leftovers = leftover_input_csv()
     manual_leftovers = leftover_input_manual()
     firebase_leftovers, firebase_detailed_info = leftover_input_firebase()
-    
+
     # Combine leftovers from all sources
     all_leftovers = csv_leftovers + manual_leftovers + firebase_leftovers
-    
+
     # Store in session state
     st.session_state.all_leftovers = all_leftovers
     st.session_state.detailed_ingredient_info = firebase_detailed_info
-    
+
     # Main content
     if all_leftovers:
-        st.write(f"Found {len(all_leftovers)} valid ingredients")
+        st.write(f"Found {len(all_leftovers)} ingredients")
         
         # Display priority information if Firebase ingredients are used
         if firebase_detailed_info:
             st.info("🎯 Ingredients are prioritized by expiry date - closest to expire first!")
-            st.success("✅ All ingredients shown are still valid (not expired)")
             
             # Show urgency summary
-            current_date = datetime.now().date()
-            urgent_count = len([item for item in firebase_detailed_info if 0 <= item['days_until_expiry'] <= 3])
-            expires_today = len([item for item in firebase_detailed_info if item['days_until_expiry'] == 0])
-            
-            if expires_today > 0:
-                st.error(f"🚨 {expires_today} ingredients expire TODAY - use them immediately!")
-            elif urgent_count > 0:
+            urgent_count = len([item for item in firebase_detailed_info if item['days_until_expiry'] <= 3])
+            if urgent_count > 0:
                 st.warning(f"⚠️ {urgent_count} ingredients expire within 3 days - recipes will prioritize these!")
         
         # Create a dropdown for ingredients with expiry info
-        with st.expander("Available Valid Ingredients", expanded=False):
+        with st.expander("Available Ingredients", expanded=False):
             if firebase_detailed_info:
                 # Display Firebase ingredients with expiry info
                 for item in firebase_detailed_info:
                     days_left = item['days_until_expiry']
                     
                     # Color code based on urgency
-                    if days_left == 0:
-                        st.error(f"🟠 **{item['name']}** - Expires: {item['expiry_date']} (expires TODAY!)")
-                    elif days_left == 1:
-                        st.error(f"🔴 **{item['name']}** - Expires: {item['expiry_date']} (expires tomorrow)")
+                    if days_left <= 1:
+                        st.error(f"🔴 **{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
                     elif days_left <= 3:
-                        st.warning(f"🟡 **{item['name']}** - Expires: {item['expiry_date']} (expires in {days_left} days)")
+                        st.warning(f"🟡 **{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
                     elif days_left <= 7:
-                        st.success(f"🟢 **{item['name']}** - Expires: {item['expiry_date']} (expires in {days_left} days)")
+                        st.success(f"🟢 **{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
                     else:
-                        st.info(f"⚪ **{item['name']}** - Expires: {item['expiry_date']} (expires in {days_left} days)")
+                        st.info(f"⚪ **{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
             else:
                 # Display other ingredients in a compact format
                 cols = st.columns(3)
@@ -95,7 +151,7 @@ def leftover_management():
         # Auto-generate recipes for Firebase ingredients or manual generation
         if firebase_leftovers and firebase_detailed_info:
             # Automatic generation for Firebase ingredients
-            st.info("🤖 Ready to generate recipes using your valid inventory ingredients!")
+            st.info("🤖 Ready to generate recipes using your inventory ingredients!")
             
             # Show auto-generate button
             if st.button("🚀 Generate Smart Recipes", type="primary", use_container_width=True):
@@ -152,7 +208,7 @@ def leftover_management():
             
             # Show which ingredients were prioritized
             if firebase_detailed_info:
-                urgent_ingredients = [item['name'] for item in firebase_detailed_info if 0 <= item['days_until_expiry'] <= 3]
+                urgent_ingredients = [item['name'] for item in firebase_detailed_info if item['days_until_expiry'] <= 3]
                 if urgent_ingredients:
                     st.info(f"✨ These recipes prioritize ingredients expiring soon: {', '.join(urgent_ingredients)}")
             
@@ -166,23 +222,175 @@ def leftover_management():
         # Example section
         st.markdown("### How it works")
         st.markdown("""
-        1. **Firebase Integration**: Automatically fetch valid ingredients from your inventory
-        2. **Expiry Filtering**: Only shows ingredients that haven't expired yet
-        3. **Smart Prioritization**: Ingredients closest to expiry are prioritized in recipe suggestions
-        4. **AI-Powered Recipes**: Get personalized recipe ideas that reduce food waste
-        5. **Manual Options**: Also supports CSV upload and manual ingredient entry
+        1. **Firebase Integration**: Automatically fetch ingredients from your inventory, sorted by expiry date
+        2. **Smart Prioritization**: Ingredients closest to expiry are prioritized in recipe suggestions
+        3. **AI-Powered Recipes**: Get personalized recipe ideas that reduce food waste
+        4. **Manual Options**: Also supports CSV upload and manual ingredient entry
         """)
         
-        # Example workflow
+        # Example ingredients
         st.markdown("### Example Workflow")
         st.markdown("""
         1. ✅ Check "Use current inventory from Firebase"
         2. 🎯 Select max ingredients to use (prioritized by expiry)
-        3. 📥 Click "Fetch Valid Ingredients" (expired items are automatically filtered out)
+        3. 📥 Click "Fetch Priority Ingredients"
         4. 🚀 Click "Generate Smart Recipes"
         5. 🍽️ Get recipes that use ingredients expiring soonest!
         """)
+
+@auth_required
+def gamification_hub():
+    """Gamification hub feature"""
+    user = get_current_user()
+    if user and user.get('user_id'):
+        display_gamification_dashboard(user['user_id'])
+    else:
+        st.warning("Please log in to view your gamification stats")
+
+@auth_required
+def cooking_quiz():
+    """Cooking quiz feature"""
+    st.title("🧠 Cooking Knowledge Quiz")
+
+    user = get_current_user()
+    if not user or not user.get('user_id'):
+        st.warning("Please log in to take quizzes")
+        return
         
-        # Current date info
-        current_date = datetime.now().strftime("%B %d, %Y")
-        st.info(f"📅 Current date: {current_date} - Only ingredients expiring on or after this date will be used")
+    # Sample ingredients for quiz generation
+    sample_ingredients = ["chicken", "rice", "tomatoes", "onions", "garlic", "olive oil"]
+
+    # Display daily challenge
+    display_daily_challenge(user['user_id'])
+
+    # Render the cooking quiz
+    render_cooking_quiz(sample_ingredients, user['user_id'])
+
+@auth_required
+def event_planning():
+    """Event Planning ChatBot feature"""
+    # Call the integrated event planner function
+    integrate_event_planner()
+
+def promotion_generator():
+    """Promotion generator feature"""
+    st.title("📣 Promotion Generator")
+    st.info("This feature is coming soon!")
+
+def chef_recipe_suggestions():
+    """Chef recipe suggestions feature"""
+    st.title("👨‍🍳 Chef Recipe Suggestions")
+    st.info("This feature is coming soon!")
+
+def visual_menu_search():
+    """Visual menu search feature"""
+    st.title("🔍 Visual Menu Search")
+    st.info("This feature is coming soon!")
+
+@auth_required
+def dashboard():
+    """Main dashboard feature"""
+    render_dashboard()
+
+# Main app function
+def main():
+    # Initialize Firebase and session state for authentication
+    initialize_session_state()
+
+    # Initialize gamification session state
+    if 'show_quiz' not in st.session_state:
+        st.session_state.show_quiz = False
+    if 'show_general_quiz' not in st.session_state:
+        st.session_state.show_general_quiz = False
+    if 'show_achievements' not in st.session_state:
+        st.session_state.show_achievements = False
+
+    # Initialize selected feature state
+    if 'selected_feature' not in st.session_state:
+        st.session_state.selected_feature = "Dashboard"
+
+    # Check Event Firebase configuration
+    check_event_firebase_config()
+
+    # Render authentication UI in sidebar
+    st.sidebar.title("🔐 Authentication")
+    auth_status = render_auth_ui()
+
+    # Main content
+    if not st.session_state.is_authenticated:
+        st.title("🍽️ Smart Restaurant Menu Management System")
+        st.markdown('''
+        Welcome to the AI-powered smart restaurant system! 🍽️
+        
+        **Features include:**
+        - 🧠 **Smart Recipe Generation** from leftover ingredients
+        - 🎯 **Expiry-Based Prioritization** to reduce food waste
+        - 🎮 **Gamification System** with quizzes and achievements  
+        - 🏆 **Leaderboards** to compete with other chefs
+        - 📊 **Progress Tracking** and skill development
+        - 🎉 **Event Planning** for special occasions
+        
+        Please log in or register to access all features.
+        ''')
+        return
+
+    # Feature selection in sidebar
+    st.sidebar.divider()
+    st.sidebar.header("🚀 Features")
+
+    # List of all available features with enhanced descriptions
+    features = [
+        "Dashboard",
+        "Leftover Management",
+        "Gamification Hub", 
+        "Cooking Quiz",
+        "Event Planning ChatBot",
+        "Promotion Generator", 
+        "Chef Recipe Suggestions",
+        "Visual Menu Search"
+    ]
+
+    # Filter features based on user role
+    available_features = ["Dashboard"] + [f for f in features[1:] if check_feature_access(f)]
+
+    # Display user gamification stats in sidebar if authenticated
+    user = get_current_user()
+    if user and user.get('user_id'):
+        display_user_stats_sidebar(user['user_id'])
+
+    # Feature selection
+    selected_feature = st.sidebar.selectbox(
+        "Choose a Feature",
+        options=available_features,
+        index=available_features.index(st.session_state.selected_feature) if st.session_state.selected_feature in available_features else 0,
+        help="Select a feature to explore different aspects of the restaurant management system"
+    )
+
+    # Update session state with selected feature
+    st.session_state.selected_feature = selected_feature
+
+    # Add feature descriptions in sidebar
+    feature_description = get_feature_description(selected_feature)
+    if feature_description:
+        st.sidebar.info(feature_description)
+
+    # Display the selected feature
+    if selected_feature == "Dashboard":
+        dashboard()
+    elif selected_feature == "Leftover Management":
+        leftover_management()
+    elif selected_feature == "Gamification Hub":
+        gamification_hub()
+    elif selected_feature == "Cooking Quiz":
+        cooking_quiz()
+    elif selected_feature == "Event Planning ChatBot":
+        event_planning()
+    elif selected_feature == "Promotion Generator":
+        promotion_generator()
+    elif selected_feature == "Chef Recipe Suggestions":
+        chef_recipe_suggestions()
+    elif selected_feature == "Visual Menu Search":
+        visual_menu_search()
+
+if __name__ == "__main__":
+    main()
