@@ -33,6 +33,22 @@ def get_promotion_firebase_db():
         st.error("Failed to connect to database. Please check your Firebase configuration.")
         return None
 
+def get_main_firebase_db():
+    """Get Firestore client for main Firebase (for gamification stats)"""
+    try:
+        # Use the main Firebase app (default)
+        if firebase_admin._DEFAULT_APP_NAME in [app.name for app in firebase_admin._apps.values()]:
+            return firestore.client()
+        else:
+            # Initialize main Firebase if not already done
+            from firebase_init import init_firebase
+            init_firebase()
+            return firestore.client()
+    except Exception as e:
+        logger.error(f"Error getting main Firebase DB: {str(e)}")
+        st.error("Failed to connect to main database. Please check your Firebase configuration.")
+        return None
+
 def configure_promotion_gemini_ai():
     """Configure Gemini AI using Streamlit secrets"""
     try:
@@ -250,9 +266,13 @@ def get_campaigns_for_month(db, month=None):
         return []
 
 def award_promotion_xp(user_id, campaign_quality="good"):
-    """Award XP for creating a promotion campaign"""
+    """Award XP for creating a promotion campaign using main Firebase"""
     try:
-        from modules.leftover import award_recipe_xp
+        # Get main Firebase database for gamification
+        main_db = get_main_firebase_db()
+        if not main_db:
+            logger.error("Could not connect to main Firebase for XP award")
+            return 0
         
         # Award different XP based on campaign quality
         xp_amounts = {
@@ -262,11 +282,64 @@ def award_promotion_xp(user_id, campaign_quality="good"):
         }
         
         xp_to_award = xp_amounts.get(campaign_quality, 30)
-        award_recipe_xp(user_id, xp_to_award, "promotion_campaign")
         
-        logger.info(f"Awarded {xp_to_award} XP to user {user_id} for promotion campaign")
+        # Update user stats in main Firebase
+        user_ref = main_db.collection('user_stats').document(user_id)
+        user_doc = user_ref.get()
+        
+        if user_doc.exists:
+            current_stats = user_doc.to_dict()
+            current_xp = current_stats.get('total_xp', 0)
+            new_xp = current_xp + xp_to_award
+            
+            # Calculate new level
+            new_level = (new_xp // 100) + 1
+            
+            # Update stats
+            user_ref.update({
+                'total_xp': new_xp,
+                'level': new_level,
+                'last_activity': firestore.SERVER_TIMESTAMP
+            })
+            
+            logger.info(f"Awarded {xp_to_award} XP to user {user_id} for promotion campaign. New total: {new_xp} XP, Level: {new_level}")
+        else:
+            # Create new user stats
+            user_ref.set({
+                'user_id': user_id,
+                'total_xp': xp_to_award,
+                'level': 1,
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'last_activity': firestore.SERVER_TIMESTAMP
+            })
+            
+            logger.info(f"Created new user stats for {user_id} with {xp_to_award} XP")
+        
+        # Clear any cached user stats to force refresh
+        if hasattr(st, 'cache_data'):
+            st.cache_data.clear()
+        
         return xp_to_award
         
     except Exception as e:
         logger.error(f"Error awarding promotion XP: {str(e)}")
         return 0
+
+def get_user_stats_promotion(user_id):
+    """Get user stats from main Firebase"""
+    try:
+        main_db = get_main_firebase_db()
+        if not main_db:
+            return {'total_xp': 0, 'level': 1}
+        
+        user_ref = main_db.collection('user_stats').document(user_id)
+        user_doc = user_ref.get()
+        
+        if user_doc.exists:
+            return user_doc.to_dict()
+        else:
+            return {'total_xp': 0, 'level': 1}
+            
+    except Exception as e:
+        logger.error(f"Error getting user stats: {str(e)}")
+        return {'total_xp': 0, 'level': 1}
