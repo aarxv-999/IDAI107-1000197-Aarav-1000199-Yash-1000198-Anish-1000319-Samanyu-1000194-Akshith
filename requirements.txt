@@ -14,3 +14,8 @@ fpdf>=1.7.2
 python-dateutil
 matplotlib
 plotly
+google-oauth2
+google-cloud-vision
+fuzzywuzzy
+python-levenshtein
+Pillow
