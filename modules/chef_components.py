@@ -9,7 +9,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 from modules.chef_services import (
     get_chef_firebase_db, generate_dish_rating, parse_ingredients, generate_dish,
-    DIET_TYPES, MENU_CATEGORIES, REQUIRED_MENU_FIELDS
+    DIET_TYPES, MENU_CATEGORIES, REQUIRED_MENU_FIELDS, validate_and_fix_dish
 )
 import logging
 from google.cloud import firestore
@@ -233,7 +233,7 @@ Include:
 - Seasonal dishes based on the current month and available ingredients: {', '.join(ingredient_names)}
 - Normal dishes based on the same available ingredients
 
-Use this EXACT structure for each dish:
+Use this EXACT structure for each dish (do NOT include rating or rating_comment):
 {{
     "name": "Dish Name",
     "description": "Detailed description",
@@ -244,8 +244,6 @@ Use this EXACT structure for each dish:
     "category": "Main Course",
     "types": ["Seasonal Items"],
     "source": "Gemini",
-    "rating": null,
-    "rating_comment": "",
     "timestamp": "{datetime.now().isoformat()}"
 }}
 
@@ -312,30 +310,30 @@ def save_menu_to_database(db):
         for i, dish in enumerate(st.session_state.generated_menu):
             progress.progress((i + 1) / total_dishes)
 
-            # Validate required fields
-            missing = [f for f in REQUIRED_MENU_FIELDS if f not in dish or not dish[f]]
-            if missing:
-                logger.warning(f"Skipping dish '{dish.get('name', 'Unknown')}' due to missing fields: {missing}")
+            # Validate and fix the dish
+            fixed_dish, missing_fields = validate_and_fix_dish(dish.copy())
+            
+            if fixed_dish is None:
+                logger.warning(f"Skipping dish '{dish.get('name', 'Unknown')}' due to missing required fields: {missing_fields}")
                 error_count += 1
                 continue
 
-            # Set metadata
-            dish["source"] = "Gemini"
-            dish["created_at"] = datetime.now().isoformat()
-            dish["rating"] = None
+            # Set additional metadata
+            fixed_dish["source"] = "Gemini"
+            fixed_dish["created_at"] = datetime.now().isoformat()
 
             try:
                 # Add to menu collection
-                menu_ref = db.collection("menu").add(dish)
-                logger.info(f"Added dish '{dish.get('name')}' to menu collection with ID: {menu_ref[1].id}")
+                menu_ref = db.collection("menu").add(fixed_dish)
+                logger.info(f"Added dish '{fixed_dish.get('name')}' to menu collection with ID: {menu_ref[1].id}")
                 
                 # Add to recipe archive for backup
-                archive_ref = db.collection("recipe_archive").add(dish)
-                logger.info(f"Added dish '{dish.get('name')}' to recipe archive with ID: {archive_ref[1].id}")
+                archive_ref = db.collection("recipe_archive").add(fixed_dish)
+                logger.info(f"Added dish '{fixed_dish.get('name')}' to recipe archive with ID: {archive_ref[1].id}")
                 
                 created_count += 1
             except Exception as e:
-                logger.error(f"Error saving dish '{dish.get('name', 'Unnamed')}': {e}")
+                logger.error(f"Error saving dish '{fixed_dish.get('name', 'Unnamed')}': {e}")
                 error_count += 1
 
         logger.info(f"Menu save completed: {created_count} saved, {error_count} errors")
