@@ -353,71 +353,74 @@ def is_user_role(required_role: str) -> bool:
 # Simplified leftover input functions
 def leftover_input_csv() -> List[str]:
     st.subheader("CSV Upload")
-    use_csv = st.checkbox("Upload CSV file")
+    uploaded_file = st.file_uploader("Choose CSV file", type=["csv"])
     leftovers = []
-    if use_csv:
-        uploaded_file = st.file_uploader("Choose CSV", type=["csv"])
-        if uploaded_file is not None:
-            try:
-                leftovers = load_leftovers(uploaded_file)
-                st.success(f"Loaded {len(leftovers)} ingredients")
-            except Exception as err:
-                st.error(f"Error: {str(err)}")
+    if uploaded_file is not None:
+        try:
+            leftovers = load_leftovers(uploaded_file)
+            st.success(f"✅ Loaded {len(leftovers)} ingredients")
+        except Exception as err:
+            st.error(f"❌ Error: {str(err)}")
     return leftovers
 
 def leftover_input_manual() -> List[str]:
     st.subheader("Manual Entry")
-    ingredients_text = st.text_area("Ingredients (comma-separated)", placeholder="tomatoes, onions, chicken")
+    ingredients_text = st.text_area("Enter ingredients (comma-separated)", 
+                                   placeholder="tomatoes, onions, chicken, rice")
     leftovers = []
     if ingredients_text:
         try:
             leftovers = parse_manual_leftovers(ingredients_text)
-            st.success(f"Added {len(leftovers)} ingredients")
+            if leftovers:
+                st.success(f"✅ Added {len(leftovers)} ingredients")
         except Exception as err:
-            st.error(f"Error: {str(err)}")
+            st.error(f"❌ Error: {str(err)}")
     return leftovers
 
 def leftover_input_firebase() -> Tuple[List[str], List[Dict]]:
     st.subheader("Current Inventory")
-    use_firebase = st.checkbox("Use inventory from Firebase")
+    
+    # Get max ingredients from session state (set by the main flow)
+    max_ingredients = st.session_state.get('firebase_max_ingredients', 8)
+    
+    st.info(f"Fetching up to {max_ingredients} ingredients from inventory")
+    
     leftovers = []
     detailed_info = []
     
-    if use_firebase:
-        max_ingredients = st.slider("Max ingredients", 3, 15, 8)
-        
-        if st.button("Fetch Ingredients", type="primary"):
-            try:
-                with st.spinner("Fetching ingredients..."):
-                    firebase_ingredients = fetch_ingredients_from_firebase()
+    if st.button("🔥 Fetch Ingredients from Database", type="primary", use_container_width=True):
+        try:
+            with st.spinner("Fetching ingredients from database..."):
+                firebase_ingredients = fetch_ingredients_from_firebase()
+                
+                if firebase_ingredients:
+                    leftovers, detailed_info = get_ingredients_by_expiry_priority(
+                        firebase_ingredients, max_ingredients
+                    )
                     
-                    if firebase_ingredients:
-                        leftovers, detailed_info = get_ingredients_by_expiry_priority(
-                            firebase_ingredients, max_ingredients
-                        )
+                    if leftovers:
+                        st.success(f"✅ Found {len(leftovers)} valid ingredients")
                         
-                        st.success(f"Found {len(leftovers)} valid ingredients")
+                        # Show preview
+                        st.markdown("**Preview:**")
+                        for item in detailed_info[:3]:  # Show first 3
+                            days_left = item['days_until_expiry']
+                            if days_left <= 1:
+                                st.error(f"🔴 {item['name']} - expires in {days_left} days")
+                            elif days_left <= 3:
+                                st.warning(f"🟡 {item['name']} - expires in {days_left} days")
+                            else:
+                                st.info(f"🟢 {item['name']} - expires in {days_left} days")
                         
-                        with st.expander("Ingredients", expanded=True):
-                            for item in detailed_info:
-                                days_left = item['days_until_expiry']
-                                if days_left <= 1:
-                                    st.error(f"🔴 {item['name']} - expires in {days_left} days")
-                                elif days_left <= 3:
-                                    st.warning(f"🟡 {item['name']} - expires in {days_left} days")
-                                else:
-                                    st.info(f"🟢 {item['name']} - expires in {days_left} days")
-                        
-                        st.session_state.firebase_ingredients = leftovers
-                        st.session_state.firebase_detailed_info = detailed_info
+                        if len(detailed_info) > 3:
+                            st.caption(f"... and {len(detailed_info) - 3} more ingredients")
                     else:
-                        st.warning("No valid ingredients found")
-                        
-            except Exception as err:
-                st.error(f"Error: {str(err)}")
-    
-    if 'firebase_ingredients' in st.session_state:
-        return st.session_state.firebase_ingredients, st.session_state.get('firebase_detailed_info', [])
+                        st.warning("⚠️ No valid ingredients found")
+                else:
+                    st.warning("⚠️ No ingredients found in database")
+                    
+        except Exception as err:
+            st.error(f"❌ Error: {str(err)}")
     
     return leftovers, detailed_info
 
