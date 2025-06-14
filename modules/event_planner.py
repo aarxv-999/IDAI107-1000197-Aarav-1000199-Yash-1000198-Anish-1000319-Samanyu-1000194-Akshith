@@ -31,10 +31,9 @@ logger = logging.getLogger('event_planner')
 
 # Initialize Firebase for event data (read-only)
 def init_event_firebase():
-    """Initialize the Firebase Admin SDK for event data (read-only)"""
-    if not firebase_admin._apps or 'event_app' not in [app.name for app in firebase_admin._apps.values()]:
+    """Initialize Firebase for event data"""
+    if 'event_app' not in [app.name for app in firebase_admin._apps.values()]:
         try:
-            # Use environment variables with EVENT_ prefix
             cred = credentials.Certificate({
                 "type": st.secrets["event_firebase_type"],
                 "project_id": st.secrets["event_firebase_project_id"],
@@ -48,12 +47,9 @@ def init_event_firebase():
                 "client_x509_cert_url": st.secrets["event_firebase_client_x509_cert_url"],
             })
             firebase_admin.initialize_app(cred, name='event_app')
-            logger.info("Event Firebase initialized successfully")
             return True
         except Exception as e:
-            logger.error(f"Failed to initialize Event Firebase: {str(e)}")
-            # Fallback to display error in UI
-            st.error(f"Failed to initialize Event Firebase. Please check your credentials.")
+            logger.error(f"Event Firebase init failed: {str(e)}")
             return False
     return True
 
