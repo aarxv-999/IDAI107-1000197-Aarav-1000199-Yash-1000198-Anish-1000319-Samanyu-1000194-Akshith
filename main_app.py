@@ -64,12 +64,14 @@ def check_feature_access(feature_name):
 # Individual feature functions
 @auth_required
 def leftover_management():
-    """Leftover management feature"""
+    """Leftover management feature with automatic Firebase integration"""
     st.title("♻️ Leftover Management")
     
     # Initialize session state variables if they don't exist
     if 'all_leftovers' not in st.session_state:
         st.session_state.all_leftovers = []
+    if 'detailed_ingredient_info' not in st.session_state:
+        st.session_state.detailed_ingredient_info = []
     if 'recipes' not in st.session_state:
         st.session_state.recipes = []
     if 'recipe_generation_error' not in st.session_state:
@@ -81,26 +83,51 @@ def leftover_management():
     # Get leftovers from CSV, manual input, or Firebase
     csv_leftovers = leftover_input_csv()
     manual_leftovers = leftover_input_manual()
-    firebase_leftovers = leftover_input_firebase()
+    firebase_leftovers, firebase_detailed_info = leftover_input_firebase()
     
     # Combine leftovers from all sources
     all_leftovers = csv_leftovers + manual_leftovers + firebase_leftovers
     
     # Store in session state
     st.session_state.all_leftovers = all_leftovers
+    st.session_state.detailed_ingredient_info = firebase_detailed_info
     
     # Main content
     if all_leftovers:
         st.write(f"Found {len(all_leftovers)} ingredients")
         
-        # Create a dropdown for ingredients
+        # Display priority information if Firebase ingredients are used
+        if firebase_detailed_info:
+            st.info("🎯 Ingredients are prioritized by expiry date - closest to expire first!")
+            
+            # Show urgency summary
+            urgent_count = len([item for item in firebase_detailed_info if item['days_until_expiry'] <= 3])
+            if urgent_count > 0:
+                st.warning(f"⚠️ {urgent_count} ingredients expire within 3 days - recipes will prioritize these!")
+        
+        # Create a dropdown for ingredients with expiry info
         with st.expander("Available Ingredients", expanded=False):
-            # Display ingredients in a more compact format
-            cols = st.columns(3)
-            for i, ingredient in enumerate(all_leftovers):
-                col_idx = i % 3
-                with cols[col_idx]:
-                    st.write(f"• {ingredient.title()}")
+            if firebase_detailed_info:
+                # Display Firebase ingredients with expiry info
+                for item in firebase_detailed_info:
+                    days_left = item['days_until_expiry']
+                    
+                    # Color code based on urgency
+                    if days_left <= 1:
+                        st.error(f"🔴 **{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
+                    elif days_left <= 3:
+                        st.warning(f"🟡 **{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
+                    elif days_left <= 7:
+                        st.success(f"🟢 **{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
+                    else:
+                        st.info(f"⚪ **{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
+            else:
+                # Display other ingredients in a compact format
+                cols = st.columns(3)
+                for i, ingredient in enumerate(all_leftovers):
+                    col_idx = i % 3
+                    with cols[col_idx]:
+                        st.write(f"• {ingredient.title()}")
         
         # Recipe generation options
         st.subheader("Recipe Generation Options")
@@ -121,36 +148,69 @@ def leftover_management():
                                 placeholder="E.g., vegetarian only, quick meals, kid-friendly, etc.",
                                 help="Add any specific requirements for your recipes")
         
-        # Generate recipe button - using a form to prevent page reloads
-        with st.form(key="recipe_form"):
-            submit_button = st.form_submit_button(label="Generate Recipe Suggestions", type="primary")
+        # Auto-generate recipes for Firebase ingredients or manual generation
+        if firebase_leftovers and firebase_detailed_info:
+            # Automatic generation for Firebase ingredients
+            st.info("🤖 Ready to generate recipes using your inventory ingredients!")
             
-            if submit_button:
+            # Show auto-generate button
+            if st.button("🚀 Generate Smart Recipes", type="primary", use_container_width=True):
                 try:
-                    with st.spinner("Generating recipes..."):
-                        # Call the suggest_recipes function
-                        recipes = suggest_recipes(all_leftovers, num_suggestions, notes)
+                    with st.spinner("Generating recipes based on expiry priority..."):
+                        # Call the suggest_recipes function with priority information
+                        recipes = suggest_recipes(
+                            all_leftovers, 
+                            num_suggestions, 
+                            notes, 
+                            priority_ingredients=firebase_detailed_info
+                        )
                         
                         # Store results in session state
                         st.session_state.recipes = recipes
                         st.session_state.recipe_generation_error = None
                         
                         # Log for debugging
-                        logging.info(f"Generated {len(recipes)} recipes")
+                        logging.info(f"Generated {len(recipes)} recipes with priority ingredients")
                 except Exception as e:
                     st.session_state.recipe_generation_error = str(e)
                     logging.error(f"Recipe generation error: {str(e)}")
+        else:
+            # Manual generation for other ingredients
+            with st.form(key="recipe_form"):
+                submit_button = st.form_submit_button(label="Generate Recipe Suggestions", type="primary")
+                
+                if submit_button:
+                    try:
+                        with st.spinner("Generating recipes..."):
+                            # Call the suggest_recipes function
+                            recipes = suggest_recipes(all_leftovers, num_suggestions, notes)
+                            
+                            # Store results in session state
+                            st.session_state.recipes = recipes
+                            st.session_state.recipe_generation_error = None
+                            
+                            # Log for debugging
+                            logging.info(f"Generated {len(recipes)} recipes")
+                    except Exception as e:
+                        st.session_state.recipe_generation_error = str(e)
+                        logging.error(f"Recipe generation error: {str(e)}")
         
-        # Display recipes or error message outside the form
+        # Display recipes or error message
         if st.session_state.recipe_generation_error:
             st.error(f"Error generating recipes: {st.session_state.recipe_generation_error}")
         elif st.session_state.recipes:
             st.success(f"Generated {len(st.session_state.recipes)} recipe suggestions!")
             
             # Display recipes
-            st.subheader("Recipe Suggestions")
+            st.subheader("🍽️ Recipe Suggestions")
             for i, recipe in enumerate(st.session_state.recipes):
-                st.write(f"{i+1}. {recipe}")
+                st.write(f"{i+1}. **{recipe}**")
+            
+            # Show which ingredients were prioritized
+            if firebase_detailed_info:
+                urgent_ingredients = [item['name'] for item in firebase_detailed_info if item['days_until_expiry'] <= 3]
+                if urgent_ingredients:
+                    st.info(f"✨ These recipes prioritize ingredients expiring soon: {', '.join(urgent_ingredients)}")
             
             # Award XP for generating recipes
             user = get_current_user()
@@ -162,20 +222,21 @@ def leftover_management():
         # Example section
         st.markdown("### How it works")
         st.markdown("""
-        1. Add leftover ingredients using the sidebar
-        2. Click 'Generate Recipe Suggestions'
-        3. Get AI-powered recipe ideas that use your ingredients
-        4. Reduce food waste and create delicious meals!
+        1. **Firebase Integration**: Automatically fetch ingredients from your inventory, sorted by expiry date
+        2. **Smart Prioritization**: Ingredients closest to expiry are prioritized in recipe suggestions
+        3. **AI-Powered Recipes**: Get personalized recipe ideas that reduce food waste
+        4. **Manual Options**: Also supports CSV upload and manual ingredient entry
         """)
         
         # Example ingredients
-        st.markdown("### Example Ingredients")
-        example_ingredients = ["chicken", "rice", "bell peppers", "onions", "tomatoes", "garlic"]
-        example_cols = st.columns(3)
-        for i, ingredient in enumerate(example_ingredients):
-            col_idx = i % 3
-            with example_cols[col_idx]:
-                st.markdown(f"• {ingredient.title()}")
+        st.markdown("### Example Workflow")
+        st.markdown("""
+        1. ✅ Check "Use current inventory from Firebase"
+        2. 🎯 Select max ingredients to use (prioritized by expiry)
+        3. 📥 Click "Fetch Priority Ingredients"
+        4. 🚀 Click "Generate Smart Recipes"
+        5. 🍽️ Get recipes that use ingredients expiring soonest!
+        """)
 
 @auth_required
 def gamification_hub():
@@ -263,6 +324,7 @@ def main():
         
         **Features include:**
         - 🧠 **Smart Recipe Generation** from leftover ingredients
+        - 🎯 **Expiry-Based Prioritization** to reduce food waste
         - 🎮 **Gamification System** with quizzes and achievements  
         - 🏆 **Leaderboards** to compete with other chefs
         - 📊 **Progress Tracking** and skill development
