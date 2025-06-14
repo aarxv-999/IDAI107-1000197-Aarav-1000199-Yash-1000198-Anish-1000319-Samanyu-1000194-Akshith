@@ -650,15 +650,22 @@ def render_edit_ingredient():
             else:
                 ingredient_type = st.text_input("🏷️ Type*", value=current_type)
             
-            # Parse current expiry date
+            # Parse current expiry date with better handling
             current_expiry = current_ingredient.get('Expiry Date', '')
             try:
                 current_expiry_date = datetime.strptime(current_expiry, "%d/%m/%Y").date()
+                # If the current expiry date is in the past, use tomorrow as default
+                min_allowed_date = date.today() + timedelta(days=1)
+                if current_expiry_date < min_allowed_date:
+                    default_expiry_date = min_allowed_date
+                    st.warning(f"⚠️ Original expiry date ({current_expiry}) is in the past. Setting to tomorrow as minimum.")
+                else:
+                    default_expiry_date = current_expiry_date
             except:
-                current_expiry_date = date.today() + timedelta(days=7)
-            
+                default_expiry_date = date.today() + timedelta(days=7)
+
             expiry_date_input = st.date_input("📅 Expiry Date*", 
-                                            value=current_expiry_date,
+                                            value=default_expiry_date,
                                             min_value=date.today() + timedelta(days=1))
             expiry_date = expiry_date_input.strftime("%d/%m/%Y")
         
@@ -760,7 +767,7 @@ def render_bulk_operations():
         col1, col2, col3, col4 = st.columns([1, 3, 2, 2])
         
         with col1:
-            is_selected = st.checkbox("", key=f"bulk_select_{ingredient['doc_id']}", value=select_all)
+            is_selected = st.checkbox("Select", key=f"bulk_select_{ingredient['doc_id']}", value=select_all, label_visibility="collapsed")
             if is_selected:
                 selected_ingredients.append(ingredient)
         
