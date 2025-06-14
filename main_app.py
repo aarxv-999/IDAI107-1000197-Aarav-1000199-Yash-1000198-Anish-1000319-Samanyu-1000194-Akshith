@@ -11,7 +11,7 @@ from ui.components import (
 )
 
 # Import the enhanced leftover management functions
-from nodules.leftover import (
+from modules.leftover import (
     suggest_recipes, get_user_stats, award_recipe_xp
 )
 
