@@ -11,3 +11,6 @@ google-generativeai
 openai
 firebase-admin
 fpdf>=1.7.2
+python-dateutil
+matplotlib
+plotly
