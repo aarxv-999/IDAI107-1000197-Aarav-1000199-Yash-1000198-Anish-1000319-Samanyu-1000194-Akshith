@@ -13,7 +13,7 @@ from ui.components import (  # Import gamification UI functions
 )
 
 # Import the enhanced leftover management functions
-from scripts.leftover_combined_updated import (
+from modules.leftover import (
     suggest_recipes, fetch_ingredients_from_firebase, prioritize_ingredients, 
     parse_firebase_ingredients, get_user_stats, award_recipe_xp
 )
