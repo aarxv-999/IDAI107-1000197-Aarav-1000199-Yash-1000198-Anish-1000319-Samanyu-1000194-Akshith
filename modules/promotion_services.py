@@ -185,7 +185,8 @@ def save_campaign(db, staff_name, campaign_data):
         
         campaign_data.update({
             "timestamp": firestore.SERVER_TIMESTAMP,
-            "month": current_month
+            "month": current_month,
+            "created_at": datetime.now().isoformat()
         })
         
         db.collection("staff_campaigns").document(campaign_doc_id).set(campaign_data)
@@ -194,6 +195,27 @@ def save_campaign(db, staff_name, campaign_data):
         
     except Exception as e:
         logger.error(f"Error saving campaign: {str(e)}")
+        return False
+
+def delete_campaign(db, staff_name):
+    """Delete existing campaign for current month"""
+    try:
+        current_month = datetime.now().strftime("%Y-%m")
+        campaign_doc_id = f"{staff_name}_{current_month}"
+        
+        doc_ref = db.collection("staff_campaigns").document(campaign_doc_id)
+        doc = doc_ref.get()
+        
+        if doc.exists:
+            doc_ref.delete()
+            logger.info(f"Deleted campaign for {staff_name} for month {current_month}")
+            return True
+        else:
+            logger.warning(f"No campaign found to delete for {staff_name} for month {current_month}")
+            return False
+        
+    except Exception as e:
+        logger.error(f"Error deleting campaign: {str(e)}")
         return False
 
 def get_existing_campaign(db, staff_name):
