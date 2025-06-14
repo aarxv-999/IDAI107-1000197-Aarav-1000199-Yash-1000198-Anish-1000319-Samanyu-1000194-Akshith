@@ -1,5 +1,5 @@
 '''
-Enhanced leftover management and gamification module with Firebase integration
+Enhanced leftover management and gamification module with proper AI recipe generation
 '''
 
 import pandas as pd
@@ -16,7 +16,7 @@ from firebase_init import init_firebase
 from modules.firebase_data import (
     search_recipes_by_ingredients, search_menu_by_ingredients,
     format_recipe_for_display, format_menu_item_for_display,
-    get_popular_recipes
+    get_popular_recipes, fetch_recipe_archive, fetch_menu_items
 )
 
 logger = logging.getLogger('leftover_combined')
@@ -161,98 +161,160 @@ def parse_firebase_ingredients(firebase_ingredients: List[Dict]) -> List[str]:
                 ingredients.append(item['Ingredient'])
     return ingredients
 
+def get_restaurant_context() -> str:
+    '''Get restaurant context from Firebase for AI reference (NOT for direct suggestions)'''
+    try:
+        # Get existing recipes and menu items for CONTEXT ONLY
+        recipes = fetch_recipe_archive()
+        menu_items = fetch_menu_items()
+        
+        context_info = []
+        
+        # Extract cooking styles and techniques from existing recipes
+        cooking_styles = set()
+        common_spices = set()
+        
+        for recipe in recipes[:10]:  # Limit to avoid token overflow
+            name = recipe.get('name', '').lower()
+            description = recipe.get('description', '').lower()
+            ingredients = recipe.get('ingredients', [])
+            
+            # Extract cooking styles
+            if any(style in name or style in description for style in ['curry', 'masala', 'biryani', 'dal']):
+                cooking_styles.add('Indian')
+            if any(style in name or style in description for style in ['pasta', 'pizza', 'risotto']):
+                cooking_styles.add('Italian')
+            if any(style in name or style in description for style in ['stir fry', 'fried rice', 'noodles']):
+                cooking_styles.add('Asian')
+            
+            # Extract common spices/ingredients
+            if isinstance(ingredients, list):
+                for ing in ingredients:
+                    ing_str = str(ing).lower()
+                    if any(spice in ing_str for spice in ['cumin', 'turmeric', 'garam masala', 'coriander']):
+                        common_spices.add(ing_str)
+        
+        # Build context string
+        if cooking_styles:
+            context_info.append(f"Restaurant specializes in: {', '.join(cooking_styles)} cuisine")
+        
+        if common_spices:
+            context_info.append(f"Commonly used spices: {', '.join(list(common_spices)[:5])}")
+        
+        # Add some example dish types from menu
+        dish_types = set()
+        for item in menu_items[:5]:
+            name = item.get('name', '').lower()
+            if 'curry' in name:
+                dish_types.add('curries')
+            elif 'rice' in name:
+                dish_types.add('rice dishes')
+            elif 'bread' in name or 'naan' in name or 'roti' in name:
+                dish_types.add('breads')
+        
+        if dish_types:
+            context_info.append(f"Restaurant serves: {', '.join(dish_types)}")
+        
+        return " | ".join(context_info) if context_info else "General restaurant kitchen"
+        
+    except Exception as e:
+        logger.error(f"Error getting restaurant context: {str(e)}")
+        return "General restaurant kitchen"
+
 def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str = "", priority_ingredients: List[Dict] = None) -> List[str]:
-    '''Enhanced recipe suggestions using Firebase data and AI'''
+    '''Generate NEW creative recipes using leftover ingredients with restaurant context'''
     if not leftovers:
         return []
 
     try:
-        # First, try to find matching recipes from Firebase
-        firebase_recipes = search_recipes_by_ingredients(leftovers, limit=max_suggestions * 2)
-        menu_items = search_menu_by_ingredients(leftovers, limit=max_suggestions)
-        
-        # Format Firebase results
-        firebase_suggestions = []
-        
-        # Add recipe archive matches
-        for recipe in firebase_recipes[:max_suggestions]:
-            formatted = format_recipe_for_display(recipe)
-            firebase_suggestions.append(f"📚 {formatted}")
-        
-        # Add menu item matches
-        for item in menu_items[:max_suggestions - len(firebase_suggestions)]:
-            formatted = format_menu_item_for_display(item)
-            firebase_suggestions.append(f"🍽️ {formatted}")
-        
-        # If we have enough Firebase suggestions, return them
-        if len(firebase_suggestions) >= max_suggestions:
-            return firebase_suggestions[:max_suggestions]
-        
-        # Otherwise, supplement with AI-generated recipes
-        remaining_suggestions = max_suggestions - len(firebase_suggestions)
-        
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            # If no API key, return only Firebase suggestions
-            return firebase_suggestions if firebase_suggestions else ["No recipes found for these ingredients"]
+            return ["GEMINI_API_KEY not found - cannot generate new recipes"]
         
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
 
+        # Get restaurant context for style reference
+        restaurant_context = get_restaurant_context()
+        
         ingredients_list = ", ".join(leftovers)
         
-        notes_text = f"\nRequirements: {notes}" if notes else ""
+        notes_text = f"\nSpecial requirements: {notes}" if notes else ""
         
         priority_text = ""
         if priority_ingredients:
             urgent_ingredients = [ing for ing in priority_ingredients if 0 <= ing['days_until_expiry'] <= 7]
             if urgent_ingredients:
                 urgent_details = [f"{ing['name']} (expires in {ing['days_until_expiry']} days)" for ing in urgent_ingredients]
-                priority_text = f"\nPRIORITY: Use these ingredients first: {', '.join(urgent_details)}"
+                priority_text = f"\nURGENT: Must use these ingredients first: {', '.join(urgent_details)}"
         
-        # Include context about existing recipes
-        context_text = ""
-        if firebase_suggestions:
-            context_text = f"\nExisting restaurant recipes found: {', '.join([s.replace('📚 ', '').replace('🍽️ ', '') for s in firebase_suggestions])}"
-            context_text += f"\nSuggest {remaining_suggestions} DIFFERENT recipes that complement these existing options."
-        
-        prompt = f'''
-        Ingredients: {ingredients_list}.{notes_text}{priority_text}{context_text}
+        prompt = f'''You are a creative chef tasked with creating NEW, ORIGINAL recipes using leftover ingredients.
 
-        Suggest {remaining_suggestions} simple recipe names using these ingredients.
-        Make them practical for a restaurant kitchen.
-        Format each recipe as just the name.
-        Keep recipes simple and focused on using the ingredients.
-        ''' 
+LEFTOVER INGREDIENTS TO USE: {ingredients_list}
+
+RESTAURANT CONTEXT (for style reference only): {restaurant_context}
+
+TASK: Create {max_suggestions} completely NEW and CREATIVE recipe names that:
+1. Use the leftover ingredients as main components
+2. Are practical for a restaurant kitchen
+3. Match the restaurant's cooking style
+4. Are different from existing menu items
+5. Help reduce food waste by using leftovers creatively
+
+{notes_text}{priority_text}
+
+IMPORTANT RULES:
+- Create ORIGINAL recipes, not existing ones
+- Focus on creative combinations of the leftover ingredients
+- Make them sound appetizing and restaurant-quality
+- Each recipe should be a complete dish name
+- Consider fusion approaches if appropriate
+
+Format: Return only the recipe names, one per line, numbered 1-{max_suggestions}.
+
+Example format:
+1. Spiced Leftover Vegetable Biryani Bowl
+2. Fusion Leftover Curry Pasta
+3. Crispy Leftover Vegetable Fritters with Mint Chutney'''
 
         response = model.generate_content(prompt)
-        response_text = response.text
+        response_text = response.text.strip()
         
+        # Parse the response
         recipe_lines = [line.strip() for line in response_text.split('\n') if line.strip()]
-        ai_recipes = []
+        new_recipes = []
+        
         for line in recipe_lines:
+            # Remove numbering if present
             if line and line[0].isdigit() and line[1:3] in ['. ', '- ', ') ']:
                 line = line[3:].strip()
+            
+            # Clean up the line
             line = line.strip('"\'')
-            if line and len(ai_recipes) < remaining_suggestions:
-                ai_recipes.append(f"🤖 {line}")
+            
+            if line and len(new_recipes) < max_suggestions:
+                # Add creative indicator
+                new_recipes.append(f"🆕 {line}")
         
-        # Combine Firebase and AI suggestions
-        all_suggestions = firebase_suggestions + ai_recipes[:remaining_suggestions]
+        if not new_recipes:
+            # Fallback if parsing fails
+            return [f"🆕 Creative {ingredients_list.split(',')[0].strip()} Recipe {i+1}" for i in range(max_suggestions)]
         
-        return all_suggestions[:max_suggestions] if all_suggestions else ["No recipes found for these ingredients"]
+        logger.info(f"Generated {len(new_recipes)} new creative recipes using leftovers")
+        return new_recipes[:max_suggestions]
 
     except Exception as e:
-        logger.error(f"Error generating recipe suggestions: {str(e)}")
-        # Fallback to Firebase-only suggestions
-        try:
-            firebase_recipes = search_recipes_by_ingredients(leftovers, limit=max_suggestions)
-            if firebase_recipes:
-                return [format_recipe_for_display(recipe) for recipe in firebase_recipes]
-            else:
-                return ["Unable to generate recipes at this time"]
-        except:
-            return ["Unable to generate recipes at this time"]
+        logger.error(f"Error generating new recipes: {str(e)}")
+        # Return creative fallback suggestions
+        base_ingredients = leftovers[:3] if len(leftovers) >= 3 else leftovers
+        fallback_recipes = []
+        
+        for i in range(max_suggestions):
+            if len(base_ingredients) > 0:
+                main_ing = base_ingredients[i % len(base_ingredients)]
+                fallback_recipes.append(f"🆕 Creative {main_ing.title()} Fusion Dish")
+        
+        return fallback_recipes if fallback_recipes else ["🆕 Creative Leftover Recipe"]
 
 # Gamification functions (unchanged)
 def get_firestore_db():
