@@ -41,10 +41,10 @@ def render_dashboard():
     
     if user_role in ['admin', 'staff', 'chef']:
         features.append({
-            "title": "Kitchen Management",  # Updated name
+            "title": "Leftover Management",  # Changed back
             "description": "Generate recipes from leftovers & take cooking quizzes",
-            "icon": "🍽️",
-            "key": "Kitchen Management"
+            "icon": "♻️",
+            "key": "Leftover Management"
         })
     
     if user_role in ['admin', 'staff']:
@@ -77,6 +77,12 @@ def render_dashboard():
             "description": "View achievements and progress",
             "icon": "🎮",
             "key": "Gamification Hub"
+        },
+        {
+            "title": "Cooking Quiz",
+            "description": "Test culinary knowledge",
+            "icon": "🧠",
+            "key": "Cooking Quiz"
         },
         {
             "title": "Event Planning ChatBot",
@@ -118,8 +124,9 @@ def render_dashboard():
 def get_feature_description(feature_name: str) -> str:
     """Get simplified feature descriptions"""
     descriptions = {
-        "Kitchen Management": "🍽️ Generate recipes from leftovers & take cooking quizzes",
+        "Leftover Management": "♻️ Generate recipes from leftovers & take cooking quizzes",
         "Gamification Hub": "🎮 View achievements and progress",
+        "Cooking Quiz": "🧠 Test culinary knowledge",
         "Event Planning ChatBot": "🎉 AI-powered event planning assistance",
         "Promotion Generator": "📣 Create marketing campaigns",
         "Chef Recipe Suggestions": "👨‍🍳 Professional recipes",
