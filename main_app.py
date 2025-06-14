@@ -29,7 +29,7 @@ def check_feature_access(feature_name):
     user = get_current_user()
 
     public_features = ["Event Planning ChatBot", "Gamification Hub"]
-    staff_features = ["Kitchen Management", "Promotion Generator"]  # Changed name
+    staff_features = ["Kitchen Management", "Promotion Generator"]
     chef_features = ["Chef Recipe Suggestions"]
     admin_features = ["Visual Menu Search"]
 
@@ -68,9 +68,14 @@ def kitchen_management():
         render_cooking_quiz_tab(user_id)
 
 def render_leftover_management(user_id: str):
-    """Leftover management section"""
+    """Clean step-by-step leftover management section"""
     st.markdown("### ♻️ Generate New Recipes from Leftovers")
     
+    # Initialize session state
+    if 'leftover_step' not in st.session_state:
+        st.session_state.leftover_step = 'select_method'
+    if 'selected_method' not in st.session_state:
+        st.session_state.selected_method = None
     if 'all_leftovers' not in st.session_state:
         st.session_state.all_leftovers = []
     if 'detailed_ingredient_info' not in st.session_state:
@@ -80,59 +85,136 @@ def render_leftover_management(user_id: str):
     if 'recipe_generation_error' not in st.session_state:
         st.session_state.recipe_generation_error = None
 
-    # Simplified sidebar-style input in columns
-    st.markdown("#### Add Ingredients")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("**📁 CSV Upload**")
-        csv_leftovers = leftover_input_csv()
-    
-    with col2:
-        st.markdown("**✏️ Manual Entry**")
-        manual_leftovers = leftover_input_manual()
-    
-    with col3:
-        st.markdown("**🔥 Current Inventory**")
-        firebase_leftovers, firebase_detailed_info = leftover_input_firebase()
-
-    all_leftovers = csv_leftovers + manual_leftovers + firebase_leftovers
-    st.session_state.all_leftovers = all_leftovers
-    st.session_state.detailed_ingredient_info = firebase_detailed_info
-
-    if all_leftovers:
-        st.divider()
+    # Step 1: Method Selection
+    if st.session_state.leftover_step == 'select_method':
+        st.markdown("#### Step 1: Choose Your Ingredient Input Method")
         
-        # Clean ingredient display
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("📁 Upload CSV File", use_container_width=True, type="primary"):
+                st.session_state.selected_method = 'csv'
+                st.session_state.leftover_step = 'input_ingredients'
+                st.rerun()
+            st.caption("Upload a CSV file with ingredient list")
+        
+        with col2:
+            if st.button("✏️ Manual Entry", use_container_width=True, type="primary"):
+                st.session_state.selected_method = 'manual'
+                st.session_state.leftover_step = 'input_ingredients'
+                st.rerun()
+            st.caption("Type ingredients manually")
+        
+        with col3:
+            if st.button("🔥 Current Inventory", use_container_width=True, type="primary"):
+                st.session_state.selected_method = 'firebase'
+                st.session_state.leftover_step = 'input_ingredients'
+                st.rerun()
+            st.caption("Fetch from restaurant database")
+
+    # Step 2: Input Ingredients
+    elif st.session_state.leftover_step == 'input_ingredients':
+        method_names = {
+            'csv': '📁 CSV Upload',
+            'manual': '✏️ Manual Entry', 
+            'firebase': '🔥 Current Inventory'
+        }
+        
+        st.markdown(f"#### Step 2: {method_names[st.session_state.selected_method]}")
+        
+        # Back button
+        if st.button("← Back to Method Selection"):
+            st.session_state.leftover_step = 'select_method'
+            st.session_state.selected_method = None
+            st.session_state.all_leftovers = []
+            st.session_state.detailed_ingredient_info = []
+            st.rerun()
+        
+        # Handle different input methods
+        leftovers = []
+        detailed_info = []
+        
+        if st.session_state.selected_method == 'csv':
+            leftovers = leftover_input_csv()
+            
+        elif st.session_state.selected_method == 'manual':
+            leftovers = leftover_input_manual()
+            
+        elif st.session_state.selected_method == 'firebase':
+            leftovers, detailed_info = leftover_input_firebase()
+        
+        # Update session state
+        st.session_state.all_leftovers = leftovers
+        st.session_state.detailed_ingredient_info = detailed_info
+        
+        # Show ingredients if found
+        if leftovers:
+            st.session_state.leftover_step = 'review_ingredients'
+            st.rerun()
+
+    # Step 3: Review Ingredients
+    elif st.session_state.leftover_step == 'review_ingredients':
+        st.markdown("#### Step 3: Review Your Ingredients")
+        
+        # Back button
+        if st.button("← Back to Input"):
+            st.session_state.leftover_step = 'input_ingredients'
+            st.rerun()
+        
+        all_leftovers = st.session_state.all_leftovers
+        firebase_detailed_info = st.session_state.detailed_ingredient_info
+        
+        # Display ingredient summary
         col1, col2 = st.columns([2, 1])
         with col1:
-            st.write(f"**{len(all_leftovers)} ingredients found**")
+            st.success(f"✅ **{len(all_leftovers)} ingredients found**")
         with col2:
             if firebase_detailed_info:
                 urgent_count = len([item for item in firebase_detailed_info if item['days_until_expiry'] <= 3])
                 if urgent_count > 0:
                     st.warning(f"⚠️ {urgent_count} expire soon")
         
-        # Simplified ingredient list
-        with st.expander("View All Ingredients"):
-            if firebase_detailed_info:
-                for item in firebase_detailed_info:
-                    days_left = item['days_until_expiry']
-                    if days_left <= 1:
-                        st.error(f"🔴 {item['name']} - {days_left} days left")
-                    elif days_left <= 3:
-                        st.warning(f"🟡 {item['name']} - {days_left} days left")
-                    else:
-                        st.info(f"🟢 {item['name']} - {days_left} days left")
-            else:
-                st.write(", ".join(all_leftovers))
+        # Show ingredient details
+        if firebase_detailed_info:
+            st.markdown("**Ingredient Details:**")
+            for item in firebase_detailed_info:
+                days_left = item['days_until_expiry']
+                if days_left <= 1:
+                    st.error(f"🔴 {item['name']} - expires in {days_left} days")
+                elif days_left <= 3:
+                    st.warning(f"🟡 {item['name']} - expires in {days_left} days")
+                else:
+                    st.info(f"🟢 {item['name']} - expires in {days_left} days")
+        else:
+            st.markdown("**Your Ingredients:**")
+            st.write(", ".join(all_leftovers))
+        
+        # Continue to recipe generation
+        if st.button("Continue to Recipe Generation →", type="primary", use_container_width=True):
+            st.session_state.leftover_step = 'generate_recipes'
+            st.rerun()
+
+    # Step 4: Generate Recipes
+    elif st.session_state.leftover_step == 'generate_recipes':
+        st.markdown("#### Step 4: Generate Creative Recipes")
+        
+        # Back button
+        if st.button("← Back to Review"):
+            st.session_state.leftover_step = 'review_ingredients'
+            st.rerun()
+        
+        all_leftovers = st.session_state.all_leftovers
+        firebase_detailed_info = st.session_state.detailed_ingredient_info
+        
+        # Quick ingredient summary
+        st.info(f"Using {len(all_leftovers)} ingredients: {', '.join(all_leftovers[:5])}" + 
+                (f" and {len(all_leftovers) - 5} more..." if len(all_leftovers) > 5 else ""))
         
         # Recipe generation controls
-        st.markdown("#### Generate New Recipes")
         col1, col2 = st.columns([2, 1])
         with col1:
-            notes = st.text_input("Requirements (optional)", placeholder="e.g., vegetarian, quick meals")
+            notes = st.text_input("Special Requirements (optional)", 
+                                placeholder="e.g., vegetarian, quick meals, spicy")
         with col2:
             num_suggestions = st.selectbox("Number of Recipes", [1, 2, 3, 4, 5], index=2)
         
@@ -156,13 +238,31 @@ def render_leftover_management(user_id: str):
         
         # Display results
         if st.session_state.recipe_generation_error:
-            st.error(f"Error: {st.session_state.recipe_generation_error}")
+            st.error(f"❌ Error: {st.session_state.recipe_generation_error}")
+            
         elif st.session_state.recipes:
-            st.success("✨ New Creative Recipe Suggestions")
+            st.success("✨ **New Creative Recipe Suggestions**")
             for i, recipe in enumerate(st.session_state.recipes, 1):
-                st.write(f"{i}. {recipe}")
-    else:
-        st.info("👆 Add ingredients above to generate creative new recipes")
+                st.write(f"**{i}.** {recipe}")
+            
+            st.divider()
+            
+            # Action buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 Generate More Recipes", use_container_width=True):
+                    st.session_state.recipes = []
+                    st.rerun()
+            with col2:
+                if st.button("🆕 Start Over", use_container_width=True):
+                    # Reset everything
+                    st.session_state.leftover_step = 'select_method'
+                    st.session_state.selected_method = None
+                    st.session_state.all_leftovers = []
+                    st.session_state.detailed_ingredient_info = []
+                    st.session_state.recipes = []
+                    st.session_state.recipe_generation_error = None
+                    st.rerun()
 
 def render_cooking_quiz_tab(user_id: str):
     """Cooking quiz section"""
@@ -256,7 +356,7 @@ def main():
 
         features = [
             "Dashboard",
-            "Kitchen Management",  # Combined feature
+            "Kitchen Management",
             "Gamification Hub", 
             "Event Planning ChatBot",
             "Promotion Generator", 
@@ -281,7 +381,7 @@ def main():
     # Feature routing
     if selected_feature == "Dashboard":
         dashboard()
-    elif selected_feature == "Kitchen Management":  # Combined feature
+    elif selected_feature == "Kitchen Management":
         kitchen_management()
     elif selected_feature == "Gamification Hub":
         gamification_hub()
