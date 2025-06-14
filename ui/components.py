@@ -1,10 +1,9 @@
 """
-UPDATED Combined UI Components for the Smart Restaurant Menu Management App.
+Combined UI Components for the Smart Restaurant Menu Management App.
 
-Enhanced to work with the new prioritized ingredient system.
 Includes:
 - Authentication UI (from auth_components.py)
-- Enhanced Main UI Components with Firebase prioritization
+- Main UI Components (from components.py)
 - Gamification UI (from leftover_gamification_ui.py)
 """
 
@@ -15,21 +14,19 @@ import time
 from datetime import datetime
 import re
 
-# Import the enhanced leftover management functions
-from modules.leftover import (
-    load_leftovers, parse_manual_leftovers, suggest_recipes,
-    fetch_ingredients_from_firebase, prioritize_ingredients, parse_firebase_ingredients,
-    generate_dynamic_quiz_questions, calculate_quiz_score, get_user_stats,
-    update_user_stats, get_leaderboard, get_xp_progress, award_recipe_xp
-)
-
 from modules.auth import register_user, authenticate_user
 from firebase_init import init_firebase
+from modules.leftover import (
+    load_leftovers, parse_manual_leftovers, suggest_recipes,
+    generate_dynamic_quiz_questions, calculate_quiz_score, get_user_stats,
+    update_user_stats, get_leaderboard, get_xp_progress, award_recipe_xp,
+    fetch_ingredients_from_firebase, parse_firebase_ingredients
+)
 
 logger = logging.getLogger(__name__)
 
 # =======================
-# AUTHENTICATION UI (unchanged)
+# AUTHENTICATION UI
 # =======================
 
 def initialize_session_state():
@@ -232,11 +229,11 @@ def create_auth_tabs():
         user_profile()
 
 # =======================
-# ENHANCED MAIN UI COMPONENTS
+# MAIN UI COMPONENTS
 # =======================
 
 def leftover_input_csv() -> List[str]:
-    st.sidebar.subheader("📄 CSV Upload")
+    st.sidebar.subheader("CSV Upload")
     use_csv = st.sidebar.checkbox("Upload from CSV file")
     leftovers = []
     if use_csv:
@@ -244,121 +241,71 @@ def leftover_input_csv() -> List[str]:
         if uploaded_file is not None:
             try:
                 leftovers = load_leftovers(uploaded_file)
-                st.sidebar.success(f"✅ Loaded {len(leftovers)} ingredients")
+                st.sidebar.success(f"Loaded {len(leftovers)} ingredients")
             except Exception as err:
-                st.sidebar.error(f"❌ Error loading CSV: {str(err)}")
+                st.sidebar.error(f"Error loading CSV: {str(err)}")
                 st.sidebar.info("Please check your CSV format")
     return leftovers
 
 def leftover_input_manual() -> List[str]:
-    st.sidebar.subheader("✏️ Manual Entry")
+    st.sidebar.subheader("Manual Entry")
     ingredients_text = st.sidebar.text_area("Enter ingredients (comma-separated)", placeholder="tomatoes, onions, chicken, rice", help="Separate ingredients with commas")
     leftovers = []
     if ingredients_text:
         try:
             leftovers = parse_manual_leftovers(ingredients_text)
-            st.sidebar.success(f"✅ Added {len(leftovers)} ingredients")
+            st.sidebar.success(f"Added {len(leftovers)} ingredients")
         except Exception as err:
-            st.sidebar.error(f"❌ Error: {str(err)}")
+            st.sidebar.error(f"Error: {str(err)}")
     return leftovers
 
-def leftover_input_firebase() -> Tuple[List[str], List[Dict]]:
+def leftover_input_firebase() -> List[str]:
     """
-    Enhanced UI component to fetch and prioritize ingredients from Firebase inventory
+    UI component to fetch ingredients from Firebase inventory
     
     Returns:
-        Tuple[List[str], List[Dict]]: (ingredient_names, prioritized_ingredient_data)
+        List[str]: List of ingredient names from Firebase
     """
-    st.sidebar.subheader("🔥 Firebase Inventory")
-    
-    # Initialize session state for Firebase data
-    if 'firebase_ingredients_raw' not in st.session_state:
-        st.session_state.firebase_ingredients_raw = []
-    if 'firebase_ingredients_prioritized' not in st.session_state:
-        st.session_state.firebase_ingredients_prioritized = []
-    
-    use_firebase = st.sidebar.checkbox("Use Firebase inventory", help="Fetch and prioritize ingredients from Firebase")
+    st.sidebar.subheader("Current Inventory")
+    use_firebase = st.sidebar.checkbox("Use current inventory from Firebase", help="Fetch ingredients from your current inventory")
+    leftovers = []
     
     if use_firebase:
-        col1, col2 = st.sidebar.columns(2)
-        
-        with col1:
-            if st.button("🔄 Fetch", help="Fetch ingredients from Firebase", use_container_width=True):
-                try:
-                    with st.spinner("Fetching from Firebase..."):
-                        # Fetch raw ingredients from Firebase
-                        raw_ingredients = fetch_ingredients_from_firebase()
-                        st.session_state.firebase_ingredients_raw = raw_ingredients
+        if st.sidebar.button("Fetch Current Ingredients", type="primary"):
+            try:
+                # Show spinner in the main area since sidebar doesn't support spinner
+                with st.spinner("Fetching ingredients from inventory..."):
+                    # Fetch ingredients from Firebase
+                    firebase_ingredients = fetch_ingredients_from_firebase()
+                    
+                    if firebase_ingredients:
+                        # Display ingredients with expiry dates
+                        st.sidebar.success(f"Found {len(firebase_ingredients)} ingredients in inventory")
                         
-                        if raw_ingredients:
-                            st.sidebar.success(f"✅ Found {len(raw_ingredients)} ingredients")
-                        else:
-                            st.sidebar.warning("⚠️ No ingredients found")
-                            
-                except Exception as err:
-                    st.sidebar.error(f"❌ Error: {str(err)}")
-                    logger.error(f"Firebase fetch error: {str(err)}")
-        
-        with col2:
-            if st.button("📊 Prioritize", help="Prioritize by expiry & quantity", use_container_width=True):
-                if st.session_state.firebase_ingredients_raw:
-                    try:
-                        with st.spinner("Prioritizing ingredients..."):
-                            # Prioritize the ingredients
-                            prioritized_data = prioritize_ingredients(st.session_state.firebase_ingredients_raw)
-                            st.session_state.firebase_ingredients_prioritized = prioritized_data
-                            
-                            # Show priority breakdown
-                            priority_counts = {}
-                            for item in prioritized_data:
-                                priority = item['priority']
-                                priority_counts[priority] = priority_counts.get(priority, 0) + 1
-                            
-                            st.sidebar.success("✅ Prioritized!")
-                            
-                            # Display priority breakdown
-                            priority_labels = {
-                                1: "🔴 High",
-                                2: "🟡 Medium", 
-                                3: "🟠 Good Qty",
-                                4: "⚪ Standard"
-                            }
-                            
-                            for priority in sorted(priority_counts.keys()):
-                                count = priority_counts[priority]
-                                label = priority_labels.get(priority, f"P{priority}")
-                                st.sidebar.write(f"{label}: {count}")
+                        # Show a preview of ingredients with expiry dates
+                        with st.sidebar.expander("Inventory Preview", expanded=True):
+                            for item in firebase_ingredients:
+                                ingredient = item.get('Ingredient', 'Unknown')
+                                expiry = item.get('Expiry Date', 'No expiry date')
+                                ingredient_type = item.get('Type', 'No type')
                                 
-                    except Exception as err:
-                        st.sidebar.error(f"❌ Prioritization error: {str(err)}")
-                        logger.error(f"Prioritization error: {str(err)}")
-                else:
-                    st.sidebar.warning("⚠️ Fetch ingredients first")
-        
-        # Display prioritized ingredients if available
-        if st.session_state.firebase_ingredients_prioritized:
-            with st.sidebar.expander("🔍 Priority Preview", expanded=False):
-                for item in st.session_state.firebase_ingredients_prioritized[:5]:  # Show top 5
-                    priority_emoji = {1: "🔴", 2: "🟡", 3: "🟠", 4: "⚪"}
-                    emoji = priority_emoji.get(item['priority'], "⚪")
-                    
-                    expiry_text = f"{item['days_until_expiry']}d" if item['days_until_expiry'] < 9999 else "No expiry"
-                    st.sidebar.write(f"{emoji} **{item['ingredient']}**")
-                    st.sidebar.caption(f"Qty: {item['quantity']}, {expiry_text}")
-                    
-                if len(st.session_state.firebase_ingredients_prioritized) > 5:
-                    st.sidebar.caption(f"...and {len(st.session_state.firebase_ingredients_prioritized) - 5} more")
+                                st.sidebar.markdown(f"**{ingredient}**  \n"
+                                                   f"Expires: {expiry}  \n"
+                                                   f"Type: {ingredient_type}")
+                                st.sidebar.divider()
+                        
+                        # Parse ingredients into a simple list
+                        leftovers = parse_firebase_ingredients(firebase_ingredients)
+                    else:
+                        st.sidebar.warning("No ingredients found in inventory")
+            except Exception as err:
+                st.sidebar.error(f"Error fetching ingredients: {str(err)}")
     
-    # Return both ingredient names and prioritized data
-    if st.session_state.firebase_ingredients_prioritized:
-        ingredient_names = [item['ingredient'] for item in st.session_state.firebase_ingredients_prioritized]
-        return ingredient_names, st.session_state.firebase_ingredients_prioritized
-    else:
-        return [], []
+    return leftovers
 
 def display_leftover_summary(leftovers: List[str]):
     if leftovers:
-        st.subheader("🥘 Current Ingredients")
+        st.subheader("Current Ingredients")
         cols = st.columns(min(len(leftovers), 3))
         for i, ingredient in enumerate(leftovers):
             col_idx = i % 3
@@ -367,86 +314,46 @@ def display_leftover_summary(leftovers: List[str]):
     else:
         st.info("No ingredients added yet")
 
-def display_recipe_suggestions_enhanced(recipes: List[str], prioritized_data: List[Dict] = None):
-    """
-    Enhanced recipe display that shows simple recipe names with priority context
-    """
+def display_recipe_suggestions(recipes: List[Dict], leftovers: List[str]):
     if not recipes:
-        st.warning("❌ No recipe suggestions found")
+        st.warning("No recipe suggestions found")
         return
-        
-    st.subheader("🍽️ Recipe Suggestions")
-    
-    # Show priority context if available
-    if prioritized_data:
-        high_priority_items = [item for item in prioritized_data if item['priority'] <= 2]
-        if high_priority_items:
-            st.info(f"✨ **Priority Focus**: These recipes prioritize ingredients expiring soon: {', '.join([item['ingredient'] for item in high_priority_items[:3]])}")
-    
-    # Display recipes in a clean format
+    st.subheader("Recipe Suggestions")
     for i, recipe in enumerate(recipes):
-        # Create a nice card-like display for each recipe
-        with st.container():
-            col1, col2 = st.columns([4, 1])
-            
+        with st.expander(f"{recipe.get('name', f'Recipe {i+1}')}", expanded=i==0):
+            col1, col2 = st.columns([2, 1])
             with col1:
-                st.markdown(f"### {i+1}. {recipe}")
-                
+                if 'description' in recipe:
+                    st.write(recipe['description'])
+                if 'cooking_time' in recipe:
+                    st.caption(f"Cooking Time: {recipe['cooking_time']}")
+                if 'difficulty' in recipe:
+                    st.caption(f"Difficulty: {recipe['difficulty']}")
             with col2:
-                if st.button("❤️", key=f"fav_{i}", help="Add to favorites"):
-                    st.success("Added to favorites!")
-            
-            # Add some spacing
-            if i < len(recipes) - 1:
-                st.divider()
-
-def display_priority_breakdown(prioritized_data: List[Dict]):
-    """
-    Display a visual breakdown of ingredient priorities
-    """
-    if not prioritized_data:
-        return
-        
-    st.subheader("📊 Ingredient Priority Breakdown")
-    
-    # Group by priority
-    priority_groups = {}
-    for item in prioritized_data:
-        priority = item['priority']
-        if priority not in priority_groups:
-            priority_groups[priority] = []
-        priority_groups[priority].append(item)
-    
-    # Priority information
-    priority_info = {
-        1: {"name": "🔴 High Priority", "desc": "Expiring soon + Large quantity"},
-        2: {"name": "🟡 Medium Priority", "desc": "Expiring soon"},
-        3: {"name": "🟠 Good Quantity", "desc": "Large quantity available"},
-        4: {"name": "⚪ Standard Priority", "desc": "Regular items"}
-    }
-    
-    # Display each priority group
-    for priority in sorted(priority_groups.keys()):
-        items = priority_groups[priority]
-        info = priority_info.get(priority, {"name": f"Priority {priority}", "desc": ""})
-        
-        with st.expander(f"{info['name']} ({len(items)} items)", expanded=(priority <= 2)):
-            st.caption(info['desc'])
-            
-            # Display items in columns
-            cols = st.columns(2)
-            for i, item in enumerate(items):
-                col_idx = i % 2
-                with cols[col_idx]:
-                    expiry_text = f"Expires in {item['days_until_expiry']} days" if item['days_until_expiry'] < 9999 else "No expiry date"
-                    quantity_text = f"Qty: {item['quantity']}" if item['quantity'] > 0 else "Qty: Unknown"
-                    
-                    st.write(f"**{item['ingredient'].title()}**")
-                    st.caption(f"{expiry_text} • {quantity_text}")
+                if 'servings' in recipe:
+                    st.metric("Servings", recipe['servings'])
+            if 'ingredients' in recipe:
+                st.write("**Ingredients:**")
+                for ingredient in recipe['ingredients']:
+                    if any(leftover.lower() in ingredient.lower() for leftover in leftovers):
+                        st.write(f"✓ {ingredient}")
+                    else:
+                        st.write(f"• {ingredient}")
+            if 'instructions' in recipe:
+                st.write("**Instructions:**")
+                for j, instruction in enumerate(recipe['instructions'], 1):
+                    st.write(f"{j}. {instruction}")
+            if 'nutrition' in recipe:
+                st.write("**Nutrition Info:**")
+                nutrition = recipe['nutrition']
+                cols = st.columns(len(nutrition))
+                for k, (key, value) in enumerate(nutrition.items()):
+                    with cols[k]:
+                        st.metric(key.title(), value)
 
 def display_ingredient_filter():
     st.sidebar.divider()
-    st.sidebar.subheader("🔍 Filters")
+    st.sidebar.subheader("Filters")
     dietary_options = st.sidebar.multiselect("Dietary Restrictions", ["Vegetarian", "Vegan", "Gluten-Free", "Dairy-Free", "Keto", "Paleo"], help="Filter recipes by dietary needs")
     cuisine_type = st.sidebar.selectbox("Cuisine Type", ["Any", "Italian", "Asian", "Mexican", "American", "Mediterranean", "Indian"], help="Choose preferred cuisine style")
     max_time = st.sidebar.slider("Max Cooking Time (minutes)", min_value=15, max_value=120, value=60, step=15, help="Maximum time you want to spend cooking")
@@ -458,23 +365,177 @@ def display_ingredient_filter():
         "difficulty": difficulty if difficulty != "Any" else None
     }
 
-def display_recipe_stats(recipes: List[str]):
+def display_recipe_stats(recipes: List[Dict]):
     if not recipes:
         return
     st.sidebar.divider()
-    st.sidebar.subheader("📈 Recipe Stats")
+    st.sidebar.subheader("Recipe Stats")
     total_recipes = len(recipes)
     st.sidebar.metric("Total Recipes", total_recipes)
-    st.sidebar.metric("Avg. Length", f"{sum(len(r.split()) for r in recipes) // len(recipes)} words")
+    cooking_times = []
+    for recipe in recipes:
+        if 'cooking_time' in recipe:
+            time_str = recipe['cooking_time']
+            try:
+                numbers = re.findall(r'\d+', time_str)
+                if numbers:
+                    cooking_times.append(int(numbers[0]))
+            except:
+                pass
+    if cooking_times:
+        avg_time = sum(cooking_times) / len(cooking_times)
+        st.sidebar.metric("Avg. Cooking Time", f"{avg_time:.0f} min")
+    difficulties = {}
+    for recipe in recipes:
+        if 'difficulty' in recipe:
+            diff = recipe['difficulty']
+            difficulties[diff] = difficulties.get(diff, 0) + 1
+    if difficulties:
+        st.sidebar.write("**Difficulty Breakdown:**")
+        for diff, count in difficulties.items():
+            st.sidebar.write(f"• {diff}: {count}")
+
+def display_shopping_list(recipes: List[Dict], available_ingredients: List[str]):
+    if not recipes:
+        return
+    st.subheader("Shopping List")
+    all_ingredients = set()
+    for recipe in recipes:
+        if 'ingredients' in recipe:
+            for ingredient in recipe['ingredients']:
+                clean_ingredient = ingredient.lower().strip()
+                all_ingredients.add(clean_ingredient)
+    available_lower = [ing.lower().strip() for ing in available_ingredients]
+    missing_ingredients = []
+    for ingredient in all_ingredients:
+        if not any(avail in ingredient or ingredient in avail for avail in available_lower):
+            missing_ingredients.append(ingredient)
+    if missing_ingredients:
+        st.write("**Items to buy:**")
+        for ingredient in sorted(missing_ingredients):
+            st.write(f"• {ingredient.title()}")
+    else:
+        st.success("You have all ingredients needed!")
+
+def display_recipe_search():
+    st.subheader("Recipe Search")
+    search_query = st.text_input("Search recipes", placeholder="Enter dish name, ingredient, or cuisine type...", help="Search for specific recipes or ingredients")
+    return search_query
+
+def display_save_recipe_option(recipe: Dict):
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("Save Recipe", key=f"save_{recipe.get('name', 'recipe')}", type="secondary"):
+            st.success("Recipe saved!")
+            return True
+    return False
+
+def display_nutrition_info(recipe: Dict):
+    if 'nutrition' not in recipe:
+        return
+    st.write("**Nutrition Information (per serving):**")
+    nutrition = recipe['nutrition']
+    cols = st.columns(min(len(nutrition), 4))
+    for i, (key, value) in enumerate(nutrition.items()):
+        col_idx = i % 4
+        with cols[col_idx]:
+            st.metric(key.replace('_', ' ').title(), value)
+
+def display_recipe_rating(recipe: Dict):
+    st.write("**Rate this recipe:**")
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        rating = st.selectbox("Rating", options=[1, 2, 3, 4, 5], format_func=lambda x: "★" * x + "☆" * (5-x), key=f"rating_{recipe.get('name', 'recipe')}")
+    with col2:
+        if st.button("Submit Rating", key=f"submit_rating_{recipe.get('name', 'recipe')}"):
+            st.success(f"Rated {rating} stars!")
+            return rating
+    return None
+
+def display_cooking_timer():
+    st.sidebar.divider()
+    st.sidebar.subheader("Cooking Timer")
+    timer_minutes = st.sidebar.number_input("Minutes", min_value=1, max_value=180, value=15, step=1)
+    if st.sidebar.button("Start Timer"):
+        st.sidebar.success(f"Timer set for {timer_minutes} minutes!")
+    return timer_minutes
+
+def display_meal_planner():
+    st.subheader("Weekly Meal Planner")
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    meals = ["Breakfast", "Lunch", "Dinner"]
+    meal_plan = {}
+    for day in days:
+        with st.expander(day):
+            meal_plan[day] = {}
+            cols = st.columns(3)
+            for i, meal in enumerate(meals):
+                with cols[i]:
+                    meal_plan[day][meal] = st.text_input(meal, key=f"{day}_{meal}", placeholder="Enter recipe name")
+    if st.button("Save Meal Plan", type="primary"):
+        st.success("Meal plan saved!")
+    return meal_plan
+
+def display_ingredient_substitutions(ingredient: str):
+    substitutions = {
+        "butter": ["margarine", "vegetable oil", "coconut oil", "applesauce"],
+        "eggs": ["flax eggs", "chia eggs", "applesauce", "banana"],
+        "milk": ["almond milk", "soy milk", "oat milk", "coconut milk"],
+        "flour": ["almond flour", "coconut flour", "oat flour", "rice flour"],
+        "sugar": ["honey", "maple syrup", "stevia", "coconut sugar"],
+        "cream": ["coconut cream", "cashew cream", "greek yogurt"]
+    }
+    ingredient_lower = ingredient.lower()
+    possible_subs = []
+    for key, subs in substitutions.items():
+        if key in ingredient_lower or ingredient_lower in key:
+            possible_subs = subs
+            break
+    if possible_subs:
+        st.write(f"**Substitutions for {ingredient}:**")
+        for sub in possible_subs:
+            st.write(f"• {sub}")
+    return possible_subs
+
+def display_cost_calculator(recipes: List[Dict]):
+    if not recipes:
+        return 0.0
+    st.subheader("Cost Estimate")
+    base_cost_per_serving = 3.50
+    total_cost = len(recipes) * base_cost_per_serving
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Recipes", len(recipes))
+    with col2:
+        st.metric("Est. Cost per Recipe", f"${base_cost_per_serving:.2f}")
+    with col3:
+        st.metric("Total Estimated Cost", f"${total_cost:.2f}")
+    st.caption("*Estimates based on average ingredient costs")
+    return total_cost
+
+def display_recipe_export_options(recipes: List[Dict]):
+    if not recipes:
+        return
+    st.subheader("Export Options")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("Export as PDF", use_container_width=True):
+            st.info("PDF export feature coming soon!")
+    with col2:
+        if st.button("Email Recipes", use_container_width=True):
+            st.info("Email feature coming soon!")
+    with col3:
+        if st.button("Share Link", use_container_width=True):
+            st.info("Share feature coming soon!")
 
 def display_quick_actions():
     st.sidebar.divider()
-    st.sidebar.subheader("⚡ Quick Actions")
+    st.sidebar.subheader("Quick Actions")
     actions = {
-        "🎲 Random Recipe": "Get a random recipe suggestion",
-        "🗑️ Clear All": "Clear all ingredients and start over",
-        "💾 Save Session": "Save current session",
-        "⭐ Load Favorites": "Load your favorite recipes"
+        "Random Recipe": "Get a random recipe suggestion",
+        "Clear All": "Clear all ingredients and start over",
+        "Save Session": "Save current session",
+        "Load Favorites": "Load your favorite recipes"
     }
     selected_action = None
     for action, description in actions.items():
@@ -485,7 +546,7 @@ def display_quick_actions():
 
 def display_app_settings():
     st.sidebar.divider()
-    st.sidebar.subheader("⚙️ Settings")
+    st.sidebar.subheader("Settings")
     settings = {}
     settings['theme'] = st.sidebar.selectbox("Theme", ["Light", "Dark", "Auto"], help="Choose your preferred theme")
     settings['units'] = st.sidebar.selectbox("Units", ["Metric", "Imperial"], help="Choose measurement units")
@@ -493,13 +554,13 @@ def display_app_settings():
     return settings
 
 # =======================
-# GAMIFICATION UI (enhanced)
+# GAMIFICATION UI
 # =======================
 
 def display_user_stats_sidebar(user_id: str) -> Dict:
     stats = get_user_stats(user_id)
     st.sidebar.divider()
-    st.sidebar.subheader("🎮 Player Stats")
+    st.sidebar.subheader("Player Stats")
     current_level_xp, xp_needed = get_xp_progress(stats['total_xp'], stats['level'])
     xp_for_current_level = (stats['level'] ** 2) * 100 - ((stats['level'] - 1) ** 2) * 100
     progress = current_level_xp / xp_for_current_level if xp_for_current_level > 0 else 0
@@ -517,7 +578,7 @@ def display_user_stats_sidebar(user_id: str) -> Dict:
     return stats
 
 def render_cooking_quiz(ingredients: List[str], user_id: str):
-    st.subheader("🧠 Cooking Knowledge Quiz")
+    st.subheader("Cooking Knowledge Quiz")
     st.caption(f"Based on: {', '.join(ingredients[:3])}{'...' if len(ingredients) > 3 else ''}")
     if 'quiz_questions' not in st.session_state:
         st.session_state.quiz_questions = None
@@ -531,7 +592,7 @@ def render_cooking_quiz(ingredients: List[str], user_id: str):
     with col1:
         num_questions = st.selectbox("Questions:", [3, 5, 7], index=1)
     with col2:
-        if st.button("🚀 Start Quiz", type="primary", use_container_width=True):
+        if st.button("Start Quiz", type="primary", use_container_width=True):
             with st.spinner("Loading questions..."):
                 st.session_state.quiz_questions = generate_dynamic_quiz_questions(ingredients, num_questions)
                 st.session_state.quiz_answers = []
@@ -554,7 +615,7 @@ def render_cooking_quiz(ingredients: List[str], user_id: str):
             if i < len(st.session_state.quiz_questions) - 1:
                 st.divider()
         st.write("")
-        if st.button("✅ Submit Quiz", type="primary", use_container_width=True):
+        if st.button("Submit Quiz", type="primary", use_container_width=True):
             if -1 in answers:
                 st.error("Please answer all questions before submitting.")
             else:
@@ -574,7 +635,7 @@ def render_cooking_quiz(ingredients: List[str], user_id: str):
 
 def display_quiz_results(results: Dict, questions: List[Dict], user_answers: List[int]):
     st.divider()
-    st.subheader("📊 Quiz Results")
+    st.subheader("Quiz Results")
     score = results['correct']
     total = results['total']
     percentage = results['percentage']
@@ -596,20 +657,19 @@ def display_quiz_results(results: Dict, questions: List[Dict], user_answers: Lis
         else:
             st.metric("Grade", "Practice")
     if percentage == 100:
-        st.success("🎉 Perfect score! Excellent culinary knowledge.")
-        st.balloons()
+        st.success("Perfect score! Excellent culinary knowledge.")
     elif percentage >= 80:
-        st.success("🌟 Great work! Your cooking knowledge is impressive.")
+        st.success("Great work! Your cooking knowledge is impressive.")
     elif percentage >= 60:
-        st.info("👍 Good job! Keep studying to improve further.")
+        st.info("Good job! Keep studying to improve further.")
     else:
-        st.warning("📚 Keep learning! Practice makes perfect.")
-    with st.expander("📝 Review Answers", expanded=False):
+        st.warning("Keep learning! Practice makes perfect.")
+    with st.expander("Review Answers", expanded=False):
         for i, question in enumerate(questions):
             user_answer = user_answers[i]
             correct_answer = question['correct']
             is_correct = user_answer == correct_answer
-            status = "✅" if is_correct else "❌"
+            status = "✓" if is_correct else "✗"
             st.write(f"**{status} Question {i+1}:** {question['question']}")
             col1, col2 = st.columns(2)
             with col1:
@@ -617,10 +677,10 @@ def display_quiz_results(results: Dict, questions: List[Dict], user_answers: Lis
             with col2:
                 st.write(f"Correct: {question['options'][correct_answer]}")
             if 'explanation' in question and question['explanation']:
-                st.caption(f"💡 {question['explanation']}")
+                st.caption(f"Explanation: {question['explanation']}")
             if i < len(questions) - 1:
                 st.divider()
-    if st.button("🔄 Take Another Quiz", use_container_width=True):
+    if st.button("Take Another Quiz", use_container_width=True):
         st.session_state.quiz_questions = None
         st.session_state.quiz_answers = []
         st.session_state.quiz_submitted = False
@@ -628,7 +688,7 @@ def display_quiz_results(results: Dict, questions: List[Dict], user_answers: Lis
         st.rerun()
 
 def display_leaderboard():
-    st.subheader("🏆 Leaderboard")
+    st.subheader("Leaderboard")
     st.caption("Top players by XP")
     leaderboard = get_leaderboard(10)
     if leaderboard:
@@ -659,7 +719,7 @@ def display_leaderboard():
         st.info("No leaderboard data available. Be the first to take a quiz!")
 
 def display_achievements_showcase(user_id: str):
-    st.subheader("🏅 Achievements")
+    st.subheader("Achievements")
     stats = get_user_stats(user_id)
     achievements = stats.get('achievements', [])
     if not achievements:
@@ -697,7 +757,7 @@ def display_achievements_showcase(user_id: str):
         st.progress(progress, text=f"Quiz Progress: {quizzes_taken}/{next_quiz_milestone}")
 
 def display_gamification_dashboard(user_id: str):
-    st.title("🎮 Player Dashboard")
+    st.title("Player Dashboard")
     stats = get_user_stats(user_id)
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -709,7 +769,7 @@ def display_gamification_dashboard(user_id: str):
         st.metric("Accuracy", f"{accuracy:.1f}%")
     with col4:
         st.metric("Achievements", len(stats.get('achievements', [])))
-    tab1, tab2, tab3 = st.tabs(["🏅 Achievements", "📈 Progress", "🏆 Leaderboard"])
+    tab1, tab2, tab3 = st.tabs(["Achievements", "Progress", "Leaderboard"])
     with tab1:
         display_achievements_showcase(user_id)
     with tab2:
@@ -722,12 +782,12 @@ def display_progress_tracking(user_id: str):
     current_level_xp, xp_needed = get_xp_progress(stats['total_xp'], stats['level'])
     xp_for_current_level = (stats['level'] ** 2) * 100 - ((stats['level'] - 1) ** 2) * 100
     progress_percentage = (current_level_xp / xp_for_current_level * 100) if xp_for_current_level > 0 else 0
-    st.subheader("📊 Level Progress")
+    st.subheader("Level Progress")
     st.progress(current_level_xp / xp_for_current_level if xp_for_current_level > 0 else 0)
     st.write(f"Level {stats['level']}: {current_level_xp}/{xp_for_current_level} XP ({progress_percentage:.1f}%)")
     st.caption(f"{xp_needed} XP needed for Level {stats['level'] + 1}")
     st.divider()
-    st.subheader("📈 Statistics")
+    st.subheader("Statistics")
     col1, col2 = st.columns(2)
     with col1:
         st.write("**Quiz Performance**")
@@ -742,7 +802,7 @@ def display_progress_tracking(user_id: str):
         st.metric("Recipes Generated", stats.get('recipes_generated', 0))
         st.metric("Days Active", calculate_days_active(stats))
     st.divider()
-    st.subheader("🎯 Weekly Goals")
+    st.subheader("Weekly Goals")
     display_weekly_goals(stats)
 
 def calculate_days_active(stats: Dict) -> int:
@@ -765,18 +825,18 @@ def display_weekly_goals(stats: Dict):
 def award_recipe_generation_xp(user_id: str, num_recipes: int = 1):
     updated_stats = award_recipe_xp(user_id, num_recipes)
     xp_earned = num_recipes * 5
-    st.success(f"🎉 Recipe generated! +{xp_earned} XP earned")
+    st.success(f"Recipe generated! +{xp_earned} XP earned")
     if 'level_up' in st.session_state and st.session_state.level_up:
         st.balloons()
-        st.success(f"🆙 Level Up! You're now Level {updated_stats['level']}")
+        st.success(f"Level Up! You're now Level {updated_stats['level']}")
         st.session_state.level_up = False
 
 def show_xp_notification(xp_earned: int, level_up: bool = False):
     if level_up:
         st.balloons()
-        st.success(f"🆙 Level Up! +{xp_earned} XP earned")
+        st.success(f"Level Up! +{xp_earned} XP earned")
     else:
-        st.success(f"✨ +{xp_earned} XP earned")
+        st.success(f"+{xp_earned} XP earned")
 
 def get_daily_challenge(user_id: str) -> Dict:
     import random
@@ -792,16 +852,8 @@ def get_daily_challenge(user_id: str) -> Dict:
 
 def display_daily_challenge(user_id: str):
     challenge = get_daily_challenge(user_id)
-    st.subheader("🎯 Daily Challenge")
+    st.subheader("Daily Challenge")
     with st.container():
         st.write(f"**{challenge['title']}**")
         st.write(challenge['description'])
         st.caption(f"Reward: +{challenge['xp_reward']} XP")
-
-print("✅ Enhanced UI components loaded successfully!")
-print("Key improvements:")
-print("1. ✅ Enhanced Firebase ingredient fetching with prioritization")
-print("2. ✅ Better recipe display with priority context")
-print("3. ✅ Improved error handling and user feedback")
-print("4. ✅ Visual priority breakdown display")
-print("5. ✅ Enhanced gamification integration")
