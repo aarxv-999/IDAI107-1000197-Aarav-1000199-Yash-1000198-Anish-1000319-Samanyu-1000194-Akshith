@@ -75,7 +75,7 @@ def render_dashboard():
     features = []
     
     # Role-specific features
-    if user_role in ['admin', 'staff', 'chef']:
+    if user_role in ['admin', 'chef']:
         features.append({
             "title": "Leftover Management",
             "description": "Generate recipes from leftover ingredients to reduce waste",
@@ -83,10 +83,11 @@ def render_dashboard():
             "key": "Leftover Management"
         })
     
+    # UPDATED: Promotion Generator only for Admin and Staff
     if user_role in ['admin', 'staff']:
         features.append({
             "title": "Promotion Generator",
-            "description": "Create marketing promotions and campaigns",
+            "description": "AI-powered marketing campaign generation with automatic scoring",
             "icon": "📣",
             "key": "Promotion Generator"
         })
@@ -172,6 +173,7 @@ def render_dashboard():
         - Click on feature cards above for quick access
         - Check the Gamification Hub to track your progress
         - Chefs and Admins can access advanced menu management tools
+        - Staff and Admins can create AI-powered marketing campaigns
         - Need help? Contact support at support@restaurant.com
         """)
 
@@ -181,7 +183,7 @@ def get_feature_description(feature_name: str) -> str:
         "Leftover Management": "♻️ Generate recipes from leftover ingredients",
         "Gamification Hub": "🎮 View achievements, leaderboard, and progress",
         "Cooking Quiz": "🧠 Test your culinary knowledge and earn XP",
-        "Promotion Generator": "📣 Create marketing promotions and campaigns",
+        "Promotion Generator": "📣 AI marketing campaigns with automatic scoring",
         "Chef Recipe Suggestions": "👨‍🍳 AI menu generation, chef submissions & analytics",
         "Visual Menu Search": "🔍 Search menu items using images",
         "Event Planning ChatBot": "🎉 AI-powered event planning assistance"
