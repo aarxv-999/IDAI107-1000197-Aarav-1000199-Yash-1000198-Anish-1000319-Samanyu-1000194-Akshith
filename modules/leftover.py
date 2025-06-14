@@ -329,8 +329,8 @@ def get_firestore_db():
 
 def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int = 5) -> List[Dict]:
     """
-    Generate unique quiz questions based on the leftover ingredients using Gemini API.
-    Now includes randomization to ensure different questions each time.
+    Generate unique quiz questions with maximum randomization to ensure different questions every time.
+    Uses multiple layers of randomization for maximum variety.
 
     Args:
         ingredients (List[str]): List of leftover ingredients
@@ -348,96 +348,212 @@ def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int =
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
 
-        # Add randomization elements
+        # LAYER 1: Time-based randomization with microseconds
         current_time = datetime.now()
-        random_seed = random.randint(1000, 9999)
-        session_id = f"{current_time.strftime('%Y%m%d_%H%M%S')}_{random_seed}"
+        microsecond_seed = current_time.microsecond
+        timestamp_seed = int(current_time.timestamp() * 1000000) % 999999
         
-        # Randomize ingredient selection and order
-        shuffled_ingredients = ingredients.copy()
-        random.shuffle(shuffled_ingredients)
-        selected_ingredients = shuffled_ingredients[:min(8, len(shuffled_ingredients))]
+        # LAYER 2: Multiple random seeds
+        primary_seed = random.randint(10000, 99999)
+        secondary_seed = random.randint(100000, 999999)
+        tertiary_seed = random.randint(1000000, 9999999)
         
-        # Add variety in question topics
-        question_topics = [
-            "cooking techniques and methods",
-            "food safety and storage",
-            "nutritional facts and benefits", 
-            "culinary history and origins",
-            "flavor combinations and pairings",
-            "cooking temperatures and timing",
-            "ingredient substitutions",
-            "kitchen tools and equipment"
+        # LAYER 3: Complex session ID with multiple entropy sources
+        session_entropy = f"{timestamp_seed}_{microsecond_seed}_{primary_seed}_{secondary_seed}_{tertiary_seed}"
+        session_id = f"QUIZ_{current_time.strftime('%Y%m%d_%H%M%S_%f')}_{session_entropy}"
+        
+        # LAYER 4: Randomized ingredient combinations
+        all_possible_ingredients = ingredients + [
+            "garlic", "onion", "tomato", "chicken", "beef", "pork", "fish", "rice", "pasta", 
+            "potatoes", "carrots", "broccoli", "spinach", "mushrooms", "bell peppers",
+            "cheese", "eggs", "milk", "butter", "olive oil", "herbs", "spices"
         ]
         
-        # Randomly select topics for variety
-        selected_topics = random.sample(question_topics, min(4, len(question_topics)))
+        # Create multiple random ingredient combinations
+        random.shuffle(all_possible_ingredients)
+        combo1 = random.sample(all_possible_ingredients, min(6, len(all_possible_ingredients)))
+        random.shuffle(all_possible_ingredients)
+        combo2 = random.sample(all_possible_ingredients, min(8, len(all_possible_ingredients)))
+        random.shuffle(all_possible_ingredients)
+        combo3 = random.sample(all_possible_ingredients, min(5, len(all_possible_ingredients)))
         
-        # Create difficulty distribution
-        difficulty_distribution = []
-        easy_count = max(1, num_questions // 3)
-        hard_count = max(1, num_questions // 4)
-        medium_count = num_questions - easy_count - hard_count
+        # Randomly select which combination to use
+        selected_combo = random.choice([combo1, combo2, combo3, ingredients[:8]])
+        random.shuffle(selected_combo)
         
-        difficulty_distribution.extend(['easy'] * easy_count)
-        difficulty_distribution.extend(['medium'] * medium_count) 
-        difficulty_distribution.extend(['hard'] * hard_count)
+        # LAYER 5: Expanded and randomized question topics
+        all_question_topics = [
+            "advanced cooking techniques and molecular gastronomy",
+            "food safety protocols and temperature control",
+            "nutritional science and dietary benefits", 
+            "culinary history and cultural origins",
+            "flavor chemistry and taste combinations",
+            "precision cooking temperatures and timing",
+            "creative ingredient substitutions and alternatives",
+            "professional kitchen tools and equipment mastery",
+            "fermentation and preservation methods",
+            "baking science and pastry techniques",
+            "international cuisine and regional specialties",
+            "food presentation and plating artistry",
+            "wine and beverage pairing principles",
+            "sustainable cooking and zero-waste techniques",
+            "food allergies and dietary restrictions",
+            "seasonal cooking and ingredient selection",
+            "smoking, grilling, and barbecue techniques",
+            "soup, sauce, and stock fundamentals",
+            "bread making and yeast science",
+            "chocolate and confectionery arts"
+        ]
+        
+        # Randomly select and weight topics differently each time
+        num_topics = random.randint(4, 8)
+        selected_topics = random.sample(all_question_topics, num_topics)
+        random.shuffle(selected_topics)
+        
+        # LAYER 6: Randomized difficulty distribution patterns
+        difficulty_patterns = [
+            ['easy', 'easy', 'medium', 'medium', 'hard'],
+            ['easy', 'medium', 'easy', 'hard', 'medium'],
+            ['medium', 'easy', 'hard', 'easy', 'medium'],
+            ['easy', 'medium', 'medium', 'hard', 'easy'],
+            ['hard', 'easy', 'medium', 'easy', 'hard'],
+            ['medium', 'medium', 'easy', 'hard', 'easy']
+        ]
+        
+        if num_questions <= 5:
+            difficulty_distribution = random.choice(difficulty_patterns)[:num_questions]
+        else:
+            # For more questions, create dynamic distribution
+            base_pattern = random.choice(difficulty_patterns)
+            difficulty_distribution = []
+            while len(difficulty_distribution) < num_questions:
+                difficulty_distribution.extend(base_pattern)
+            difficulty_distribution = difficulty_distribution[:num_questions]
+        
         random.shuffle(difficulty_distribution)
-
-        ingredients_list = ", ".join(selected_ingredients)
+        
+        # LAYER 7: Multiple prompt templates for variety
+        prompt_templates = [
+            {
+                "style": "scientific_approach",
+                "intro": "As a culinary scientist, create fascinating quiz questions that explore the science behind cooking",
+                "focus": "Focus on the chemistry, physics, and biology of cooking processes"
+            },
+            {
+                "style": "cultural_explorer", 
+                "intro": "As a world cuisine expert, generate questions about diverse cooking traditions and cultural techniques",
+                "focus": "Emphasize international cooking methods, traditional techniques, and cultural food practices"
+            },
+            {
+                "style": "professional_chef",
+                "intro": "As a master chef, create challenging questions about advanced culinary techniques and professional kitchen skills",
+                "focus": "Focus on professional cooking methods, advanced techniques, and industry standards"
+            },
+            {
+                "style": "food_historian",
+                "intro": "As a culinary historian, develop questions about the origins, evolution, and stories behind cooking techniques",
+                "focus": "Emphasize historical context, evolution of techniques, and fascinating food facts"
+            },
+            {
+                "style": "nutrition_expert",
+                "intro": "As a nutrition scientist, create questions that blend cooking knowledge with nutritional science",
+                "focus": "Focus on nutritional benefits, healthy cooking methods, and food science"
+            }
+        ]
+        
+        selected_template = random.choice(prompt_templates)
+        
+        # LAYER 8: Randomized question formats
+        question_formats = [
+            "multiple choice with surprising facts",
+            "scenario-based problem solving",
+            "technique identification challenges", 
+            "ingredient knowledge tests",
+            "cooking science explanations",
+            "cultural cooking traditions",
+            "professional kitchen scenarios"
+        ]
+        
+        selected_formats = random.sample(question_formats, min(3, len(question_formats)))
+        
+        # LAYER 9: Dynamic complexity modifiers
+        complexity_modifiers = [
+            "Include lesser-known culinary secrets and professional tips",
+            "Add surprising historical facts and origin stories", 
+            "Focus on advanced techniques used by master chefs",
+            "Include scientific explanations and food chemistry",
+            "Add international perspectives and cultural variations",
+            "Include modern cooking innovations and trends"
+        ]
+        
+        selected_modifiers = random.sample(complexity_modifiers, random.randint(2, 4))
+        
+        ingredients_list = ", ".join(selected_combo)
         topics_list = ", ".join(selected_topics)
+        formats_list = ", ".join(selected_formats)
+        modifiers_list = ". ".join(selected_modifiers)
         
+        # LAYER 10: Completely randomized prompt construction
         prompt = f"""
-        SESSION ID: {session_id}
-        RANDOMIZATION SEED: {random_seed}
+        MAXIMUM RANDOMIZATION SESSION: {session_id}
+        ENTROPY SEEDS: {primary_seed} | {secondary_seed} | {tertiary_seed}
+        TIMESTAMP: {current_time.isoformat()}
+        MICROSECOND_SEED: {microsecond_seed}
         
-        Generate {num_questions} UNIQUE and VARIED cooking quiz questions. Use these ingredients as inspiration: {ingredients_list}
+        {selected_template['intro']} with these specific ingredients as inspiration: {ingredients_list}
         
-        Focus on these diverse topics: {topics_list}
+        UNIQUE GENERATION REQUIREMENTS:
+        - Generate {num_questions} COMPLETELY UNIQUE questions that have NEVER been asked before
+        - {selected_template['focus']}
+        - Use these diverse topics: {topics_list}
+        - Apply these question formats: {formats_list}
+        - {modifiers_list}
         
-        IMPORTANT REQUIREMENTS:
-        1. Make each question COMPLETELY DIFFERENT from typical cooking questions
-        2. Include surprising facts, lesser-known techniques, and interesting culinary trivia
-        3. Vary the question styles: some about techniques, some about history, some about science
-        4. Use the difficulty distribution: {difficulty_distribution}
-        5. Make questions engaging and educational
-        6. Avoid repetitive patterns or similar question structures
+        CRITICAL UNIQUENESS FACTORS:
+        1. Each question must be 100% ORIGINAL and UNPRECEDENTED
+        2. Use difficulty distribution: {difficulty_distribution}
+        3. Incorporate unexpected angles and surprising perspectives
+        4. Avoid ANY common or typical cooking quiz questions
+        5. Make each question teach something genuinely new and interesting
+        6. Use creative scenarios and unique contexts
+        7. Include fascinating trivia that most people don't know
         
-        The questions should be:
-        - Related to cooking, food science, culinary arts, or food culture
-        - Multiple choice with 4 options each
-        - Educational and surprising
-        - Different from standard cooking questions
+        RANDOMIZATION DIRECTIVE: 
+        This session ID {session_id} must produce questions that are COMPLETELY DIFFERENT from any previous generation.
+        Use maximum creativity and originality. NO REPETITION ALLOWED.
         
-        Format your response as a JSON array with this exact structure:
+        Format as JSON array:
         [
             {{
-                "question": "Question text here?",
+                "question": "Completely unique question text?",
                 "options": ["Option A", "Option B", "Option C", "Option D"],
                 "correct": 0,
                 "difficulty": "easy",
                 "xp_reward": 10,
-                "explanation": "Brief explanation of the correct answer"
+                "explanation": "Fascinating explanation with new information"
             }}
         ]
 
-        Difficulty and XP mapping:
-        - easy: 10 XP
-        - medium: 15 XP  
-        - hard: 20 XP
-
-        Make sure each question is unique, interesting, and teaches something new. Include fascinating culinary facts!
-        GENERATE COMPLETELY NEW QUESTIONS - DO NOT REPEAT COMMON COOKING QUIZ QUESTIONS.
+        XP Rewards: easy=10, medium=15, hard=20
+        
+        GENERATE QUESTIONS THAT ARE:
+        - Absolutely unique and never seen before
+        - Educational and mind-blowing
+        - Varied in style and approach
+        - Surprising and memorable
+        - Based on real culinary knowledge but presented uniquely
+        
+        SESSION UNIQUENESS GUARANTEE: Questions generated with session {session_id} must be 100% different from all previous sessions.
         """
 
         response = model.generate_content(prompt)
         response_text = response.text.strip()
 
         # Clean up the response to extract JSON
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0]
+        if "\`\`\`json" in response_text:
+            response_text = response_text.split("\`\`\`json")[1].split("\`\`\`")[0]
+        elif "\`\`\`" in response_text:
+            response_text = response_text.split("\`\`\`")[1].split("\`\`\`")[0]
 
         try:
             questions = json.loads(response_text)
@@ -445,7 +561,7 @@ def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int =
                 # Ensure we have the right number of questions
                 questions = questions[:num_questions]
                 
-                # Validate and fix difficulty distribution
+                # Apply the randomized difficulty distribution
                 for i, question in enumerate(questions):
                     if i < len(difficulty_distribution):
                         question['difficulty'] = difficulty_distribution[i]
@@ -453,10 +569,15 @@ def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int =
                         xp_map = {'easy': 10, 'medium': 15, 'hard': 20}
                         question['xp_reward'] = xp_map.get(question['difficulty'], 10)
                 
-                logger.info(f"Successfully generated {len(questions)} unique dynamic questions with session ID: {session_id}")
+                # FINAL RANDOMIZATION: Shuffle the final questions
+                random.shuffle(questions)
+                
+                logger.info(f"Generated {len(questions)} MAXIMUM RANDOMIZED questions with session: {session_id}")
+                logger.info(f"Used template: {selected_template['style']}, Topics: {len(selected_topics)}, Entropy: {session_entropy}")
+                
                 return questions
             else:
-                logger.warning("Invalid question format from Gemini, using fallback")
+                logger.warning("Invalid question format from Gemini, using randomized fallback")
                 return generate_fallback_questions(num_questions)
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing error: {str(e)}")
@@ -464,13 +585,13 @@ def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int =
             return generate_fallback_questions(num_questions)
 
     except Exception as e:
-        logger.error(f"Error generating dynamic questions: {str(e)}")
+        logger.error(f"Error generating maximum randomized questions: {str(e)}")
         return generate_fallback_questions(num_questions)
 
 def generate_fallback_questions(num_questions: int = 5) -> List[Dict]:
     """
-    Generate fallback quiz questions when Gemini API is not available.
-    Now includes more variety and randomization.
+    Generate highly randomized fallback quiz questions when Gemini API is not available.
+    Now with maximum randomization and variety.
 
     Args:
         num_questions (int): Number of questions to return
@@ -478,7 +599,8 @@ def generate_fallback_questions(num_questions: int = 5) -> List[Dict]:
     Returns:
         List[Dict]: List of fallback quiz questions
     """
-    fallback_questions = [
+    # Expanded question pool with more variety
+    all_fallback_questions = [
         {
             "question": "What is the safe minimum internal temperature for cooking ground beef?",
             "options": ["145°F (63°C)", "160°F (71°C)", "165°F (74°C)", "180°F (82°C)"],
@@ -574,37 +696,106 @@ def generate_fallback_questions(num_questions: int = 5) -> List[Dict]:
             "difficulty": "medium",
             "xp_reward": 15,
             "explanation": "Avocado oil has a smoke point around 520°F, higher than most cooking fats."
+        },
+        {
+            "question": "What is the ideal pH level for bread dough?",
+            "options": ["4.5-5.0", "5.5-6.0", "6.0-6.5", "7.0-7.5"],
+            "correct": 1,
+            "difficulty": "hard",
+            "xp_reward": 20,
+            "explanation": "Bread dough performs best at a slightly acidic pH of 5.5-6.0."
+        },
+        {
+            "question": "Which country is credited with inventing tempura?",
+            "options": ["Japan", "Portugal", "China", "Korea"],
+            "correct": 1,
+            "difficulty": "hard",
+            "xp_reward": 20,
+            "explanation": "Tempura was actually introduced to Japan by Portuguese missionaries in the 16th century."
+        },
+        {
+            "question": "What does 'al dente' literally translate to?",
+            "options": ["To the tooth", "Perfectly cooked", "Italian style", "Firm texture"],
+            "correct": 0,
+            "difficulty": "easy",
+            "xp_reward": 10,
+            "explanation": "Al dente literally means 'to the tooth' in Italian, describing the ideal pasta texture."
+        },
+        {
+            "question": "Which enzyme in pineapple breaks down proteins?",
+            "options": ["Papain", "Bromelain", "Pepsin", "Trypsin"],
+            "correct": 1,
+            "difficulty": "hard",
+            "xp_reward": 20,
+            "explanation": "Bromelain is the enzyme in pineapple that breaks down proteins and tenderizes meat."
+        },
+        {
+            "question": "What is the traditional thickening agent in gumbo?",
+            "options": ["Cornstarch", "Flour", "Okra or filé powder", "Arrowroot"],
+            "correct": 2,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Traditional gumbo is thickened with either okra or filé powder (ground sassafras leaves)."
+        },
+        {
+            "question": "Which cooking method was invented by Benjamin Thompson (Count Rumford)?",
+            "options": ["Pressure cooking", "Sous vide", "Baking", "Modern oven design"],
+            "correct": 3,
+            "difficulty": "hard",
+            "xp_reward": 20,
+            "explanation": "Count Rumford revolutionized oven design and cooking efficiency in the late 1700s."
+        },
+        {
+            "question": "What gives black garlic its distinctive color and flavor?",
+            "options": ["Charcoal coating", "Maillard reaction", "Food coloring", "Fermentation"],
+            "correct": 1,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Black garlic gets its color and sweet flavor from the Maillard reaction during slow heating."
+        },
+        {
+            "question": "Which salt is traditionally used in Korean cuisine?",
+            "options": ["Sea salt", "Rock salt", "Bamboo salt", "Table salt"],
+            "correct": 2,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Bamboo salt (죽염) is traditional Korean salt roasted in bamboo tubes, prized for its mineral content."
         }
     ]
     
-    # Randomize the selection to ensure variety
-    random.shuffle(fallback_questions)
-    selected_questions = fallback_questions[:num_questions]
+    # MAXIMUM RANDOMIZATION for fallback questions
+    current_time = datetime.now()
+    time_seed = int(current_time.timestamp() * 1000000) % 999999
+    random.seed(time_seed)
     
-    # Ensure good difficulty distribution
-    easy_questions = [q for q in selected_questions if q['difficulty'] == 'easy']
-    medium_questions = [q for q in selected_questions if q['difficulty'] == 'medium'] 
-    hard_questions = [q for q in selected_questions if q['difficulty'] == 'hard']
+    # Multiple shuffles with different seeds
+    for i in range(random.randint(3, 7)):
+        random.shuffle(all_fallback_questions)
     
-    # Balance if needed
-    final_questions = []
-    target_easy = max(1, num_questions // 3)
-    target_medium = max(1, num_questions // 2)
-    target_hard = num_questions - target_easy - target_medium
+    # Create multiple random selections and combine them
+    selection1 = random.sample(all_fallback_questions, min(num_questions, len(all_fallback_questions)))
+    random.shuffle(all_fallback_questions)
+    selection2 = random.sample(all_fallback_questions, min(num_questions, len(all_fallback_questions)))
     
-    final_questions.extend(easy_questions[:target_easy])
-    final_questions.extend(medium_questions[:target_medium])
-    final_questions.extend(hard_questions[:target_hard])
+    # Randomly choose which selection to use or combine them
+    if random.choice([True, False]):
+        final_selection = selection1
+    else:
+        final_selection = selection2
     
-    # Fill remaining slots if needed
-    while len(final_questions) < num_questions:
-        remaining = [q for q in fallback_questions if q not in final_questions]
-        if remaining:
-            final_questions.append(random.choice(remaining))
-        else:
-            break
+    # Final randomization
+    random.shuffle(final_selection)
     
-    return final_questions[:num_questions]
+    # Randomize difficulty distribution
+    difficulties = ['easy', 'medium', 'hard']
+    for question in final_selection:
+        if random.random() < 0.3:  # 30% chance to randomize difficulty
+            question['difficulty'] = random.choice(difficulties)
+            xp_map = {'easy': 10, 'medium': 15, 'hard': 20}
+            question['xp_reward'] = xp_map[question['difficulty']]
+    
+    logger.info(f"Generated {len(final_selection)} maximum randomized fallback questions with time seed: {time_seed}")
+    return final_selection[:num_questions]
 
 def calculate_quiz_score(answers: List[int], questions: List[Dict]) -> Tuple[int, int, int]:
     """
