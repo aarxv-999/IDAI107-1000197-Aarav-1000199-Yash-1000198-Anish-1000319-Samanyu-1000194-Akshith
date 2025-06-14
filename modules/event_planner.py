@@ -9,6 +9,7 @@ This module provides:
 4. User-friendly display of event plans
 5. PDF export functionality
 6. Budget estimation in INR
+7. **NEW: Gamification system with XP rewards for different user roles**
 """
 
 import streamlit as st
@@ -25,6 +26,13 @@ import pandas as pd
 from fpdf import FPDF
 import base64
 import io
+
+# **NEW: Import gamification functions**
+from modules.leftover import (
+    get_user_stats, update_user_stats, award_recipe_xp, 
+    generate_dynamic_quiz_questions, calculate_quiz_score,
+    get_firestore_db
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -63,6 +71,373 @@ def get_event_db():
     if init_event_firebase():
         return firestore.client(app=firebase_admin.get_app(name='event_app'))
     return None
+
+# **NEW: Gamification Functions for Event Planning**
+
+def award_event_planning_xp(user_id: str, user_role: str, activity_type: str = "chatbot_use") -> Dict:
+    """
+    Award XP for event planning activities based on user role.
+    
+    Args:
+        user_id (str): User's unique ID
+        user_role (str): User's role (admin, staff, chef, user)
+        activity_type (str): Type of activity performed
+    
+    Returns:
+        Dict: Updated user stats
+    """
+    try:
+        # XP rewards based on role and activity
+        xp_rewards = {
+            'admin': {
+                'chatbot_use': 15,  # Higher XP for admin using chatbot
+                'event_plan_generated': 25,
+                'event_quiz_correct': 10
+            },
+            'staff': {
+                'chatbot_use': 12,  # Good XP for staff using chatbot
+                'event_plan_generated': 20,
+                'event_quiz_correct': 10
+            },
+            'chef': {
+                'chatbot_use': 12,  # Same as staff
+                'event_plan_generated': 20,
+                'event_quiz_correct': 10
+            },
+            'user': {
+                'event_quiz_correct': 15,  # Users get XP from quizzes only
+                'event_knowledge_bonus': 20,  # Bonus for learning about events
+                'event_suggestion': 10  # XP for providing event suggestions
+            }
+        }
+        
+        xp_to_award = xp_rewards.get(user_role, {}).get(activity_type, 0)
+        
+        if xp_to_award > 0:
+            # Use existing gamification system
+            current_stats = get_user_stats(user_id)
+            
+            db = get_firestore_db()
+            user_stats_ref = db.collection('user_stats').document(user_id)
+            
+            new_total_xp = current_stats['total_xp'] + xp_to_award
+            new_level = calculate_level(new_total_xp)
+            
+            # Update event-specific stats
+            event_activities = current_stats.get('event_activities', 0) + 1
+            
+            updated_stats = current_stats.copy()
+            updated_stats.update({
+                'total_xp': new_total_xp,
+                'level': new_level,
+                'event_activities': event_activities
+            })
+            
+            user_stats_ref.set(updated_stats)
+            logger.info(f"Awarded {xp_to_award} XP to {user_role} for {activity_type}")
+            
+            # Store XP notification in session state
+            if 'xp_notifications' not in st.session_state:
+                st.session_state.xp_notifications = []
+            
+            st.session_state.xp_notifications.append({
+                'xp': xp_to_award,
+                'activity': activity_type,
+                'timestamp': datetime.now()
+            })
+            
+            return updated_stats
+        else:
+            logger.info(f"No XP awarded for {user_role} doing {activity_type}")
+            return get_user_stats(user_id)
+            
+    except Exception as e:
+        logger.error(f"Error awarding event planning XP: {str(e)}")
+        return get_user_stats(user_id)
+
+def calculate_level(total_xp: int) -> int:
+    """Calculate user level based on total XP."""
+    import math
+    return max(1, int(math.sqrt(total_xp / 100)) + 1)
+
+def show_xp_notification():
+    """Display XP notifications to the user."""
+    if 'xp_notifications' in st.session_state and st.session_state.xp_notifications:
+        for notification in st.session_state.xp_notifications:
+            activity_messages = {
+                'chatbot_use': 'using the Event Planning ChatBot',
+                'event_plan_generated': 'generating an event plan',
+                'event_quiz_correct': 'answering event quiz correctly',
+                'event_knowledge_bonus': 'learning about event planning',
+                'event_suggestion': 'providing event suggestions'
+            }
+            
+            activity_msg = activity_messages.get(notification['activity'], 'event planning activity')
+            st.success(f"🎉 +{notification['xp']} XP earned for {activity_msg}!")
+        
+        # Clear notifications after showing
+        st.session_state.xp_notifications = []
+
+def render_event_quiz_for_users(user_id: str):
+    """
+    Render event planning quiz for regular users to earn XP.
+    This is the improvised method for users who can't organize events themselves.
+    """
+    st.markdown("### 🧠 Event Planning Knowledge Quiz")
+    st.markdown("*Learn about event planning and earn XP!*")
+    
+    # Event planning focused ingredients/topics for quiz generation
+    event_topics = [
+        "catering", "banquet", "buffet", "appetizers", "main course", 
+        "desserts", "beverages", "party planning", "wedding catering",
+        "corporate events", "birthday parties", "seasonal events"
+    ]
+    
+    if 'event_quiz_questions' not in st.session_state:
+        st.session_state.event_quiz_questions = None
+    if 'event_quiz_answers' not in st.session_state:
+        st.session_state.event_quiz_answers = []
+    if 'event_quiz_submitted' not in st.session_state:
+        st.session_state.event_quiz_submitted = False
+    if 'event_quiz_results' not in st.session_state:
+        st.session_state.event_quiz_results = None
+
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        num_questions = st.selectbox("Questions:", [3, 5, 7], index=1, key="event_quiz_num")
+    with col2:
+        if st.button("Start Event Quiz", type="primary", use_container_width=True, key="start_event_quiz"):
+            with st.spinner("Loading event planning questions..."):
+                # Generate event-focused quiz questions
+                st.session_state.event_quiz_questions = generate_event_quiz_questions(event_topics, num_questions)
+                st.session_state.event_quiz_answers = []
+                st.session_state.event_quiz_submitted = False
+                st.session_state.event_quiz_results = None
+                st.rerun()
+
+    if st.session_state.event_quiz_questions and not st.session_state.event_quiz_submitted:
+        st.divider()
+        answers = []
+        for i, question in enumerate(st.session_state.event_quiz_questions):
+            with st.container():
+                st.write(f"**{i+1}.** {question['question']}")
+                st.caption(f"Event Planning • {question['xp_reward']} XP")
+                answer = st.radio("Select answer:", options=question['options'], key=f"event_q_{i}", index=None, label_visibility="collapsed")
+                if answer:
+                    answers.append(question['options'].index(answer))
+                else:
+                    answers.append(-1)
+            if i < len(st.session_state.event_quiz_questions) - 1:
+                st.divider()
+        
+        st.write("")
+        if st.button("Submit Event Quiz", type="primary", use_container_width=True, key="submit_event_quiz"):
+            if -1 in answers:
+                st.error("Please answer all questions before submitting.")
+            else:
+                st.session_state.event_quiz_answers = answers
+                st.session_state.event_quiz_submitted = True
+                correct, total, xp_earned = calculate_quiz_score(answers, st.session_state.event_quiz_questions)
+                st.session_state.event_quiz_results = {
+                    'correct': correct,
+                    'total': total,
+                    'xp_earned': xp_earned,
+                    'percentage': (correct / total) * 100
+                }
+                
+                # Award XP for each correct answer
+                for i, answer in enumerate(answers):
+                    if answer == st.session_state.event_quiz_questions[i]['correct']:
+                        award_event_planning_xp(user_id, 'user', 'event_quiz_correct')
+                
+                # Bonus XP for learning
+                if correct > 0:
+                    award_event_planning_xp(user_id, 'user', 'event_knowledge_bonus')
+                
+                st.rerun()
+
+    if st.session_state.event_quiz_submitted and st.session_state.event_quiz_results:
+        display_event_quiz_results(st.session_state.event_quiz_results, st.session_state.event_quiz_questions, st.session_state.event_quiz_answers)
+
+def generate_event_quiz_questions(topics: List[str], num_questions: int = 5) -> List[Dict]:
+    """Generate event planning focused quiz questions."""
+    try:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            logger.error("GEMINI_API_KEY not found, using fallback event questions")
+            return generate_fallback_event_questions(num_questions)
+            
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+
+        topics_list = ", ".join(topics)
+        
+        prompt = f'''
+        Generate {num_questions} unique quiz questions about event planning and catering.
+        Focus on these topics: {topics_list}
+        
+        Include questions about:
+        - Event planning basics and best practices
+        - Catering and food service for events
+        - Party planning and organization
+        - Budget planning for events
+        - Menu planning for different event types
+        - Event logistics and coordination
+        
+        Format as JSON array:
+        [
+            {{
+                "question": "Event planning question?",
+                "options": ["Option A", "Option B", "Option C", "Option D"],
+                "correct": 0,
+                "difficulty": "easy",
+                "xp_reward": 15,
+                "explanation": "Helpful explanation about event planning"
+            }}
+        ]
+
+        XP Rewards: easy=15, medium=20, hard=25 (higher than cooking quiz since this is educational)
+        '''
+
+        response = model.generate_content(prompt)
+        response_text = response.text.strip()
+
+        # Clean up the response to extract JSON
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0]
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0]
+
+        try:
+            questions = json.loads(response_text)
+            if isinstance(questions, list) and len(questions) > 0:
+                return questions[:num_questions]
+            else:
+                return generate_fallback_event_questions(num_questions)
+        except json.JSONDecodeError:
+            return generate_fallback_event_questions(num_questions)
+
+    except Exception as e:
+        logger.error(f"Error generating event quiz questions: {str(e)}")
+        return generate_fallback_event_questions(num_questions)
+
+def generate_fallback_event_questions(num_questions: int = 5) -> List[Dict]:
+    """Generate fallback event planning quiz questions."""
+    event_questions = [
+        {
+            "question": "What is the recommended food quantity per person for a buffet-style event?",
+            "options": ["0.5-0.75 lbs", "1-1.5 lbs", "2-2.5 lbs", "3-4 lbs"],
+            "correct": 1,
+            "difficulty": "easy",
+            "xp_reward": 15,
+            "explanation": "For buffet events, plan for 1-1.5 lbs of food per person to ensure adequate portions."
+        },
+        {
+            "question": "How far in advance should you typically book a venue for a large event?",
+            "options": ["1-2 weeks", "1 month", "3-6 months", "1 year"],
+            "correct": 2,
+            "difficulty": "medium",
+            "xp_reward": 20,
+            "explanation": "Popular venues book up quickly, so 3-6 months advance booking is recommended for large events."
+        },
+        {
+            "question": "What percentage of the total event budget is typically allocated to catering?",
+            "options": ["20-30%", "40-50%", "60-70%", "80-90%"],
+            "correct": 1,
+            "difficulty": "medium",
+            "xp_reward": 20,
+            "explanation": "Catering usually represents 40-50% of the total event budget, being one of the largest expenses."
+        },
+        {
+            "question": "Which seating arrangement is best for encouraging interaction at corporate events?",
+            "options": ["Theater style", "Classroom style", "Round tables", "U-shape"],
+            "correct": 2,
+            "difficulty": "easy",
+            "xp_reward": 15,
+            "explanation": "Round tables promote conversation and networking, making them ideal for corporate events."
+        },
+        {
+            "question": "What is the ideal room temperature for most indoor events?",
+            "options": ["65-68°F", "68-72°F", "72-76°F", "76-80°F"],
+            "correct": 1,
+            "difficulty": "easy",
+            "xp_reward": 15,
+            "explanation": "68-72°F is comfortable for most people and accounts for body heat from crowds."
+        },
+        {
+            "question": "How many appetizer pieces per person should you plan for a cocktail reception?",
+            "options": ["3-4 pieces", "6-8 pieces", "10-12 pieces", "15-20 pieces"],
+            "correct": 2,
+            "difficulty": "medium",
+            "xp_reward": 20,
+            "explanation": "Plan for 10-12 appetizer pieces per person for a cocktail reception without a full meal."
+        },
+        {
+            "question": "What is the standard ratio of servers to guests for a plated dinner event?",
+            "options": ["1:5", "1:10", "1:15", "1:20"],
+            "correct": 1,
+            "difficulty": "hard",
+            "xp_reward": 25,
+            "explanation": "One server per 10 guests ensures efficient service for plated dinner events."
+        },
+        {
+            "question": "Which factor is most important when planning an outdoor event menu?",
+            "options": ["Cost", "Weather conditions", "Guest preferences", "Venue restrictions"],
+            "correct": 1,
+            "difficulty": "medium",
+            "xp_reward": 20,
+            "explanation": "Weather affects food safety, presentation, and guest comfort, making it the top priority for outdoor events."
+        }
+    ]
+    
+    import random
+    random.shuffle(event_questions)
+    return event_questions[:num_questions]
+
+def display_event_quiz_results(results: Dict, questions: List[Dict], user_answers: List[int]):
+    """Display event quiz results with XP earned."""
+    st.divider()
+    st.subheader("🎉 Event Quiz Results")
+    score = results['correct']
+    total = results['total']
+    percentage = results['percentage']
+    xp_earned = results['xp_earned']
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Score", f"{score}/{total}")
+    with col2:
+        st.metric("Accuracy", f"{percentage:.1f}%")
+    with col3:
+        st.metric("XP Earned", f"+{xp_earned}")
+    with col4:
+        if percentage == 100:
+            st.metric("Grade", "Perfect")
+        elif percentage >= 80:
+            st.metric("Grade", "Excellent")
+        elif percentage >= 60:
+            st.metric("Grade", "Good")
+        else:
+            st.metric("Grade", "Keep Learning")
+
+    if percentage == 100:
+        st.success("🎉 Perfect score! You're an event planning expert!")
+    elif percentage >= 80:
+        st.success("🌟 Excellent work! Your event planning knowledge is impressive.")
+    elif percentage >= 60:
+        st.info("👍 Good job! Keep learning about event planning.")
+    else:
+        st.warning("📚 Keep studying! Event planning has many aspects to master.")
+
+    # Show XP notifications
+    show_xp_notification()
+
+    if st.button("Take Another Event Quiz", use_container_width=True, key="another_event_quiz"):
+        st.session_state.event_quiz_questions = None
+        st.session_state.event_quiz_answers = []
+        st.session_state.event_quiz_submitted = False
+        st.session_state.event_quiz_results = None
+        st.rerun()
 
 # AI Model Configuration
 def configure_ai_model():
@@ -177,12 +552,15 @@ def get_customers() -> List[Dict]:
         return []
 
 # AI Event Planning Functions
-def generate_event_plan(query: str) -> Dict:
+def generate_event_plan(query: str, user_id: str, user_role: str) -> Dict:
     """
     Generate an event plan using AI based on user query
+    **NEW: Now includes gamification - awards XP for using the chatbot**
 
     Args:
         query: User's natural language query about event planning
+        user_id: User's unique ID for XP tracking
+        user_role: User's role for XP calculation
         
     Returns:
         Dictionary containing generated event plan details
@@ -193,6 +571,10 @@ def generate_event_plan(query: str) -> Dict:
             'error': 'AI model configuration failed',
             'success': False
         }
+
+    # **NEW: Award XP for using the chatbot (staff/admin only)**
+    if user_role in ['admin', 'staff', 'chef']:
+        award_event_planning_xp(user_id, user_role, 'chatbot_use')
 
     # Get available recipe items and ingredients for context
     recipe_items = get_recipe_items()
@@ -333,6 +715,10 @@ def generate_event_plan(query: str) -> Dict:
         event_plan['date'] = datetime.now().strftime("%Y-%m-%d")
         event_plan['guest_count'] = guest_count
         
+        # **NEW: Award additional XP for successfully generating an event plan**
+        if user_role in ['admin', 'staff', 'chef']:
+            award_event_planning_xp(user_id, user_role, 'event_plan_generated')
+        
         return {
             'plan': event_plan,
             'success': True
@@ -344,7 +730,7 @@ def generate_event_plan(query: str) -> Dict:
             'success': False
         }
 
-# PDF Generation Functions
+# PDF Generation Functions (keeping existing functions)
 def create_event_pdf(event_plan: Dict) -> bytes:
     """
     Create a PDF document of the event plan
@@ -779,8 +1165,29 @@ def render_budget_visualization(budget: Dict):
             st.bar_chart(chart_data.set_index('Category'))
 
 def render_chatbot_ui():
-    """Render the event planning chatbot UI"""
+    """
+    Render the event planning chatbot UI
+    **NEW: Now includes gamification integration**
+    """
     st.markdown("### 🤖 Event Planning Assistant")
+    
+    # **NEW: Get user info for gamification**
+    user = st.session_state.get('user', {})
+    user_id = user.get('user_id', '')
+    user_role = user.get('role', 'user')
+    
+    # **NEW: Show XP info for staff/admin**
+    if user_role in ['admin', 'staff', 'chef']:
+        user_stats = get_user_stats(user_id)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Level", user_stats['level'])
+        with col2:
+            st.metric("Total XP", user_stats['total_xp'])
+        with col3:
+            st.metric("Event Activities", user_stats.get('event_activities', 0))
+        
+        st.info("💡 **Earn XP by using the Event Planning ChatBot!** You get XP for each interaction and successful event plan generation.")
 
     # Initialize chat history
     if 'event_chat_history' not in st.session_state:
@@ -813,11 +1220,15 @@ def render_chatbot_ui():
         # Generate response
         with st.chat_message('assistant'):
             with st.spinner("Planning your event..."):
-                response = generate_event_plan(user_query)
+                # **NEW: Pass user info for gamification**
+                response = generate_event_plan(user_query, user_id, user_role)
                 
                 if response['success']:
                     event_plan = response['plan']
                     st.session_state.current_event_plan = event_plan
+                    
+                    # **NEW: Show XP notifications**
+                    show_xp_notification()
                     
                     # Display response in a user-friendly format
                     st.markdown(f"### 🎉 {event_plan['theme']['name']}")
@@ -941,13 +1352,56 @@ def render_chatbot_ui():
                     })
 
 def render_user_invites():
-    """Render the user's event invites UI"""
-    st.markdown("### 📬 My Event Invites")
-    st.info("Event invites feature has been disabled.")
+    """
+    Render the user's event invites UI
+    **NEW: Now includes event planning quiz for XP earning**
+    """
+    st.markdown("### 📬 My Event Experience")
+    
+    # **NEW: Get user info for gamification**
+    user = st.session_state.get('user', {})
+    user_id = user.get('user_id', '')
+    
+    # **NEW: Show user stats**
+    user_stats = get_user_stats(user_id)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Level", user_stats['level'])
+    with col2:
+        st.metric("Total XP", user_stats['total_xp'])
+    with col3:
+        st.metric("Event Activities", user_stats.get('event_activities', 0))
+    
+    st.info("💡 **Earn XP by learning about event planning!** Take quizzes to gain knowledge and experience points.")
+    
+    # **NEW: Event planning quiz for users**
+    st.divider()
+    render_event_quiz_for_users(user_id)
+    
+    st.divider()
+    st.markdown("### 🎉 Event Suggestions")
+    st.markdown("Have ideas for restaurant events? Share them here and earn XP!")
+    
+    # **NEW: Event suggestion form for users to earn XP**
+    with st.form("event_suggestion_form"):
+        suggestion_title = st.text_input("Event Idea Title", placeholder="e.g., Wine Tasting Night")
+        suggestion_description = st.text_area("Describe your event idea", placeholder="Tell us about your event concept...")
+        
+        if st.form_submit_button("Submit Suggestion", type="primary"):
+            if suggestion_title and suggestion_description:
+                # Award XP for providing suggestions
+                award_event_planning_xp(user_id, 'user', 'event_suggestion')
+                st.success("🎉 Thank you for your suggestion! You've earned XP for contributing ideas.")
+                show_xp_notification()
+            else:
+                st.error("Please fill in both the title and description.")
 
 # Main Event Planner Function
 def event_planner():
-    """Main function to render the event planner UI based on user role"""
+    """
+    Main function to render the event planner UI based on user role
+    **NEW: Now includes gamification for all user types**
+    """
     st.title("🎉 Event Planning System")
 
     # Check if user is logged in
@@ -960,10 +1414,10 @@ def event_planner():
 
     # Different views based on role
     if user_role in ['admin', 'staff', 'chef']:
-        # Staff view with only chatbot
+        # Staff view with chatbot and gamification
         render_chatbot_ui()
     else:
-        # Customer view - only shows their invites
+        # Customer view with quiz and suggestions for XP
         render_user_invites()
 
 # For testing the module independently
