@@ -1,6 +1,5 @@
 """
-Event Planning Chatbot for Smart Restaurant Management App
-Simplified version with clean UI and maintained functionality
+Enhanced Event Planning Chatbot with Firebase integration
 """
 
 import streamlit as st
@@ -21,6 +20,10 @@ import random
 from modules.leftover import (
     get_user_stats, calculate_level, get_firestore_db,
     generate_dynamic_quiz_questions, calculate_quiz_score
+)
+from modules.firebase_data import (
+    fetch_recipe_archive, fetch_menu_items, get_popular_recipes,
+    format_recipe_for_display, format_menu_item_for_display
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -76,8 +79,92 @@ def configure_ai_model():
         st.error(f"Failed to configure AI model: {str(e)}")
         return None
 
+def clean_text_for_pdf(text: str) -> str:
+    """Clean text to remove Unicode characters that can't be encoded in latin-1"""
+    if not text:
+        return ""
+    
+    # Replace common Unicode characters with ASCII equivalents
+    replacements = {
+        '\u2022': '-',  # bullet point
+        '\u2013': '-',  # en dash
+        '\u2014': '--', # em dash
+        '\u2018': "'",  # left single quotation mark
+        '\u2019': "'",  # right single quotation mark
+        '\u201c': '"',  # left double quotation mark
+        '\u201d': '"',  # right double quotation mark
+        '\u2026': '...', # horizontal ellipsis
+        '\u00a0': ' ',  # non-breaking space
+        '\u00b0': ' degrees', # degree symbol
+        '\u20b9': 'Rs. ', # Indian Rupee symbol
+        '\u00ae': '(R)', # registered trademark
+        '\u00a9': '(C)', # copyright
+        '\u2122': '(TM)', # trademark
+    }
+    
+    # Apply replacements
+    for unicode_char, replacement in replacements.items():
+        text = text.replace(unicode_char, replacement)
+    
+    # Remove any remaining non-ASCII characters
+    try:
+        # Try to encode as latin-1, replace problematic characters
+        text = text.encode('latin-1', errors='replace').decode('latin-1')
+    except Exception:
+        # If that fails, keep only ASCII characters
+        text = ''.join(char for char in text if ord(char) < 128)
+    
+    return text
+
+def get_firebase_menu_suggestions(guest_count: int, event_type: str = "") -> List[str]:
+    """Get menu suggestions from Firebase recipe archive and menu collections"""
+    try:
+        # Get recipes from archive
+        recipes = fetch_recipe_archive()
+        menu_items = fetch_menu_items()
+        
+        suggestions = []
+        
+        # Add popular recipes
+        if recipes:
+            popular_recipes = recipes[:5]  # Get first 5 recipes
+            for recipe in popular_recipes:
+                formatted = format_recipe_for_display(recipe)
+                suggestions.append(f"Recipe: {formatted}")
+        
+        # Add menu items
+        if menu_items:
+            popular_menu = menu_items[:5]  # Get first 5 menu items
+            for item in popular_menu:
+                formatted = format_menu_item_for_display(item)
+                suggestions.append(f"Menu: {formatted}")
+        
+        # If we have suggestions, return them
+        if suggestions:
+            return suggestions[:8]  # Return up to 8 suggestions
+        
+        # Fallback suggestions if Firebase is empty
+        return [
+            "Vegetable Biryani with Raita",
+            "Paneer Butter Masala with Naan",
+            "Mixed Vegetable Curry with Rice",
+            "Dal Tadka with Roti",
+            "Chole Bhature",
+            "Samosa with Chutney"
+        ]
+        
+    except Exception as e:
+        logger.error(f"Error getting Firebase menu suggestions: {str(e)}")
+        # Return fallback suggestions
+        return [
+            "Vegetable Biryani with Raita",
+            "Paneer Butter Masala with Naan",
+            "Mixed Vegetable Curry with Rice",
+            "Dal Tadka with Roti"
+        ]
+
 def generate_event_plan(query: str, user_id: str, user_role: str) -> Dict:
-    """Generate event plan with simplified JSON parsing"""
+    """Generate event plan with Firebase integration"""
     model = configure_ai_model()
     if not model:
         return {'error': 'AI model configuration failed', 'success': False}
@@ -87,6 +174,10 @@ def generate_event_plan(query: str, user_id: str, user_role: str) -> Dict:
     guest_matches = re.findall(r'(\d+)\s+(?:people|guests|persons)', query)
     if guest_matches:
         guest_count = int(guest_matches[0])
+
+    # Get menu suggestions from Firebase
+    firebase_menu_suggestions = get_firebase_menu_suggestions(guest_count, query)
+    menu_context = "\n".join([f"- {item}" for item in firebase_menu_suggestions])
 
     # Calculate costs
     food_cost_per_person = 500
@@ -101,7 +192,12 @@ def generate_event_plan(query: str, user_id: str, user_role: str) -> Dict:
 
 Guest count: {guest_count}
 
-Return ONLY valid JSON:
+Available menu options from restaurant database:
+{menu_context}
+
+Use these actual menu items in your recipe suggestions when possible.
+
+Return ONLY valid JSON with simple ASCII text (no special characters):
 
 {{
   "theme": {{
@@ -109,7 +205,7 @@ Return ONLY valid JSON:
     "description": "Theme description"
   }},
   "seating": {{
-    "layout": "Seating description",
+    "layout": "Seating description for {guest_count} guests",
     "tables": [
       {{"table_number": 1, "shape": "round", "seats": 8, "location": "center"}}
     ]
@@ -120,9 +216,9 @@ Return ONLY valid JSON:
     "Decoration 3"
   ],
   "recipe_suggestions": [
-    "Recipe 1",
-    "Recipe 2", 
-    "Recipe 3"
+    "Recipe from database or new suggestion 1",
+    "Recipe from database or new suggestion 2", 
+    "Recipe from database or new suggestion 3"
   ],
   "budget": {{
     "food_cost_per_person": {food_cost_per_person},
@@ -140,7 +236,12 @@ Return ONLY valid JSON:
     ]
   }},
   "invitation": "Invitation text here"
-}}'''
+}}
+
+IMPORTANT: 
+- Use only simple ASCII characters, no special symbols or Unicode characters
+- Prioritize using the actual menu items from the restaurant database
+- Make suggestions practical for a restaurant setting'''
 
     try:
         response = model.generate_content(prompt)
@@ -157,37 +258,71 @@ Return ONLY valid JSON:
         json_text = response_text[start_idx:end_idx + 1]
         event_plan = json.loads(json_text)
         
+        # Clean all text fields in the event plan for PDF compatibility
+        event_plan = clean_event_plan_text(event_plan)
+        
         event_plan['date'] = datetime.now().strftime("%Y-%m-%d")
         event_plan['guest_count'] = guest_count
+        event_plan['firebase_menu_used'] = len([item for item in firebase_menu_suggestions if any(
+            menu_item.lower() in suggestion.lower() 
+            for suggestion in event_plan.get('recipe_suggestions', [])
+            for menu_item in [item.split(': ', 1)[-1] if ': ' in item else item]
+        )]) > 0
         
-        logger.info(f"Successfully generated event plan for {guest_count} guests")
+        logger.info(f"Successfully generated event plan for {guest_count} guests with Firebase integration")
         return {'plan': event_plan, 'success': True}
         
     except Exception as e:
         logger.error(f"Error generating event plan: {str(e)}")
         return {'error': str(e), 'success': False}
 
+def clean_event_plan_text(event_plan: Dict) -> Dict:
+    """Recursively clean all text in the event plan for PDF compatibility"""
+    if isinstance(event_plan, dict):
+        cleaned = {}
+        for key, value in event_plan.items():
+            cleaned[key] = clean_event_plan_text(value)
+        return cleaned
+    elif isinstance(event_plan, list):
+        return [clean_event_plan_text(item) for item in event_plan]
+    elif isinstance(event_plan, str):
+        return clean_text_for_pdf(event_plan)
+    else:
+        return event_plan
+
 def create_event_pdf(event_plan: Dict) -> bytes:
-    """Create PDF with simplified formatting"""
+    """Create PDF with proper Unicode handling and error prevention"""
     try:
         pdf = FPDF()
         pdf.add_page()
         
+        # Clean the theme name for the title
+        theme_name = clean_text_for_pdf(event_plan.get('theme', {}).get('name', 'Event Plan'))
+        
         pdf.set_font("Arial", "B", 16)
-        pdf.cell(0, 10, f"EVENT PLAN: {event_plan['theme']['name'].upper()}", ln=True, align="C")
+        pdf.cell(0, 10, f"EVENT PLAN: {theme_name.upper()}", ln=True, align="C")
         pdf.ln(5)
         
         pdf.set_font("Arial", "", 12)
         pdf.cell(0, 8, f"Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}", ln=True)
         pdf.cell(0, 8, f"Guests: {event_plan.get('guest_count', 'Not specified')}", ln=True)
+        
+        # Add Firebase integration note
+        if event_plan.get('firebase_menu_used', False):
+            pdf.cell(0, 8, "Menu: Based on restaurant database", ln=True)
+        
         pdf.ln(5)
         
+        # Theme section
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "THEME", ln=True)
         pdf.set_font("Arial", "", 11)
-        pdf.multi_cell(0, 6, event_plan['theme']['description'])
+        
+        theme_description = clean_text_for_pdf(event_plan.get('theme', {}).get('description', 'No description available'))
+        pdf.multi_cell(0, 6, theme_description)
         pdf.ln(3)
         
+        # Budget section
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "BUDGET (INR)", ln=True)
         pdf.set_font("Arial", "", 11)
@@ -199,41 +334,65 @@ def create_event_pdf(event_plan: Dict) -> bytes:
             pdf.ln(2)
             
             for item in budget.get('breakdown', []):
-                pdf.cell(0, 5, f"• {item.get('item', '')}: Rs. {item.get('cost', 0):,}", ln=True)
+                item_name = clean_text_for_pdf(item.get('item', 'Unknown Item'))
+                pdf.cell(0, 5, f"- {item_name}: Rs. {item.get('cost', 0):,}", ln=True)
             pdf.ln(3)
         
+        # Seating section
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "SEATING", ln=True)
         pdf.set_font("Arial", "", 11)
-        pdf.multi_cell(0, 6, event_plan['seating']['layout'])
+        
+        seating_layout = clean_text_for_pdf(event_plan.get('seating', {}).get('layout', 'No seating information available'))
+        pdf.multi_cell(0, 6, seating_layout)
         pdf.ln(3)
         
+        # Decoration section
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "DECORATION", ln=True)
         pdf.set_font("Arial", "", 11)
-        for item in event_plan['decor']:
-            pdf.cell(0, 5, f"• {item}", ln=True)
+        
+        for item in event_plan.get('decor', []):
+            clean_item = clean_text_for_pdf(str(item))
+            pdf.cell(0, 5, f"- {clean_item}", ln=True)
         pdf.ln(3)
         
+        # Menu section
         pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, "MENU", ln=True)
+        pdf.cell(0, 10, "MENU (FROM RESTAURANT DATABASE)", ln=True)
         pdf.set_font("Arial", "", 11)
-        for item in event_plan['recipe_suggestions']:
-            pdf.cell(0, 5, f"• {item}", ln=True)
+        
+        for item in event_plan.get('recipe_suggestions', []):
+            clean_item = clean_text_for_pdf(str(item))
+            pdf.cell(0, 5, f"- {clean_item}", ln=True)
         pdf.ln(3)
         
+        # Invitation section
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "INVITATION", ln=True)
         pdf.set_font("Arial", "", 11)
-        pdf.multi_cell(0, 6, event_plan['invitation'])
         
-        return pdf.output(dest="S").encode("latin1")
+        invitation_text = clean_text_for_pdf(event_plan.get('invitation', 'No invitation text available'))
+        pdf.multi_cell(0, 6, invitation_text)
+        
+        # Generate PDF bytes with proper encoding
+        pdf_output = pdf.output(dest="S")
+        
+        # Handle the output based on FPDF version
+        if isinstance(pdf_output, str):
+            # Older FPDF versions return string
+            return pdf_output.encode("latin-1")
+        else:
+            # Newer FPDF versions return bytes
+            return pdf_output
+            
     except Exception as e:
         logger.error(f"Error creating PDF: {str(e)}")
+        # Return empty bytes if PDF creation fails
         return b""
 
 def event_planner():
-    """Simplified main event planner function"""
+    """Enhanced main event planner function with Firebase integration"""
     st.title("🎉 Event Planning Assistant")
     
     if 'user' not in st.session_state or not st.session_state.user:
@@ -244,6 +403,25 @@ def event_planner():
     user_role = user.get('role', 'user')
     user_id = user.get('user_id', '')
     
+    # Show Firebase integration status
+    try:
+        recipes = fetch_recipe_archive()
+        menu_items = fetch_menu_items()
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("📚 Recipe Archive", len(recipes))
+        with col2:
+            st.metric("🍽️ Menu Items", len(menu_items))
+        
+        if recipes or menu_items:
+            st.success("✅ Connected to restaurant database")
+        else:
+            st.info("ℹ️ Restaurant database is empty")
+            
+    except Exception as e:
+        st.warning("⚠️ Limited database access - using fallback suggestions")
+    
     if user_role in ['admin', 'staff', 'chef']:
         # Staff interface with chatbot
         render_chatbot_ui(user_id, user_role)
@@ -252,8 +430,8 @@ def event_planner():
         render_user_interface(user_id)
 
 def render_chatbot_ui(user_id: str, user_role: str):
-    """Simplified chatbot interface"""
-    st.markdown("### 🤖 AI Assistant")
+    """Enhanced chatbot interface with Firebase integration"""
+    st.markdown("### 🤖 AI Assistant (Connected to Restaurant Database)")
     
     if 'event_chat_history' not in st.session_state:
         st.session_state.event_chat_history = []
@@ -273,18 +451,18 @@ def render_chatbot_ui(user_id: str, user_role: str):
     
     with col1:
         if st.button("🎂 Birthday Party", use_container_width=True):
-            st.session_state.suggested_query = "Plan a birthday party for 50 guests"
+            st.session_state.suggested_query = "Plan a birthday party for 50 guests using our restaurant menu"
     
     with col2:
         if st.button("💼 Corporate Event", use_container_width=True):
-            st.session_state.suggested_query = "Plan a corporate event for 100 guests"
+            st.session_state.suggested_query = "Plan a corporate event for 100 guests using our restaurant specialties"
     
     with col3:
         if st.button("💒 Wedding Reception", use_container_width=True):
-            st.session_state.suggested_query = "Plan a wedding reception for 200 guests"
+            st.session_state.suggested_query = "Plan a wedding reception for 200 guests with our premium menu items"
 
     # Chat input
-    user_query = st.chat_input("Describe your event...")
+    user_query = st.chat_input("Describe your event (will use restaurant database)...")
     
     if 'suggested_query' in st.session_state:
         user_query = st.session_state.suggested_query
@@ -299,7 +477,7 @@ def render_chatbot_ui(user_id: str, user_role: str):
         st.chat_message('user').write(user_query)
         
         with st.chat_message('assistant'):
-            with st.spinner("Creating event plan..."):
+            with st.spinner("Creating event plan using restaurant database..."):
                 response = generate_event_plan(user_query, user_id, user_role)
                 
                 if response['success']:
@@ -308,6 +486,12 @@ def render_chatbot_ui(user_id: str, user_role: str):
                     
                     st.markdown(f"### 🎉 {event_plan['theme']['name']}")
                     st.markdown(f"*{event_plan['theme']['description']}*")
+                    
+                    # Show Firebase integration status
+                    if event_plan.get('firebase_menu_used', False):
+                        st.success("✅ Using items from restaurant database")
+                    else:
+                        st.info("ℹ️ Using AI-generated suggestions")
                     
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -335,37 +519,52 @@ def render_chatbot_ui(user_id: str, user_role: str):
                             st.write(f"• {item}")
                     
                     with tabs[3]:
-                        st.write("**Menu Suggestions**")
+                        st.write("**Menu (From Restaurant Database)**")
                         for item in event_plan['recipe_suggestions']:
                             st.write(f"• {item}")
                     
                     with tabs[4]:
                         st.write("**Export Options**")
                         
-                        pdf_bytes = create_event_pdf(event_plan)
+                        # PDF generation with error handling
+                        try:
+                            pdf_bytes = create_event_pdf(event_plan)
+                            
+                            if pdf_bytes and len(pdf_bytes) > 0:
+                                st.download_button(
+                                    label="📄 Download PDF",
+                                    data=pdf_bytes,
+                                    file_name=f"event_plan_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True
+                                )
+                                st.success("✅ PDF ready for download!")
+                            else:
+                                st.error("❌ Failed to generate PDF. Please try the text export instead.")
+                        except Exception as e:
+                            st.error(f"❌ PDF generation failed: {str(e)}")
+                            logger.error(f"PDF generation error: {str(e)}")
                         
-                        if pdf_bytes:
-                            st.download_button(
-                                label="📄 Download PDF",
-                                data=pdf_bytes,
-                                file_name=f"event_plan_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                                mime="application/pdf",
-                                use_container_width=True
-                            )
+                        # Text export as fallback
+                        st.markdown("---")
+                        st.write("**Alternative: Text Export**")
                         
                         text_export = f"""EVENT PLAN: {event_plan['theme']['name']}
 Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}
 Guests: {event_plan.get('guest_count', 'Not specified')}
+Database Integration: {'Yes' if event_plan.get('firebase_menu_used', False) else 'No'}
 
 THEME: {event_plan['theme']['description']}
 
-BUDGET: ₹{event_plan.get('budget', {}).get('total_cost', 0):,}
+BUDGET: Rs. {event_plan.get('budget', {}).get('total_cost', 0):,}
 
 SEATING: {event_plan['seating']['layout']}
 
-DECORATION: {chr(10).join([f"• {item}" for item in event_plan['decor']])}
+DECORATION:
+{chr(10).join([f"- {item}" for item in event_plan['decor']])}
 
-MENU: {chr(10).join([f"• {item}" for item in event_plan['recipe_suggestions']])}
+MENU (FROM RESTAURANT DATABASE):
+{chr(10).join([f"- {item}" for item in event_plan['recipe_suggestions']])}
 
 INVITATION: {event_plan['invitation']}"""
                         
@@ -379,7 +578,7 @@ INVITATION: {event_plan['invitation']}"""
                     
                     st.session_state.event_chat_history.append({
                         'role': 'assistant',
-                        'content': f"Created event plan for '{event_plan['theme']['name']}' with budget of ₹{event_plan.get('budget', {}).get('total_cost', 0):,}"
+                        'content': f"Created event plan for '{event_plan['theme']['name']}' with budget of ₹{event_plan.get('budget', {}).get('total_cost', 0):,} using restaurant database"
                     })
                 else:
                     st.error(f"Failed to generate event plan: {response.get('error', 'Unknown error')}")
