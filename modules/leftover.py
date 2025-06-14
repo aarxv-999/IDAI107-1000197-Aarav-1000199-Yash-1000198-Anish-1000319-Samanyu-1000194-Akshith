@@ -16,6 +16,7 @@ import google.generativeai as genai
 import logging
 import random
 import json
+from datetime import datetime
 
 # Gamification-specific imports
 from firebase_admin import firestore
@@ -58,6 +59,27 @@ def parse_manual_leftovers(input_text: str) -> List[str]:
     ingredients = [ing.strip() for ing in ingredients if ing.strip()]
     return ingredients
 
+def parse_expiry_date(expiry_string: str) -> datetime:
+    '''
+    Parse expiry date from Firebase format "Expiry date: DD/MM/YYYY"
+    
+    ARGUMENT - expiry_string (str): The expiry date string from Firebase
+    RETURN - datetime: Parsed datetime object, or a far future date if parsing fails
+    '''
+    try:
+        # Remove "Expiry date:" prefix if present
+        if "Expiry date:" in expiry_string:
+            date_part = expiry_string.replace("Expiry date:", "").strip()
+        else:
+            date_part = expiry_string.strip()
+        
+        # Parse DD/MM/YYYY format
+        return datetime.strptime(date_part, "%d/%m/%Y")
+    except Exception as e:
+        logger.warning(f"Could not parse expiry date '{expiry_string}': {str(e)}")
+        # Return a far future date for items without valid expiry dates
+        return datetime(2099, 12, 31)
+
 def fetch_ingredients_from_firebase() -> List[Dict]:
     '''
     Fetches ingredients from Firebase ingredient_inventory collection using the event Firebase configuration
@@ -87,11 +109,61 @@ def fetch_ingredients_from_firebase() -> List[Dict]:
             item = doc.to_dict()
             item['id'] = doc.id
             ingredients.append(item)
-            
+        
+        # Sort ingredients by expiry date (closest to expire first)
+        ingredients.sort(key=lambda x: parse_expiry_date(x.get('Expiry Date', '')))
+        
         return ingredients
     except Exception as e:
         logger.error(f"Error fetching ingredients from Firebase: {str(e)}")
         raise Exception(f"Error fetching ingredients from Firebase: {str(e)}")
+
+def get_ingredients_by_expiry_priority(firebase_ingredients: List[Dict], max_ingredients: int = 10) -> Tuple[List[str], List[Dict]]:
+    '''
+    Get ingredients prioritized by expiry date (closest to expire first)
+    
+    ARGUMENT - 
+    firebase_ingredients (List[Dict]): List of ingredient dictionaries from Firebase
+    max_ingredients (int): Maximum number of ingredients to return
+    
+    RETURN - Tuple[List[str], List[Dict]]: (ingredient_names, detailed_ingredient_info)
+    '''
+    if not firebase_ingredients:
+        return [], []
+    
+    # Take the first max_ingredients (already sorted by expiry date)
+    priority_ingredients = firebase_ingredients[:max_ingredients]
+    
+    # Extract ingredient names
+    ingredient_names = []
+    detailed_info = []
+    
+    for item in priority_ingredients:
+        if 'Ingredient' in item and item['Ingredient']:
+            ingredient_names.append(item['Ingredient'])
+            detailed_info.append({
+                'name': item['Ingredient'],
+                'expiry_date': item.get('Expiry Date', 'No expiry date'),
+                'type': item.get('Type', 'No type'),
+                'days_until_expiry': calculate_days_until_expiry(item.get('Expiry Date', ''))
+            })
+    
+    return ingredient_names, detailed_info
+
+def calculate_days_until_expiry(expiry_string: str) -> int:
+    '''
+    Calculate days until expiry from current date
+    
+    ARGUMENT - expiry_string (str): The expiry date string
+    RETURN - int: Number of days until expiry (negative if expired)
+    '''
+    try:
+        expiry_date = parse_expiry_date(expiry_string)
+        current_date = datetime.now()
+        delta = expiry_date - current_date
+        return delta.days
+    except:
+        return 999  # Return a large number for invalid dates
 
 def parse_firebase_ingredients(firebase_ingredients: List[Dict]) -> List[str]:
     '''
@@ -106,14 +178,15 @@ def parse_firebase_ingredients(firebase_ingredients: List[Dict]) -> List[str]:
             ingredients.append(item['Ingredient'])
     return ingredients
 
-def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str = "") -> List[str]:
+def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str = "", priority_ingredients: List[Dict] = None) -> List[str]:
     '''
-    Suggest recipes based on the leftover ingredients.
+    Suggest recipes based on the leftover ingredients, with priority for ingredients close to expiry.
 
     ARGUMENT - 
     leftovers (List[str]), list of the leftover ingredients (whether via the csv file or manually entered)
     max_suggestions (int, optional): maximum number of recipe suggestions to output
     notes (str, optional): additional notes or requirements for the recipes
+    priority_ingredients (List[Dict], optional): detailed info about ingredients with expiry dates
 
     RETURN - List[str] of all recipes
     '''
@@ -135,16 +208,27 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
         
         # Add notes to the prompt if provided
         notes_text = f"\nAdditional requirements: {notes}" if notes else ""
+        
+        # Add priority information if available
+        priority_text = ""
+        if priority_ingredients:
+            urgent_ingredients = [ing for ing in priority_ingredients if ing['days_until_expiry'] <= 3]
+            if urgent_ingredients:
+                urgent_names = [ing['name'] for ing in urgent_ingredients]
+                priority_text = f"\nIMPORTANT: Please prioritize using these ingredients as they expire soon: {', '.join(urgent_names)}"
+        
         logger.info(f"Additional notes: {notes_text}")
+        logger.info(f"Priority ingredients: {priority_text}")
         
         prompt = f'''
-        Here are the leftover ingredients I have: {ingredients_list}.{notes_text}
+        Here are the leftover ingredients I have: {ingredients_list}.{notes_text}{priority_text}
 
-        I need you to suggest {max_suggestions} creative and unique recipe ideas that use these ingredients to avoid any food waste
+        I need you to suggest {max_suggestions} creative and unique recipe ideas that use these ingredients to avoid any food waste.
 
-        For each recipe, provide just the recipe name. Don't include ingredients list or instructions, just keep it very simple and minimalistic in the output
+        For each recipe, provide just the recipe name. Don't include ingredients list or instructions, just keep it very simple and minimalistic in the output.
         Format each recipe as "Recipe Name"
-        Keep the recipes simple and focused on using the leftover ingredients
+        Keep the recipes simple and focused on using the leftover ingredients.
+        If there are ingredients that expire soon, make sure to prioritize those in the recipe suggestions.
         ''' 
 
         logger.info("Sending request to Gemini API")
@@ -504,7 +588,7 @@ def check_achievements(quizzes: int, perfect_scores: int, new_level: int, old_le
     perfect_milestones = [
         (1, "Perfectionist", "💯"),
         (5, "Streak Master", "🏯"),
-        (10, "Flawless Chef", "👨‍🍳")
+        (10, "Flawless Chef", "👨��🍳")
     ]
 
     for milestone, title, emoji in perfect_milestones:
