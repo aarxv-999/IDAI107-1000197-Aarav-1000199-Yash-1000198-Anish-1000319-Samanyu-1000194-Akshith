@@ -1085,123 +1085,87 @@ IMPORTANT: Return ONLY the JSON object above. No other text.'''
             'success': False
         }
 
-# PDF Generation Functions (keeping existing but enhanced)
+# PDF Generation Functions (restored working versions)
 def create_event_pdf(event_plan: Dict) -> bytes:
-    """Create enhanced PDF with better formatting"""
+    """Create PDF with proper formatting"""
     try:
         pdf = FPDF()
         pdf.add_page()
         
-        # Enhanced title
-        pdf.set_font("Arial", "B", 18)
-        pdf.cell(0, 15, f"EVENT PLAN: {event_plan['theme']['name'].upper()}", ln=True, align="C")
+        # Title
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(0, 10, f"EVENT PLAN: {event_plan['theme']['name'].upper()}", ln=True, align="C")
         pdf.ln(5)
         
         # Event details
-        pdf.set_font("Arial", "I", 12)
+        pdf.set_font("Arial", "", 12)
         pdf.cell(0, 8, f"Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}", ln=True)
         pdf.cell(0, 8, f"Expected Guests: {event_plan.get('guest_count', 'Not specified')}", ln=True)
-        pdf.cell(0, 8, f"Complexity: {event_plan.get('complexity', 'Standard').title()}", ln=True)
-        pdf.ln(8)
+        pdf.ln(5)
         
-        # Theme section
+        # Theme
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "THEME & CONCEPT", ln=True)
         pdf.set_font("Arial", "", 11)
-        pdf.multi_cell(0, 8, event_plan['theme']['description'])
-        pdf.ln(5)
+        pdf.multi_cell(0, 6, event_plan['theme']['description'])
+        pdf.ln(3)
         
-        # Budget section with enhanced formatting
+        # Budget
         pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, "BUDGET BREAKDOWN (INR)", ln=True)
+        pdf.cell(0, 10, "BUDGET (INR)", ln=True)
         pdf.set_font("Arial", "", 11)
         
         budget = event_plan.get('budget', {})
         if budget:
-            # Summary
-            pdf.set_font("Arial", "B", 12)
-            pdf.cell(0, 8, f"Total Cost: Rs. {budget.get('total_cost', 0):,}", ln=True)
-            pdf.cell(0, 8, f"Cost per Person: Rs. {budget.get('cost_per_person', 0):,}", ln=True)
-            pdf.ln(3)
+            pdf.cell(0, 6, f"Total Cost: Rs. {budget.get('total_cost', 0):,}", ln=True)
+            pdf.cell(0, 6, f"Cost per Person: Rs. {budget.get('cost_per_person', 0):,}", ln=True)
+            pdf.ln(2)
             
-            # Detailed breakdown
-            pdf.set_font("Arial", "", 10)
             for item in budget.get('breakdown', []):
-                pdf.cell(0, 6, f"• {item.get('item', '')}: Rs. {item.get('cost', 0):,}", ln=True)
-                if item.get('details'):
-                    pdf.cell(10, 6, "", ln=False)  # Indent
-                    pdf.cell(0, 6, f"  ({item['details']})", ln=True)
-            pdf.ln(5)
+                pdf.cell(0, 5, f"• {item.get('item', '')}: Rs. {item.get('cost', 0):,}", ln=True)
+            pdf.ln(3)
         
-        # Timeline section
-        if 'timeline' in event_plan:
-            pdf.set_font("Arial", "B", 14)
-            pdf.cell(0, 10, "EVENT TIMELINE", ln=True)
-            pdf.set_font("Arial", "", 11)
-            for item in event_plan['timeline']:
-                pdf.cell(0, 6, f"• {item.get('time', '')}: {item.get('activity', '')}", ln=True)
-            pdf.ln(5)
-        
-        # Seating arrangement
+        # Seating
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "SEATING ARRANGEMENT", ln=True)
         pdf.set_font("Arial", "", 11)
-        pdf.multi_cell(0, 8, event_plan['seating']['layout'])
+        pdf.multi_cell(0, 6, event_plan['seating']['layout'])
         pdf.ln(3)
         
         # Decoration
         pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, "DECORATION & AMBIANCE", ln=True)
+        pdf.cell(0, 10, "DECORATION", ln=True)
         pdf.set_font("Arial", "", 11)
         for item in event_plan['decor']:
-            pdf.cell(0, 6, f"• {item}", ln=True)
-        pdf.ln(5)
+            pdf.cell(0, 5, f"• {item}", ln=True)
+        pdf.ln(3)
         
-        # Recipe suggestions
+        # Menu
         pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, "MENU RECOMMENDATIONS", ln=True)
+        pdf.cell(0, 10, "MENU SUGGESTIONS", ln=True)
         pdf.set_font("Arial", "", 11)
         for item in event_plan['recipe_suggestions']:
-            pdf.cell(0, 6, f"• {item}", ln=True)
-        pdf.ln(5)
+            pdf.cell(0, 5, f"• {item}", ln=True)
+        pdf.ln(3)
         
         # Invitation
         pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, "INVITATION TEMPLATE", ln=True)
-        pdf.set_font("Arial", "I", 11)
-        pdf.multi_cell(0, 8, event_plan['invitation'])
+        pdf.cell(0, 10, "INVITATION", ln=True)
+        pdf.set_font("Arial", "", 11)
+        pdf.multi_cell(0, 6, event_plan['invitation'])
         
-        return pdf.output(dest="S").encode("latin1", errors="replace")
+        return pdf.output(dest="S").encode("latin1")
     except Exception as e:
-        logger.error(f"Error creating enhanced PDF: {str(e)}")
+        logger.error(f"Error creating PDF: {str(e)}")
         return b""
-
-def create_unicode_pdf(event_plan: Dict) -> bytes:
-    """Create Unicode PDF with enhanced formatting"""
-    try:
-        pdf = FPDF()
-        pdf.add_page()
-        
-        # Enhanced formatting (same as create_event_pdf but with Unicode support)
-        pdf.set_font("Arial", "B", 18)
-        pdf.cell(0, 15, f"EVENT PLAN: {event_plan['theme']['name'].upper()}", ln=True, align="C")
-        pdf.ln(5)
-        
-        # Continue with enhanced formatting...
-        # (Implementation similar to create_event_pdf but with Unicode handling)
-        
-        pdf_buffer = io.BytesIO()
-        pdf.output(pdf_buffer)
-        return pdf_buffer.getvalue()
-    except Exception as e:
-        logger.error(f"Error creating Unicode PDF: {str(e)}")
-        return create_event_pdf(event_plan)
 
 def get_pdf_download_link(pdf_bytes: bytes, filename: str) -> str:
     """Generate download link for PDF"""
-    b64 = base64.b64encode(pdf_bytes).decode()
-    href = f'<a href="data:application/pdf;base64,{b64}" download="{filename}">Download Event Plan PDF</a>'
-    return href
+    if pdf_bytes:
+        b64 = base64.b64encode(pdf_bytes).decode()
+        href = f'<a href="data:application/pdf;base64,{b64}" download="{filename}">📄 Download Event Plan PDF</a>'
+        return href
+    return ""
 
 # Enhanced UI Components
 def render_seating_visualization(tables: List):
@@ -1459,10 +1423,7 @@ def render_enhanced_chatbot_ui():
                         
                         with col1:
                             # Generate PDF
-                            try:
-                                pdf_bytes = create_unicode_pdf(event_plan)
-                            except:
-                                pdf_bytes = create_event_pdf(event_plan)
+                            pdf_bytes = create_event_pdf(event_plan)
                             
                             if pdf_bytes:
                                 st.download_button(
@@ -1474,24 +1435,25 @@ def render_enhanced_chatbot_ui():
                                     use_container_width=True
                                 )
                                 
-                                # Award XP for PDF download
+                                # Award XP for PDF download (only once per plan)
                                 if user_role in ['admin', 'staff', 'chef']:
-                                    if st.session_state.get('pdf_downloaded', False) == False:
+                                    pdf_key = f"pdf_downloaded_{hash(str(event_plan))}"
+                                    if pdf_key not in st.session_state:
                                         award_event_xp_with_effects(user_id, user_role, 'pdf_download')
-                                        st.session_state.pdf_downloaded = True
+                                        st.session_state[pdf_key] = True
+                            else:
+                                st.error("❌ Failed to generate PDF")
                         
                         with col2:
                             # Text export
-                            text_export = f"""
-EVENT PLAN: {event_plan['theme']['name']}
+                            text_export = f"""EVENT PLAN: {event_plan['theme']['name']}
 Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}
 Guests: {event_plan.get('guest_count', 'Not specified')}
-Complexity: {event_plan.get('complexity', 'Standard').title()}
 
 THEME:
 {event_plan['theme']['description']}
 
-BUDGET SUMMARY:
+BUDGET:
 Total Cost: ₹{event_plan.get('budget', {}).get('total_cost', 0):,}
 Cost per Person: ₹{event_plan.get('budget', {}).get('cost_per_person', 0):,}
 
@@ -1505,8 +1467,7 @@ MENU:
 {chr(10).join([f"• {item}" for item in event_plan['recipe_suggestions']])}
 
 INVITATION:
-{event_plan['invitation']}
-"""
+{event_plan['invitation']}"""
                             
                             st.download_button(
                                 label="📝 Download Text Plan",
