@@ -330,6 +330,7 @@ def get_firestore_db():
 def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int = 5) -> List[Dict]:
     """
     Generate unique quiz questions based on the leftover ingredients using Gemini API.
+    Now includes randomization to ensure different questions each time.
 
     Args:
         ingredients (List[str]): List of leftover ingredients
@@ -347,16 +348,67 @@ def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int =
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
 
-        ingredients_list = ", ".join(ingredients)
+        # Add randomization elements
+        current_time = datetime.now()
+        random_seed = random.randint(1000, 9999)
+        session_id = f"{current_time.strftime('%Y%m%d_%H%M%S')}_{random_seed}"
+        
+        # Randomize ingredient selection and order
+        shuffled_ingredients = ingredients.copy()
+        random.shuffle(shuffled_ingredients)
+        selected_ingredients = shuffled_ingredients[:min(8, len(shuffled_ingredients))]
+        
+        # Add variety in question topics
+        question_topics = [
+            "cooking techniques and methods",
+            "food safety and storage",
+            "nutritional facts and benefits", 
+            "culinary history and origins",
+            "flavor combinations and pairings",
+            "cooking temperatures and timing",
+            "ingredient substitutions",
+            "kitchen tools and equipment"
+        ]
+        
+        # Randomly select topics for variety
+        selected_topics = random.sample(question_topics, min(4, len(question_topics)))
+        
+        # Create difficulty distribution
+        difficulty_distribution = []
+        easy_count = max(1, num_questions // 3)
+        hard_count = max(1, num_questions // 4)
+        medium_count = num_questions - easy_count - hard_count
+        
+        difficulty_distribution.extend(['easy'] * easy_count)
+        difficulty_distribution.extend(['medium'] * medium_count) 
+        difficulty_distribution.extend(['hard'] * hard_count)
+        random.shuffle(difficulty_distribution)
+
+        ingredients_list = ", ".join(selected_ingredients)
+        topics_list = ", ".join(selected_topics)
+        
         prompt = f"""
-        Generate {num_questions} unique cooking quiz questions based on these ingredients: {ingredients_list}
-
+        SESSION ID: {session_id}
+        RANDOMIZATION SEED: {random_seed}
+        
+        Generate {num_questions} UNIQUE and VARIED cooking quiz questions. Use these ingredients as inspiration: {ingredients_list}
+        
+        Focus on these diverse topics: {topics_list}
+        
+        IMPORTANT REQUIREMENTS:
+        1. Make each question COMPLETELY DIFFERENT from typical cooking questions
+        2. Include surprising facts, lesser-known techniques, and interesting culinary trivia
+        3. Vary the question styles: some about techniques, some about history, some about science
+        4. Use the difficulty distribution: {difficulty_distribution}
+        5. Make questions engaging and educational
+        6. Avoid repetitive patterns or similar question structures
+        
         The questions should be:
-        1. Related to cooking techniques, food safety, or culinary knowledge involving these ingredients
-        2. Multiple choice with 4 options each
-        3. Varied in difficulty (easy, medium, hard)
-        4. Educational and fun
-
+        - Related to cooking, food science, culinary arts, or food culture
+        - Multiple choice with 4 options each
+        - Educational and surprising
+        - Different from standard cooking questions
+        
         Format your response as a JSON array with this exact structure:
         [
             {{
@@ -374,22 +426,34 @@ def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int =
         - medium: 15 XP  
         - hard: 20 XP
 
-        Make sure the JSON is properly formatted and valid. Include interesting facts about the ingredients.
+        Make sure each question is unique, interesting, and teaches something new. Include fascinating culinary facts!
+        GENERATE COMPLETELY NEW QUESTIONS - DO NOT REPEAT COMMON COOKING QUIZ QUESTIONS.
         """
 
         response = model.generate_content(prompt)
         response_text = response.text.strip()
 
         # Clean up the response to extract JSON
-        if "\`\`\`json" in response_text:
-            response_text = response_text.split("\`\`\`json")[1].split("\`\`\`")[0]
-        elif "\`\`\`" in response_text:
-            response_text = response_text.split("\`\`\`")[1].split("\`\`\`")[0]
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0]
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0]
 
         try:
             questions = json.loads(response_text)
             if isinstance(questions, list) and len(questions) > 0:
-                logger.info(f"Successfully generated {len(questions)} dynamic questions")
+                # Ensure we have the right number of questions
+                questions = questions[:num_questions]
+                
+                # Validate and fix difficulty distribution
+                for i, question in enumerate(questions):
+                    if i < len(difficulty_distribution):
+                        question['difficulty'] = difficulty_distribution[i]
+                        # Update XP based on difficulty
+                        xp_map = {'easy': 10, 'medium': 15, 'hard': 20}
+                        question['xp_reward'] = xp_map.get(question['difficulty'], 10)
+                
+                logger.info(f"Successfully generated {len(questions)} unique dynamic questions with session ID: {session_id}")
                 return questions
             else:
                 logger.warning("Invalid question format from Gemini, using fallback")
@@ -406,6 +470,7 @@ def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int =
 def generate_fallback_questions(num_questions: int = 5) -> List[Dict]:
     """
     Generate fallback quiz questions when Gemini API is not available.
+    Now includes more variety and randomization.
 
     Args:
         num_questions (int): Number of questions to return
@@ -477,9 +542,69 @@ def generate_fallback_questions(num_questions: int = 5) -> List[Dict]:
             "difficulty": "hard",
             "xp_reward": 20,
             "explanation": "Julienne cut produces matchstick-like strips, typically 2mm x 2mm x 5cm."
+        },
+        {
+            "question": "What temperature should a candy thermometer read for soft ball stage?",
+            "options": ["235-240°F", "250-265°F", "300-310°F", "320-335°F"],
+            "correct": 0,
+            "difficulty": "hard",
+            "xp_reward": 20,
+            "explanation": "Soft ball stage occurs at 235-240°F, perfect for fudge and fondant."
+        },
+        {
+            "question": "Which spice is derived from the Crocus flower?",
+            "options": ["Turmeric", "Saffron", "Paprika", "Cardamom"],
+            "correct": 1,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Saffron comes from the stigmas of the Crocus sativus flower."
+        },
+        {
+            "question": "What does 'mise en place' mean in professional cooking?",
+            "options": ["Cooking method", "Everything in its place", "Final plating", "Sauce preparation"],
+            "correct": 1,
+            "difficulty": "easy",
+            "xp_reward": 10,
+            "explanation": "Mise en place means having all ingredients prepared and organized before cooking."
+        },
+        {
+            "question": "Which cooking fat has the highest smoke point?",
+            "options": ["Butter", "Olive oil", "Avocado oil", "Coconut oil"],
+            "correct": 2,
+            "difficulty": "medium",
+            "xp_reward": 15,
+            "explanation": "Avocado oil has a smoke point around 520°F, higher than most cooking fats."
         }
     ]
-    return random.sample(fallback_questions, min(num_questions, len(fallback_questions)))
+    
+    # Randomize the selection to ensure variety
+    random.shuffle(fallback_questions)
+    selected_questions = fallback_questions[:num_questions]
+    
+    # Ensure good difficulty distribution
+    easy_questions = [q for q in selected_questions if q['difficulty'] == 'easy']
+    medium_questions = [q for q in selected_questions if q['difficulty'] == 'medium'] 
+    hard_questions = [q for q in selected_questions if q['difficulty'] == 'hard']
+    
+    # Balance if needed
+    final_questions = []
+    target_easy = max(1, num_questions // 3)
+    target_medium = max(1, num_questions // 2)
+    target_hard = num_questions - target_easy - target_medium
+    
+    final_questions.extend(easy_questions[:target_easy])
+    final_questions.extend(medium_questions[:target_medium])
+    final_questions.extend(hard_questions[:target_hard])
+    
+    # Fill remaining slots if needed
+    while len(final_questions) < num_questions:
+        remaining = [q for q in fallback_questions if q not in final_questions]
+        if remaining:
+            final_questions.append(random.choice(remaining))
+        else:
+            break
+    
+    return final_questions[:num_questions]
 
 def calculate_quiz_score(answers: List[int], questions: List[Dict]) -> Tuple[int, int, int]:
     """
