@@ -83,7 +83,6 @@ def render_dashboard():
             "key": "Leftover Management"
         })
     
-    # UPDATED: Promotion Generator only for Admin and Staff
     if user_role in ['admin', 'staff']:
         features.append({
             "title": "Promotion Generator",
@@ -100,15 +99,14 @@ def render_dashboard():
             "key": "Chef Recipe Suggestions"
         })
     
-    if user_role == 'admin':
-        features.append({
-            "title": "Visual Menu Search",
-            "description": "Search menu items using images",
-            "icon": "🔍",
-            "key": "Visual Menu Search"
-        })
-    
     # Common features for all users
+    features.append({
+        "title": "Visual Menu Search",
+        "description": "AI-powered dish detection, personalized recommendations, and staff challenges",
+        "icon": "📷",
+        "key": "Visual Menu Search"
+    })
+    
     features.append({
         "title": "Gamification Hub",
         "description": "View achievements, leaderboard, and progress",
@@ -154,12 +152,14 @@ def render_dashboard():
         activities = [
             {"time": "Today, 10:30 AM", "description": "New recipes added to the archive"},
             {"time": "Yesterday", "description": "Weekly menu generated with 35 dishes"},
-            {"time": "2 days ago", "description": "Chef submitted 3 new signature dishes"}
+            {"time": "2 days ago", "description": "Chef submitted 3 new signature dishes"},
+            {"time": "3 days ago", "description": "Staff challenge received 15 customer votes"}
         ]
     else:
         activities = [
             {"time": "Today", "description": "Completed cooking quiz with 90% score"},
             {"time": "Yesterday", "description": "Generated 3 recipes from leftovers"},
+            {"time": "2 days ago", "description": "Used AI dish detection feature"},
             {"time": "Last week", "description": "Earned 'Quiz Novice' achievement"}
         ]
     
@@ -174,6 +174,8 @@ def render_dashboard():
         - Check the Gamification Hub to track your progress
         - Chefs and Admins can access advanced menu management tools
         - Staff and Admins can create AI-powered marketing campaigns
+        - All users can use Visual Menu Search for AI dish detection
+        - Vote on staff challenge dishes to earn XP
         - Need help? Contact support at support@restaurant.com
         """)
 
@@ -185,7 +187,7 @@ def get_feature_description(feature_name: str) -> str:
         "Cooking Quiz": "🧠 Test your culinary knowledge and earn XP",
         "Promotion Generator": "📣 AI marketing campaigns with automatic scoring",
         "Chef Recipe Suggestions": "👨‍🍳 AI menu generation, chef submissions & analytics",
-        "Visual Menu Search": "🔍 Search menu items using images",
+        "Visual Menu Search": "📷 AI dish detection, personalized recommendations & staff challenges",
         "Event Planning ChatBot": "🎉 AI-powered event planning assistance"
     }
     return descriptions.get(feature_name, "")
