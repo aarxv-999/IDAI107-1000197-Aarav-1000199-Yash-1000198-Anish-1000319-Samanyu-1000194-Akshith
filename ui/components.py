@@ -1,10 +1,6 @@
 """
-Combined UI Components for the Smart Restaurant Menu Management App.
-
-Includes:
-- Authentication UI (from auth_components.py)
-- Main UI Components (from components.py)
-- Gamification UI (from leftover_gamification_ui.py)
+Complete UI Components for the Smart Restaurant Menu Management App.
+This file contains all the missing gamification UI functions.
 """
 
 import streamlit as st
@@ -27,7 +23,333 @@ from modules.leftover import (
 logger = logging.getLogger(__name__)
 
 # =======================
-# AUTHENTICATION UI
+# MISSING GAMIFICATION UI FUNCTIONS
+# =======================
+
+def render_cooking_quiz(ingredients: List[str], user_id: str):
+    st.subheader("Cooking Knowledge Quiz")
+    st.caption(f"Based on: {', '.join(ingredients[:3])}{'...' if len(ingredients) > 3 else ''}")
+    
+    if 'quiz_questions' not in st.session_state:
+        st.session_state.quiz_questions = None
+    if 'quiz_answers' not in st.session_state:
+        st.session_state.quiz_answers = []
+    if 'quiz_submitted' not in st.session_state:
+        st.session_state.quiz_submitted = False
+    if 'quiz_results' not in st.session_state:
+        st.session_state.quiz_results = None
+    
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        num_questions = st.selectbox("Questions:", [3, 5, 7], index=1)
+    with col2:
+        if st.button("Start Quiz", type="primary", use_container_width=True):
+            with st.spinner("Loading questions..."):
+                st.session_state.quiz_questions = generate_dynamic_quiz_questions(ingredients, num_questions)
+                st.session_state.quiz_answers = []
+                st.session_state.quiz_submitted = False
+                st.session_state.quiz_results = None
+                st.rerun()
+    
+    if st.session_state.quiz_questions and not st.session_state.quiz_submitted:
+        st.divider()
+        answers = []
+        for i, question in enumerate(st.session_state.quiz_questions):
+            with st.container():
+                st.write(f"**{i+1}.** {question['question']}")
+                difficulty_map = {"easy": "Easy", "medium": "Medium", "hard": "Hard"}
+                st.caption(f"{difficulty_map.get(question['difficulty'], 'Unknown')} • {question['xp_reward']} XP")
+                answer = st.radio("Select answer:", options=question['options'], key=f"q_{i}", index=None, label_visibility="collapsed")
+                if answer:
+                    answers.append(question['options'].index(answer))
+                else:
+                    answers.append(-1)
+            if i < len(st.session_state.quiz_questions) - 1:
+                st.divider()
+        
+        st.write("")
+        if st.button("Submit Quiz", type="primary", use_container_width=True):
+            if -1 in answers:
+                st.error("Please answer all questions before submitting.")
+            else:
+                st.session_state.quiz_answers = answers
+                st.session_state.quiz_submitted = True
+                correct, total, xp_earned = calculate_quiz_score(answers, st.session_state.quiz_questions)
+                st.session_state.quiz_results = {
+                    'correct': correct,
+                    'total': total,
+                    'xp_earned': xp_earned,
+                    'percentage': (correct / total) * 100
+                }
+                update_user_stats(user_id, xp_earned, correct, total)
+                st.rerun()
+    
+    if st.session_state.quiz_submitted and st.session_state.quiz_results:
+        display_quiz_results(st.session_state.quiz_results, st.session_state.quiz_questions, st.session_state.quiz_answers)
+
+def display_quiz_results(results: Dict, questions: List[Dict], user_answers: List[int]):
+    st.divider()
+    st.subheader("Quiz Results")
+    score = results['correct']
+    total = results['total']
+    percentage = results['percentage']
+    xp_earned = results['xp_earned']
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Score", f"{score}/{total}")
+    with col2:
+        st.metric("Accuracy", f"{percentage:.1f}%")
+    with col3:
+        st.metric("XP Earned", f"+{xp_earned}")
+    with col4:
+        if percentage == 100:
+            st.metric("Grade", "Perfect")
+        elif percentage >= 80:
+            st.metric("Grade", "Excellent")
+        elif percentage >= 60:
+            st.metric("Grade", "Good")
+        else:
+            st.metric("Grade", "Practice")
+    
+    if percentage == 100:
+        st.success("Perfect score! Excellent culinary knowledge.")
+    elif percentage >= 80:
+        st.success("Great work! Your cooking knowledge is impressive.")
+    elif percentage >= 60:
+        st.info("Good job! Keep studying to improve further.")
+    else:
+        st.warning("Keep learning! Practice makes perfect.")
+    
+    with st.expander("Review Answers", expanded=False):
+        for i, question in enumerate(questions):
+            user_answer = user_answers[i]
+            correct_answer = question['correct']
+            is_correct = user_answer == correct_answer
+            status = "✓" if is_correct else "✗"
+            st.write(f"**{status} Question {i+1}:** {question['question']}")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"Your answer: {question['options'][user_answer]}")
+            with col2:
+                st.write(f"Correct: {question['options'][correct_answer]}")
+            if 'explanation' in question and question['explanation']:
+                st.caption(f"Explanation: {question['explanation']}")
+            if i < len(questions) - 1:
+                st.divider()
+    
+    if st.button("Take Another Quiz", use_container_width=True):
+        st.session_state.quiz_questions = None
+        st.session_state.quiz_answers = []
+        st.session_state.quiz_submitted = False
+        st.session_state.quiz_results = None
+        st.rerun()
+
+def display_leaderboard():
+    st.subheader("Leaderboard")
+    st.caption("Top players by XP")
+    leaderboard = get_leaderboard(10)
+    if leaderboard:
+        col1, col2, col3, col4, col5 = st.columns([1, 3, 2, 2, 2])
+        with col1: st.write("**Rank**")
+        with col2: st.write("**Player**")
+        with col3: st.write("**Level**")
+        with col4: st.write("**XP**")
+        with col5: st.write("**Quizzes**")
+        st.divider()
+        for entry in leaderboard:
+            col1, col2, col3, col4, col5 = st.columns([1, 3, 2, 2, 2])
+            with col1:
+                if entry['rank'] <= 3:
+                    rank_display = {1: "🥇", 2: "🥈", 3: "🥉"}[entry['rank']]
+                else:
+                    rank_display = str(entry['rank'])
+                st.write(rank_display)
+            with col2:
+                st.write(entry['username'])
+            with col3:
+                st.write(f"Level {entry['level']}")
+            with col4:
+                st.write(f"{entry['total_xp']:,}")
+            with col5:
+                st.write(entry['quizzes_taken'])
+    else:
+        st.info("No leaderboard data available. Be the first to take a quiz!")
+
+def display_achievements_showcase(user_id: str):
+    st.subheader("Achievements")
+    stats = get_user_stats(user_id)
+    achievements = stats.get('achievements', [])
+    if not achievements:
+        st.info("No achievements yet. Take quizzes to start earning achievements!")
+        return
+    
+    achievement_descriptions = {
+        "First Quiz": "Completed your first cooking quiz",
+        "Quiz Novice": "Completed 5 cooking quizzes",
+        "Quiz Enthusiast": "Completed 10 cooking quizzes",
+        "Quiz Master": "Completed 25 cooking quizzes",
+        "Quiz Legend": "Completed 50 cooking quizzes",
+        "Perfectionist": "Achieved your first perfect score",
+        "Streak Master": "Achieved 5 perfect scores",
+        "Flawless Chef": "Achieved 10 perfect scores",
+        "Rising Star": "Reached Level 5",
+        "Kitchen Pro": "Reached Level 10",
+        "Culinary Expert": "Reached Level 15",
+        "Master Chef": "Reached Level 20"
+    }
+    
+    cols = st.columns(2)
+    for i, achievement in enumerate(achievements):
+        col_idx = i % 2
+        with cols[col_idx]:
+            description = achievement_descriptions.get(achievement, "Special achievement")
+            st.success(f"**{achievement}**\n{description}")
+    
+    st.divider()
+    st.write("**Progress Tracking**")
+    quizzes_taken = stats.get('quizzes_taken', 0)
+    perfect_scores = stats.get('perfect_scores', 0)
+    current_level = stats.get('level', 1)
+    
+    quiz_milestones = [1, 5, 10, 25, 50]
+    next_quiz_milestone = next((m for m in quiz_milestones if m > quizzes_taken), None)
+    if next_quiz_milestone:
+        progress = quizzes_taken / next_quiz_milestone
+        st.progress(progress, text=f"Quiz Progress: {quizzes_taken}/{next_quiz_milestone}")
+
+def display_gamification_dashboard(user_id: str):
+    st.title("Player Dashboard")
+    stats = get_user_stats(user_id)
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Level", stats['level'], f"{stats['total_xp']} XP")
+    with col2:
+        st.metric("Quizzes Taken", stats['quizzes_taken'])
+    with col3:
+        accuracy = (stats['correct_answers'] / stats['total_questions'] * 100) if stats['total_questions'] > 0 else 0
+        st.metric("Accuracy", f"{accuracy:.1f}%")
+    with col4:
+        st.metric("Achievements", len(stats.get('achievements', [])))
+    
+    tab1, tab2, tab3 = st.tabs(["Achievements", "Progress", "Leaderboard"])
+    with tab1:
+        display_achievements_showcase(user_id)
+    with tab2:
+        display_progress_tracking(user_id)
+    with tab3:
+        display_leaderboard()
+
+def display_progress_tracking(user_id: str):
+    stats = get_user_stats(user_id)
+    current_level_xp, xp_needed = get_xp_progress(stats['total_xp'], stats['level'])
+    xp_for_current_level = (stats['level'] ** 2) * 100 - ((stats['level'] - 1) ** 2) * 100
+    progress_percentage = (current_level_xp / xp_for_current_level * 100) if xp_for_current_level > 0 else 0
+    
+    st.subheader("Level Progress")
+    st.progress(current_level_xp / xp_for_current_level if xp_for_current_level > 0 else 0)
+    st.write(f"Level {stats['level']}: {current_level_xp}/{xp_for_current_level} XP ({progress_percentage:.1f}%)")
+    st.caption(f"{xp_needed} XP needed for Level {stats['level'] + 1}")
+    
+    st.divider()
+    st.subheader("Statistics")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Quiz Performance**")
+        if stats['quizzes_taken'] > 0:
+            perfect_rate = (stats['perfect_scores'] / stats['quizzes_taken']) * 100
+            st.metric("Perfect Score Rate", f"{perfect_rate:.1f}%")
+            st.metric("Questions Answered", stats['total_questions'])
+        else:
+            st.info("No quizzes taken yet")
+    with col2:
+        st.write("**Activity**")
+        st.metric("Recipes Generated", stats.get('recipes_generated', 0))
+        st.metric("Days Active", calculate_days_active(stats))
+    
+    st.divider()
+    st.subheader("Weekly Goals")
+    display_weekly_goals(stats)
+
+def calculate_days_active(stats: Dict) -> int:
+    base_days = max(1, stats.get('quizzes_taken', 0) // 2)
+    return min(base_days, 30)
+
+def display_weekly_goals(stats: Dict):
+    quizzes_this_week = min(stats.get('quizzes_taken', 0), 7)
+    recipes_this_week = min(stats.get('recipes_generated', 0), 5)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Quiz Goal (5/week)**")
+        quiz_progress = min(quizzes_this_week / 5, 1.0)
+        st.progress(quiz_progress, text=f"{quizzes_this_week}/5 completed")
+    with col2:
+        st.write("**Recipe Goal (3/week)**")
+        recipe_progress = min(recipes_this_week / 3, 1.0)
+        st.progress(recipe_progress, text=f"{recipes_this_week}/3 completed")
+
+def award_recipe_generation_xp(user_id: str, num_recipes: int = 1):
+    updated_stats = award_recipe_xp(user_id, num_recipes)
+    xp_earned = num_recipes * 5
+    st.success(f"Recipe generated! +{xp_earned} XP earned")
+    if 'level_up' in st.session_state and st.session_state.level_up:
+        st.balloons()
+        st.success(f"Level Up! You're now Level {updated_stats['level']}")
+        st.session_state.level_up = False
+
+def show_xp_notification(xp_earned: int, level_up: bool = False):
+    if level_up:
+        st.balloons()
+        st.success(f"Level Up! +{xp_earned} XP earned")
+    else:
+        st.success(f"+{xp_earned} XP earned")
+
+def get_daily_challenge(user_id: str) -> Dict:
+    import random
+    challenges = [
+        {"title": "Perfect Score Challenge", "description": "Get a perfect score on any quiz", "xp_reward": 25, "type": "quiz_perfect"},
+        {"title": "Recipe Explorer", "description": "Generate 3 different recipes today", "xp_reward": 20, "type": "recipe_count"},
+        {"title": "Knowledge Seeker", "description": "Take 2 quizzes today", "xp_reward": 15, "type": "quiz_count"},
+        {"title": "Accuracy Master", "description": "Maintain 80%+ accuracy across all quizzes today", "xp_reward": 30, "type": "accuracy"}
+    ]
+    today_seed = datetime.now().strftime("%Y-%m-%d") + user_id
+    random.seed(hash(today_seed))
+    return random.choice(challenges)
+
+def display_daily_challenge(user_id: str):
+    challenge = get_daily_challenge(user_id)
+    st.subheader("Daily Challenge")
+    with st.container():
+        st.write(f"**{challenge['title']}**")
+        st.write(challenge['description'])
+        st.caption(f"Reward: +{challenge['xp_reward']} XP")
+
+def display_user_stats_sidebar(user_id: str) -> Dict:
+    stats = get_user_stats(user_id)
+    st.sidebar.divider()
+    st.sidebar.subheader("Player Stats")
+    current_level_xp, xp_needed = get_xp_progress(stats['total_xp'], stats['level'])
+    xp_for_current_level = (stats['level'] ** 2) * 100 - ((stats['level'] - 1) ** 2) * 100
+    progress = current_level_xp / xp_for_current_level if xp_for_current_level > 0 else 0
+    
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        st.metric("Level", stats['level'])
+        st.metric("Quizzes", stats['quizzes_taken'])
+    with col2:
+        st.metric("XP", stats['total_xp'])
+        st.metric("Perfect", stats['perfect_scores'])
+    
+    st.sidebar.progress(progress, text=f"{xp_needed} XP to next level")
+    if stats['total_questions'] > 0:
+        accuracy = (stats['correct_answers'] / stats['total_questions']) * 100
+        st.sidebar.metric("Accuracy", f"{accuracy:.1f}%")
+    return stats
+
+# =======================
+# AUTHENTICATION UI (keeping existing functions)
 # =======================
 
 def initialize_session_state():
@@ -332,280 +654,3 @@ def leftover_input_firebase() -> Tuple[List[str], List[Dict]]:
         return st.session_state.firebase_ingredients, st.session_state.get('firebase_detailed_info', [])
     
     return leftovers, detailed_info
-
-def display_leftover_summary(leftovers: List[str]):
-    if leftovers:
-        st.subheader("Current Ingredients")
-        cols = st.columns(min(len(leftovers), 3))
-        for i, ingredient in enumerate(leftovers):
-            col_idx = i % 3
-            with cols[col_idx]:
-                st.info(ingredient.title())
-    else:
-        st.info("No ingredients added yet")
-
-def display_recipe_suggestions(recipes: List[Dict], leftovers: List[str]):
-    if not recipes:
-        st.warning("No recipe suggestions found")
-        return
-    st.subheader("Recipe Suggestions")
-    for i, recipe in enumerate(recipes):
-        with st.expander(f"{recipe.get('name', f'Recipe {i+1}')}", expanded=i==0):
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                if 'description' in recipe:
-                    st.write(recipe['description'])
-                if 'cooking_time' in recipe:
-                    st.caption(f"Cooking Time: {recipe['cooking_time']}")
-                if 'difficulty' in recipe:
-                    st.caption(f"Difficulty: {recipe['difficulty']}")
-            with col2:
-                if 'servings' in recipe:
-                    st.metric("Servings", recipe['servings'])
-            if 'ingredients' in recipe:
-                st.write("**Ingredients:**")
-                for ingredient in recipe['ingredients']:
-                    if any(leftover.lower() in ingredient.lower() for leftover in leftovers):
-                        st.write(f"✓ {ingredient}")
-                    else:
-                        st.write(f"• {ingredient}")
-            if 'instructions' in recipe:
-                st.write("**Instructions:**")
-                for j, instruction in enumerate(recipe['instructions'], 1):
-                    st.write(f"{j}. {instruction}")
-            if 'nutrition' in recipe:
-                st.write("**Nutrition Info:**")
-                nutrition = recipe['nutrition']
-                cols = st.columns(len(nutrition))
-                for k, (key, value) in enumerate(nutrition.items()):
-                    with cols[k]:
-                        st.metric(key.title(), value)
-
-def display_ingredient_filter():
-    st.sidebar.divider()
-    st.sidebar.subheader("Filters")
-    dietary_options = st.sidebar.multiselect("Dietary Restrictions", ["Vegetarian", "Vegan", "Gluten-Free", "Dairy-Free", "Keto", "Paleo"], help="Filter recipes by dietary needs")
-    cuisine_type = st.sidebar.selectbox("Cuisine Type", ["Any", "Italian", "Asian", "Mexican", "American", "Mediterranean", "Indian"], help="Choose preferred cuisine style")
-    max_time = st.sidebar.slider("Max Cooking Time (minutes)", min_value=15, max_value=120, value=60, step=15, help="Maximum time you want to spend cooking")
-    difficulty = st.sidebar.selectbox("Max Difficulty", ["Any", "Easy", "Medium", "Hard"], help="Choose maximum difficulty level")
-    return {
-        "dietary": dietary_options,
-        "cuisine": cuisine_type if cuisine_type != "Any" else None,
-        "max_time": max_time,
-        "difficulty": difficulty if difficulty != "Any" else None
-    }
-
-def display_recipe_stats(recipes: List[Dict]):
-    if not recipes:
-        return
-    st.sidebar.divider()
-    st.sidebar.subheader("Recipe Stats")
-    total_recipes = len(recipes)
-    st.sidebar.metric("Total Recipes", total_recipes)
-    cooking_times = []
-    for recipe in recipes:
-        if 'cooking_time' in recipe:
-            time_str = recipe['cooking_time']
-            try:
-                numbers = re.findall(r'\d+', time_str)
-                if numbers:
-                    cooking_times.append(int(numbers[0]))
-            except:
-                pass
-    if cooking_times:
-        avg_time = sum(cooking_times) / len(cooking_times)
-        st.sidebar.metric("Avg. Cooking Time", f"{avg_time:.0f} min")
-    difficulties = {}
-    for recipe in recipes:
-        if 'difficulty' in recipe:
-            diff = recipe['difficulty']
-            difficulties[diff] = difficulties.get(diff, 0) + 1
-    if difficulties:
-        st.sidebar.write("**Difficulty Breakdown:**")
-        for diff, count in difficulties.items():
-            st.sidebar.write(f"• {diff}: {count}")
-
-def display_shopping_list(recipes: List[Dict], available_ingredients: List[str]):
-    if not recipes:
-        return
-    st.subheader("Shopping List")
-    all_ingredients = set()
-    for recipe in recipes:
-        if 'ingredients' in recipe:
-            for ingredient in recipe['ingredients']:
-                clean_ingredient = ingredient.lower().strip()
-                all_ingredients.add(clean_ingredient)
-    available_lower = [ing.lower().strip() for ing in available_ingredients]
-    missing_ingredients = []
-    for ingredient in all_ingredients:
-        if not any(avail in ingredient or ingredient in avail for avail in available_lower):
-            missing_ingredients.append(ingredient)
-    if missing_ingredients:
-        st.write("**Items to buy:**")
-        for ingredient in sorted(missing_ingredients):
-            st.write(f"• {ingredient.title()}")
-    else:
-        st.success("You have all ingredients needed!")
-
-def display_recipe_search():
-    st.subheader("Recipe Search")
-    search_query = st.text_input("Search recipes", placeholder="Enter dish name, ingredient, or cuisine type...", help="Search for specific recipes or ingredients")
-    return search_query
-
-def display_save_recipe_option(recipe: Dict):
-    col1, col2 = st.columns([3, 1])
-    with col2:
-        if st.button("Save Recipe", key=f"save_{recipe.get('name', 'recipe')}", type="secondary"):
-            st.success("Recipe saved!")
-            return True
-    return False
-
-def display_nutrition_info(recipe: Dict):
-    if 'nutrition' not in recipe:
-        return
-    st.write("**Nutrition Information (per serving):**")
-    nutrition = recipe['nutrition']
-    cols = st.columns(min(len(nutrition), 4))
-    for i, (key, value) in enumerate(nutrition.items()):
-        col_idx = i % 4
-        with cols[col_idx]:
-            st.metric(key.replace('_', ' ').title(), value)
-
-def display_recipe_rating(recipe: Dict):
-    st.write("**Rate this recipe:**")
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        rating = st.selectbox("Rating", options=[1, 2, 3, 4, 5], format_func=lambda x: "★" * x + "☆" * (5-x), key=f"rating_{recipe.get('name', 'recipe')}")
-    with col2:
-        if st.button("Submit Rating", key=f"submit_rating_{recipe.get('name', 'recipe')}"):
-            st.success(f"Rated {rating} stars!")
-            return rating
-    return None
-
-def display_cooking_timer():
-    st.sidebar.divider()
-    st.sidebar.subheader("Cooking Timer")
-    timer_minutes = st.sidebar.number_input("Minutes", min_value=1, max_value=180, value=15, step=1)
-    if st.sidebar.button("Start Timer"):
-        st.sidebar.success(f"Timer set for {timer_minutes} minutes!")
-    return timer_minutes
-
-def display_meal_planner():
-    st.subheader("Weekly Meal Planner")
-    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    meals = ["Breakfast", "Lunch", "Dinner"]
-    meal_plan = {}
-    for day in days:
-        with st.expander(day):
-            meal_plan[day] = {}
-            cols = st.columns(3)
-            for i, meal in enumerate(meals):
-                with cols[i]:
-                    meal_plan[day][meal] = st.text_input(meal, key=f"{day}_{meal}", placeholder="Enter recipe name")
-    if st.button("Save Meal Plan", type="primary"):
-        st.success("Meal plan saved!")
-    return meal_plan
-
-def display_ingredient_substitutions(ingredient: str):
-    substitutions = {
-        "butter": ["margarine", "vegetable oil", "coconut oil", "applesauce"],
-        "eggs": ["flax eggs", "chia eggs", "applesauce", "banana"],
-        "milk": ["almond milk", "soy milk", "oat milk", "coconut milk"],
-        "flour": ["almond flour", "coconut flour", "oat flour", "rice flour"],
-        "sugar": ["honey", "maple syrup", "stevia", "coconut sugar"],
-        "cream": ["coconut cream", "cashew cream", "greek yogurt"]
-    }
-    ingredient_lower = ingredient.lower()
-    possible_subs = []
-    for key, subs in substitutions.items():
-        if key in ingredient_lower or ingredient_lower in key:
-            possible_subs = subs
-            break
-    if possible_subs:
-        st.write(f"**Substitutions for {ingredient}:**")
-        for sub in possible_subs:
-            st.write(f"• {sub}")
-    return possible_subs
-
-def display_cost_calculator(recipes: List[Dict]):
-    if not recipes:
-        return 0.0
-    st.subheader("Cost Estimate")
-    base_cost_per_serving = 3.50
-    total_cost = len(recipes) * base_cost_per_serving
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Recipes", len(recipes))
-    with col2:
-        st.metric("Est. Cost per Recipe", f"${base_cost_per_serving:.2f}")
-    with col3:
-        st.metric("Total Estimated Cost", f"${total_cost:.2f}")
-    st.caption("*Estimates based on average ingredient costs")
-    return total_cost
-
-def display_recipe_export_options(recipes: List[Dict]):
-    if not recipes:
-        return
-    st.subheader("Export Options")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("Export as PDF", use_container_width=True):
-            st.info("PDF export feature coming soon!")
-    with col2:
-        if st.button("Email Recipes", use_container_width=True):
-            st.info("Email feature coming soon!")
-    with col3:
-        if st.button("Share Link", use_container_width=True):
-            st.info("Share feature coming soon!")
-
-def display_quick_actions():
-    st.sidebar.divider()
-    st.sidebar.subheader("Quick Actions")
-    actions = {
-        "Random Recipe": "Get a random recipe suggestion",
-        "Clear All": "Clear all ingredients and start over",
-        "Save Session": "Save current session",
-        "Load Favorites": "Load your favorite recipes"
-    }
-    selected_action = None
-    for action, description in actions.items():
-        if st.sidebar.button(action, help=description, use_container_width=True):
-            selected_action = action
-            break
-    return selected_action
-
-def display_app_settings():
-    st.sidebar.divider()
-    st.sidebar.subheader("Settings")
-    settings = {}
-    settings['theme'] = st.sidebar.selectbox("Theme", ["Light", "Dark", "Auto"], help="Choose your preferred theme")
-    settings['units'] = st.sidebar.selectbox("Units", ["Metric", "Imperial"], help="Choose measurement units")
-    settings['notifications'] = st.sidebar.checkbox("Enable notifications", value=True, help="Receive cooking tips and reminders")
-    return settings
-
-# =======================
-# GAMIFICATION UI
-# =======================
-
-def display_user_stats_sidebar(user_id: str) -> Dict:
-    stats = get_user_stats(user_id)
-    st.sidebar.divider()
-    st.sidebar.subheader("Player Stats")
-    current_level_xp, xp_needed = get_xp_progress(stats['total_xp'], stats['level'])
-    xp_for_current_level = (stats['level'] ** 2) * 100 - ((stats['level'] - 1) ** 2) * 100
-    progress = current_level_xp / xp_for_current_level if xp_for_current_level > 0 else 0
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        st.metric("Level", stats['level'])
-        st.metric("Quizzes", stats['quizzes_taken'])
-    with col2:
-        st.metric("XP", stats['total_xp'])
-        st.metric("Perfect", stats['perfect_scores'])
-    st.sidebar.progress(progress, text=f"{xp_needed} XP to next level")
-    if stats['total_questions'] > 0:
-        accuracy = (stats['correct_answers'] / stats['total_questions']) * 100
-        st.sidebar.metric("Accuracy", f"{accuracy:.1f}%")
-    return stats
-
-def render_cooking_quiz(ingredients: List[str], user_id: str):
-    st.subheader
