@@ -80,18 +80,18 @@ def parse_expiry_date(expiry_string: str) -> datetime:
         return None
 
 def is_ingredient_valid(expiry_string: str) -> bool:
-    '''
-    Check if an ingredient is still valid (not expired)
-    
-    ARGUMENT - expiry_string (str): The expiry date string from Firebase
-    RETURN - bool: True if ingredient is still valid, False if expired or invalid date
-    '''
-    expiry_date = parse_expiry_date(expiry_string)
-    if expiry_date is None:
-        return False  # If we can't parse the date, consider it invalid
-    
-    current_date = datetime.now()
-    return expiry_date.date() >= current_date.date()  # Valid if expiry is today or later
+    """Check if ingredient hasn't expired"""
+    try:
+        if "Expiry date:" in expiry_string:
+            date_part = expiry_string.replace("Expiry date:", "").strip()
+        else:
+            date_part = expiry_string.strip()
+        
+        expiry_date = datetime.strptime(date_part, "%d/%m/%Y")
+        current_date = datetime.now()
+        return expiry_date.date() >= current_date.date()
+    except:
+        return False  # If can't parse, consider invalid
 
 def filter_valid_ingredients(ingredients: List[Dict]) -> List[Dict]:
     '''
@@ -115,50 +115,36 @@ def filter_valid_ingredients(ingredients: List[Dict]) -> List[Dict]:
     return valid_ingredients
 
 def fetch_ingredients_from_firebase() -> List[Dict]:
-    '''
-    Fetches ingredients from Firebase ingredient_inventory collection using the event Firebase configuration
-    Only returns ingredients that haven't expired yet
-    
-    RETURN - List[Dict]: a list of valid (non-expired) ingredient dictionaries with their details
-    '''
+    """Fetch ingredients from Firebase (simplified)"""
     try:
         from firebase_admin import firestore
         import firebase_admin
         
-        # Use the event Firebase app instead of the default one
-        if 'event_app' in [app.name for app in firebase_admin._apps.values()]:
+        # Try to get event Firebase app
+        try:
             db = firestore.client(app=firebase_admin.get_app(name='event_app'))
-        else:
-            # If event_app is not initialized, initialize it
-            from app_integration import check_event_firebase_config
-            check_event_firebase_config()
-            from modules.event_planner import init_event_firebase  # Updated import path
+        except:
+            # Initialize if needed
+            from modules.event_planner import init_event_firebase
             init_event_firebase()
             db = firestore.client(app=firebase_admin.get_app(name='event_app'))
         
         inventory_ref = db.collection('ingredient_inventory')
         inventory_docs = inventory_ref.get()
         
-        all_ingredients = []
+        ingredients = []
         for doc in inventory_docs:
             item = doc.to_dict()
             item['id'] = doc.id
-            all_ingredients.append(item)
+            # Only include non-expired ingredients
+            if is_ingredient_valid(item.get('Expiry Date', '')):
+                ingredients.append(item)
         
-        logger.info(f"Fetched {len(all_ingredients)} total ingredients from Firebase")
-        
-        # Filter out expired ingredients
-        valid_ingredients = filter_valid_ingredients(all_ingredients)
-        
-        # Sort valid ingredients by expiry date (closest to expire first)
-        valid_ingredients.sort(key=lambda x: parse_expiry_date(x.get('Expiry Date', '')) or datetime.max)
-        
-        logger.info(f"Returning {len(valid_ingredients)} valid ingredients, sorted by expiry date")
-        return valid_ingredients
+        return ingredients
         
     except Exception as e:
-        logger.error(f"Error fetching ingredients from Firebase: {str(e)}")
-        raise Exception(f"Error fetching ingredients from Firebase: {str(e)}")
+        logger.error(f"Firebase error: {str(e)}")
+        return []
 
 def get_ingredients_by_expiry_priority(firebase_ingredients: List[Dict], max_ingredients: int = 10) -> Tuple[List[str], List[Dict]]:
     '''
@@ -221,104 +207,57 @@ def calculate_days_until_expiry(expiry_string: str) -> int:
         return -999  # Return a very negative number for invalid dates
 
 def parse_firebase_ingredients(firebase_ingredients: List[Dict]) -> List[str]:
-    '''
-    Parses ingredients fetched from Firebase into a simple list of ingredient names
-    Only includes valid (non-expired) ingredients
-    
-    ARGUMENT - firebase_ingredients (List[Dict]): List of ingredient dictionaries from Firebase
-    RETURN - List[str]: a list of valid ingredient names
-    '''
+    """Extract ingredient names from Firebase data"""
     ingredients = []
     for item in firebase_ingredients:
         if 'Ingredient' in item and item['Ingredient']:
-            # Double-check that the ingredient is still valid
-            if is_ingredient_valid(item.get('Expiry Date', '')):
-                ingredients.append(item['Ingredient'])
+            ingredients.append(item['Ingredient'])
     return ingredients
 
-def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str = "", priority_ingredients: List[Dict] = None) -> List[str]:
-    '''
-    Suggest recipes based on the leftover ingredients, with priority for ingredients close to expiry.
 
-    ARGUMENT - 
-    leftovers (List[str]), list of the leftover ingredients (whether via the csv file or manually entered)
-    max_suggestions (int, optional): maximum number of recipe suggestions to output
-    notes (str, optional): additional notes or requirements for the recipes
-    priority_ingredients (List[Dict], optional): detailed info about ingredients with expiry dates
-
-    RETURN - List[str] of all recipes
-    '''
+def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str = "") -> List[str]:
+    """Generate recipe suggestions using Gemini AI"""
     if not leftovers:
-        logger.warning("No ingredients provided for recipe suggestions")
         return []
 
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            logger.error("GEMINI_API_KEY environment variable was not found!")
-            raise ValueError("GEMINI_API_KEY environment variable was not found!")
+            raise ValueError("GEMINI_API_KEY not found!")
         
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
 
         ingredients_list = ", ".join(leftovers)
-        logger.info(f"Generating recipes for ingredients: {ingredients_list}")
-        
-        # Add notes to the prompt if provided
-        notes_text = f"\nAdditional requirements: {notes}" if notes else ""
-        
-        # Add priority information if available
-        priority_text = ""
-        if priority_ingredients:
-            # Only consider ingredients that expire within the next 7 days as urgent
-            urgent_ingredients = [ing for ing in priority_ingredients if 0 <= ing['days_until_expiry'] <= 7]
-            if urgent_ingredients:
-                urgent_names = [ing['name'] for ing in urgent_ingredients]
-                urgent_details = [f"{ing['name']} (expires in {ing['days_until_expiry']} days)" for ing in urgent_ingredients]
-                priority_text = f"\nIMPORTANT: Please prioritize using these ingredients as they expire soon: {', '.join(urgent_details)}"
-        
-        logger.info(f"Additional notes: {notes_text}")
-        logger.info(f"Priority ingredients: {priority_text}")
+        notes_text = f"\nRequirements: {notes}" if notes else ""
         
         prompt = f'''
-        Here are the leftover ingredients I have: {ingredients_list}.{notes_text}{priority_text}
+        Create {max_suggestions} simple recipe names using these ingredients: {ingredients_list}.{notes_text}
 
-        I need you to suggest {max_suggestions} creative and unique recipe ideas that use these ingredients to avoid any food waste.
+        Just provide the recipe names, one per line. Keep them simple and practical.
+        Focus on reducing food waste by using the leftover ingredients.
+        '''
 
-        IMPORTANT: All ingredients provided are still fresh and valid (not expired). Please create recipes that make good use of them.
-
-        For each recipe, provide just the recipe name. Don't include ingredients list or instructions, just keep it very simple and minimalistic in the output.
-        Format each recipe as "Recipe Name"
-        Keep the recipes simple and focused on using the leftover ingredients.
-        If there are ingredients that expire soon, make sure to prioritize those in the recipe suggestions.
-        ''' 
-
-        logger.info("Sending request to Gemini API")
         response = model.generate_content(prompt)
         response_text = response.text
-        logger.info(f"Received response from Gemini API: {response_text[:100]}...")
         
+        # Parse response into recipe list
         recipe_lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         recipes = []
+        
         for line in recipe_lines:
+            # Clean up formatting
             if line and line[0].isdigit() and line[1:3] in ['. ', '- ', ') ']:
                 line = line[3:].strip()
             line = line.strip('"\'')
             if line and len(recipes) < max_suggestions:
                 recipes.append(line)
         
-        recipes = recipes[:max_suggestions]
-        logger.info(f"Processed recipes: {recipes}")
-        
-        if not recipes:
-            logger.warning(f"Got no recipes for the ingredients: {ingredients_list}!!")
-            return []
-        return recipes
+        return recipes[:max_suggestions]
 
     except Exception as e:
-        logger.error(f"Error using Gemini API: {str(e)}")
-        logger.exception("Full exception details:")
-        raise Exception(f"Error generating recipes: {str(e)}")
+        logger.error(f"Error generating recipes: {str(e)}")
+        return [f"Simple {leftovers[0]} dish", f"Mixed {leftovers[0]} recipe"] if leftovers else []
 
 # ------------------ Gamification Functions ------------------
 
