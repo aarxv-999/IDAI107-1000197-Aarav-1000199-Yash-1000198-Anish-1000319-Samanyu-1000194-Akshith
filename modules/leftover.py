@@ -16,7 +16,7 @@ import google.generativeai as genai
 import logging
 import random
 import json
-from datetime import datetime
+from datetime import datetime, date
 
 # Gamification-specific imports
 from firebase_admin import firestore
@@ -64,7 +64,7 @@ def parse_expiry_date(expiry_string: str) -> datetime:
     Parse expiry date from Firebase format "Expiry date: DD/MM/YYYY"
     
     ARGUMENT - expiry_string (str): The expiry date string from Firebase
-    RETURN - datetime: Parsed datetime object, or a far future date if parsing fails
+    RETURN - datetime: Parsed datetime object, or None if parsing fails
     '''
     try:
         # Remove "Expiry date:" prefix if present
@@ -77,14 +77,49 @@ def parse_expiry_date(expiry_string: str) -> datetime:
         return datetime.strptime(date_part, "%d/%m/%Y")
     except Exception as e:
         logger.warning(f"Could not parse expiry date '{expiry_string}': {str(e)}")
-        # Return a far future date for items without valid expiry dates
-        return datetime(2099, 12, 31)
+        return None
+
+def is_ingredient_valid(expiry_string: str) -> bool:
+    '''
+    Check if an ingredient is still valid (not expired)
+    
+    ARGUMENT - expiry_string (str): The expiry date string from Firebase
+    RETURN - bool: True if ingredient is still valid, False if expired or invalid date
+    '''
+    expiry_date = parse_expiry_date(expiry_string)
+    if expiry_date is None:
+        return False  # If we can't parse the date, consider it invalid
+    
+    current_date = datetime.now()
+    return expiry_date.date() >= current_date.date()  # Valid if expiry is today or later
+
+def filter_valid_ingredients(ingredients: List[Dict]) -> List[Dict]:
+    '''
+    Filter out expired ingredients from the list
+    
+    ARGUMENT - ingredients (List[Dict]): List of ingredient dictionaries from Firebase
+    RETURN - List[Dict]: List of valid (non-expired) ingredients
+    '''
+    valid_ingredients = []
+    expired_count = 0
+    
+    for ingredient in ingredients:
+        expiry_date_str = ingredient.get('Expiry Date', '')
+        if is_ingredient_valid(expiry_date_str):
+            valid_ingredients.append(ingredient)
+        else:
+            expired_count += 1
+            logger.info(f"Filtered out expired ingredient: {ingredient.get('Ingredient', 'Unknown')} - {expiry_date_str}")
+    
+    logger.info(f"Filtered out {expired_count} expired ingredients, {len(valid_ingredients)} valid ingredients remaining")
+    return valid_ingredients
 
 def fetch_ingredients_from_firebase() -> List[Dict]:
     '''
     Fetches ingredients from Firebase ingredient_inventory collection using the event Firebase configuration
+    Only returns ingredients that haven't expired yet
     
-    RETURN - List[Dict]: a list of ingredient dictionaries with their details
+    RETURN - List[Dict]: a list of valid (non-expired) ingredient dictionaries with their details
     '''
     try:
         from firebase_admin import firestore
@@ -104,26 +139,34 @@ def fetch_ingredients_from_firebase() -> List[Dict]:
         inventory_ref = db.collection('ingredient_inventory')
         inventory_docs = inventory_ref.get()
         
-        ingredients = []
+        all_ingredients = []
         for doc in inventory_docs:
             item = doc.to_dict()
             item['id'] = doc.id
-            ingredients.append(item)
+            all_ingredients.append(item)
         
-        # Sort ingredients by expiry date (closest to expire first)
-        ingredients.sort(key=lambda x: parse_expiry_date(x.get('Expiry Date', '')))
+        logger.info(f"Fetched {len(all_ingredients)} total ingredients from Firebase")
         
-        return ingredients
+        # Filter out expired ingredients
+        valid_ingredients = filter_valid_ingredients(all_ingredients)
+        
+        # Sort valid ingredients by expiry date (closest to expire first)
+        valid_ingredients.sort(key=lambda x: parse_expiry_date(x.get('Expiry Date', '')) or datetime.max)
+        
+        logger.info(f"Returning {len(valid_ingredients)} valid ingredients, sorted by expiry date")
+        return valid_ingredients
+        
     except Exception as e:
         logger.error(f"Error fetching ingredients from Firebase: {str(e)}")
         raise Exception(f"Error fetching ingredients from Firebase: {str(e)}")
 
 def get_ingredients_by_expiry_priority(firebase_ingredients: List[Dict], max_ingredients: int = 10) -> Tuple[List[str], List[Dict]]:
     '''
-    Get ingredients prioritized by expiry date (closest to expire first)
+    Get valid ingredients prioritized by expiry date (closest to expire first)
+    Only includes ingredients that haven't expired yet
     
     ARGUMENT - 
-    firebase_ingredients (List[Dict]): List of ingredient dictionaries from Firebase
+    firebase_ingredients (List[Dict]): List of ingredient dictionaries from Firebase (should already be filtered for valid ones)
     max_ingredients (int): Maximum number of ingredients to return
     
     RETURN - Tuple[List[str], List[Dict]]: (ingredient_names, detailed_ingredient_info)
@@ -131,8 +174,15 @@ def get_ingredients_by_expiry_priority(firebase_ingredients: List[Dict], max_ing
     if not firebase_ingredients:
         return [], []
     
+    # Double-check that all ingredients are still valid (in case filtering wasn't done earlier)
+    valid_ingredients = [ing for ing in firebase_ingredients if is_ingredient_valid(ing.get('Expiry Date', ''))]
+    
+    if not valid_ingredients:
+        logger.warning("No valid (non-expired) ingredients found")
+        return [], []
+    
     # Take the first max_ingredients (already sorted by expiry date)
-    priority_ingredients = firebase_ingredients[:max_ingredients]
+    priority_ingredients = valid_ingredients[:max_ingredients]
     
     # Extract ingredient names
     ingredient_names = []
@@ -141,13 +191,15 @@ def get_ingredients_by_expiry_priority(firebase_ingredients: List[Dict], max_ing
     for item in priority_ingredients:
         if 'Ingredient' in item and item['Ingredient']:
             ingredient_names.append(item['Ingredient'])
+            days_until_expiry = calculate_days_until_expiry(item.get('Expiry Date', ''))
             detailed_info.append({
                 'name': item['Ingredient'],
                 'expiry_date': item.get('Expiry Date', 'No expiry date'),
                 'type': item.get('Type', 'No type'),
-                'days_until_expiry': calculate_days_until_expiry(item.get('Expiry Date', ''))
+                'days_until_expiry': days_until_expiry
             })
     
+    logger.info(f"Selected {len(ingredient_names)} priority ingredients for recipe generation")
     return ingredient_names, detailed_info
 
 def calculate_days_until_expiry(expiry_string: str) -> int:
@@ -155,27 +207,33 @@ def calculate_days_until_expiry(expiry_string: str) -> int:
     Calculate days until expiry from current date
     
     ARGUMENT - expiry_string (str): The expiry date string
-    RETURN - int: Number of days until expiry (negative if expired)
+    RETURN - int: Number of days until expiry (0 if expires today, negative if expired)
     '''
     try:
         expiry_date = parse_expiry_date(expiry_string)
+        if expiry_date is None:
+            return -999  # Return a very negative number for invalid dates
+        
         current_date = datetime.now()
-        delta = expiry_date - current_date
+        delta = expiry_date.date() - current_date.date()
         return delta.days
     except:
-        return 999  # Return a large number for invalid dates
+        return -999  # Return a very negative number for invalid dates
 
 def parse_firebase_ingredients(firebase_ingredients: List[Dict]) -> List[str]:
     '''
     Parses ingredients fetched from Firebase into a simple list of ingredient names
+    Only includes valid (non-expired) ingredients
     
     ARGUMENT - firebase_ingredients (List[Dict]): List of ingredient dictionaries from Firebase
-    RETURN - List[str]: a list of ingredient names
+    RETURN - List[str]: a list of valid ingredient names
     '''
     ingredients = []
     for item in firebase_ingredients:
         if 'Ingredient' in item and item['Ingredient']:
-            ingredients.append(item['Ingredient'])
+            # Double-check that the ingredient is still valid
+            if is_ingredient_valid(item.get('Expiry Date', '')):
+                ingredients.append(item['Ingredient'])
     return ingredients
 
 def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str = "", priority_ingredients: List[Dict] = None) -> List[str]:
@@ -212,10 +270,12 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
         # Add priority information if available
         priority_text = ""
         if priority_ingredients:
-            urgent_ingredients = [ing for ing in priority_ingredients if ing['days_until_expiry'] <= 3]
+            # Only consider ingredients that expire within the next 7 days as urgent
+            urgent_ingredients = [ing for ing in priority_ingredients if 0 <= ing['days_until_expiry'] <= 7]
             if urgent_ingredients:
                 urgent_names = [ing['name'] for ing in urgent_ingredients]
-                priority_text = f"\nIMPORTANT: Please prioritize using these ingredients as they expire soon: {', '.join(urgent_names)}"
+                urgent_details = [f"{ing['name']} (expires in {ing['days_until_expiry']} days)" for ing in urgent_ingredients]
+                priority_text = f"\nIMPORTANT: Please prioritize using these ingredients as they expire soon: {', '.join(urgent_details)}"
         
         logger.info(f"Additional notes: {notes_text}")
         logger.info(f"Priority ingredients: {priority_text}")
@@ -224,6 +284,8 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
         Here are the leftover ingredients I have: {ingredients_list}.{notes_text}{priority_text}
 
         I need you to suggest {max_suggestions} creative and unique recipe ideas that use these ingredients to avoid any food waste.
+
+        IMPORTANT: All ingredients provided are still fresh and valid (not expired). Please create recipes that make good use of them.
 
         For each recipe, provide just the recipe name. Don't include ingredients list or instructions, just keep it very simple and minimalistic in the output.
         Format each recipe as "Recipe Name"
@@ -588,7 +650,7 @@ def check_achievements(quizzes: int, perfect_scores: int, new_level: int, old_le
     perfect_milestones = [
         (1, "Perfectionist", "💯"),
         (5, "Streak Master", "🏯"),
-        (10, "Flawless Chef", "👨��🍳")
+        (10, "Flawless Chef", "👨‍🍳")
     ]
 
     for milestone, title, emoji in perfect_milestones:
