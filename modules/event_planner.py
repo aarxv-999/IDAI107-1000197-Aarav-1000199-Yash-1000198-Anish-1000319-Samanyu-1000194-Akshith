@@ -8,6 +8,7 @@ This module provides:
 3. Role-based access control for different user types
 4. User-friendly display of event plans
 5. PDF export functionality
+6. Budget estimation in INR
 """
 
 import streamlit as st
@@ -216,7 +217,7 @@ def generate_event_plan(query: str) -> Dict:
 
     # Prepare prompt for AI
     prompt = f'''
-    You are an expert event planner for a restaurant. Plan an event based on this request:
+    You are an expert event planner for a restaurant in India. Plan an event based on this request:
     "{query}"
 
     Available recipes at our restaurant: {', '.join(recipe_names[:20])}
@@ -227,7 +228,16 @@ def generate_event_plan(query: str) -> Dict:
     2. Seating: A seating plan for {guest_count} guests (specify table arrangement)
     3. Decor: Decoration and ambiance suggestions
     4. Recipes: 5-7 recipe suggestions from our available recipes
-    5. Invitation: A short invitation message template
+    5. Budget: Detailed budget breakdown in Indian Rupees (INR)
+    6. Invitation: A short invitation message template
+
+    For the budget, provide realistic Indian pricing for:
+    - Food cost per person (₹300-800 depending on menu complexity)
+    - Decoration costs (₹2000-8000 total depending on event size)
+    - Venue setup costs (₹1000-5000 total)
+    - Service charges (10-15% of food cost)
+    - Total estimated cost
+    - Cost per person
 
     Format your response as a JSON object with these exact keys:
     {{
@@ -244,10 +254,26 @@ def generate_event_plan(query: str) -> Dict:
         }},
         "decor": [List of decoration ideas],
         "recipe_suggestions": [List of recipe names],
+        "budget": {{
+            "food_cost_per_person": 500,
+            "total_food_cost": 10000,
+            "decoration_cost": 5000,
+            "venue_setup_cost": 3000,
+            "service_charges": 1500,
+            "total_cost": 19500,
+            "cost_per_person": 975,
+            "breakdown": [
+                {{"item": "Food & Beverages", "cost": 10000}},
+                {{"item": "Decorations", "cost": 5000}},
+                {{"item": "Venue Setup", "cost": 3000}},
+                {{"item": "Service Charges", "cost": 1500}}
+            ]
+        }},
         "invitation": "Invitation text"
     }}
 
     Make sure the JSON is valid and properly formatted. For the tables, include table number, shape, number of seats, and location.
+    All budget amounts should be in Indian Rupees (INR) and be realistic for Indian market pricing.
     '''
 
     try:
@@ -277,8 +303,35 @@ def generate_event_plan(query: str) -> Dict:
             if filtered_names:
                 event_plan['recipe_suggestions'] = filtered_names[:7]
         
-        # Add event date (current date)
+        # Ensure budget exists and has proper structure
+        if 'budget' not in event_plan:
+            # Create default budget if not generated
+            food_cost_per_person = 500
+            total_food_cost = food_cost_per_person * guest_count
+            decoration_cost = min(5000, guest_count * 200)
+            venue_setup_cost = 3000
+            service_charges = int(total_food_cost * 0.15)
+            total_cost = total_food_cost + decoration_cost + venue_setup_cost + service_charges
+            
+            event_plan['budget'] = {
+                "food_cost_per_person": food_cost_per_person,
+                "total_food_cost": total_food_cost,
+                "decoration_cost": decoration_cost,
+                "venue_setup_cost": venue_setup_cost,
+                "service_charges": service_charges,
+                "total_cost": total_cost,
+                "cost_per_person": int(total_cost / guest_count),
+                "breakdown": [
+                    {"item": "Food & Beverages", "cost": total_food_cost},
+                    {"item": "Decorations", "cost": decoration_cost},
+                    {"item": "Venue Setup", "cost": venue_setup_cost},
+                    {"item": "Service Charges", "cost": service_charges}
+                ]
+            }
+        
+        # Add event date (current date) and guest count
         event_plan['date'] = datetime.now().strftime("%Y-%m-%d")
+        event_plan['guest_count'] = guest_count
         
         return {
             'plan': event_plan,
@@ -314,9 +367,10 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         pdf.cell(0, 10, f"Event Plan: {event_plan['theme']['name']}", ln=True, align="C")
         pdf.ln(5)
         
-        # Date
+        # Date and guest count
         pdf.set_font("Arial", "I", 12)
         pdf.cell(0, 10, f"Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}", ln=True)
+        pdf.cell(0, 10, f"Expected Guests: {event_plan.get('guest_count', 'Not specified')}", ln=True)
         pdf.ln(5)
         
         # Theme description
@@ -325,6 +379,40 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         pdf.set_font("Arial", "", 12)
         pdf.multi_cell(0, 10, event_plan['theme']['description'])
         pdf.ln(5)
+        
+        # Budget Section
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Budget Estimate (INR)", ln=True)
+        pdf.set_font("Arial", "", 12)
+        
+        budget = event_plan.get('budget', {})
+        if budget:
+            # Budget summary
+            pdf.cell(0, 10, f"Total Event Cost: Rs. {budget.get('total_cost', 0):,}", ln=True)
+            pdf.cell(0, 10, f"Cost per Person: Rs. {budget.get('cost_per_person', 0):,}", ln=True)
+            pdf.ln(3)
+            
+            # Budget breakdown table
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, "Cost Breakdown:", ln=True)
+            
+            pdf.set_font("Arial", "", 10)
+            col_width_item = 120
+            col_width_cost = 60
+            row_height = 8
+            
+            # Table headers
+            pdf.cell(col_width_item, row_height, "Item", border=1)
+            pdf.cell(col_width_cost, row_height, "Cost (INR)", border=1)
+            pdf.ln(row_height)
+            
+            # Budget breakdown data
+            for item in budget.get('breakdown', []):
+                pdf.cell(col_width_item, row_height, str(item.get('item', '')), border=1)
+                pdf.cell(col_width_cost, row_height, f"Rs. {item.get('cost', 0):,}", border=1)
+                pdf.ln(row_height)
+            
+            pdf.ln(5)
         
         # Seating arrangement
         pdf.set_font("Arial", "B", 14)
@@ -433,12 +521,10 @@ def create_unicode_pdf(event_plan: Dict) -> bytes:
         pdf.cell(0, 10, f"Event Plan: {event_plan['theme']['name']}", ln=True, align="C")
         pdf.ln(5)
         
-        # Rest of PDF generation...
-        # (Similar to create_event_pdf but with Unicode awareness)
-        
-        # Date
+        # Date and guest count
         pdf.set_font("Arial", "I", 12)
         pdf.cell(0, 10, f"Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}", ln=True)
+        pdf.cell(0, 10, f"Expected Guests: {event_plan.get('guest_count', 'Not specified')}", ln=True)
         pdf.ln(5)
         
         # Theme description
@@ -447,6 +533,40 @@ def create_unicode_pdf(event_plan: Dict) -> bytes:
         pdf.set_font("Arial", "", 12)
         pdf.multi_cell(0, 10, event_plan['theme']['description'])
         pdf.ln(5)
+        
+        # Budget Section
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Budget Estimate (INR)", ln=True)
+        pdf.set_font("Arial", "", 12)
+        
+        budget = event_plan.get('budget', {})
+        if budget:
+            # Budget summary
+            pdf.cell(0, 10, f"Total Event Cost: Rs. {budget.get('total_cost', 0):,}", ln=True)
+            pdf.cell(0, 10, f"Cost per Person: Rs. {budget.get('cost_per_person', 0):,}", ln=True)
+            pdf.ln(3)
+            
+            # Budget breakdown table
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, "Cost Breakdown:", ln=True)
+            
+            pdf.set_font("Arial", "", 10)
+            col_width_item = 120
+            col_width_cost = 60
+            row_height = 8
+            
+            # Table headers
+            pdf.cell(col_width_item, row_height, "Item", border=1)
+            pdf.cell(col_width_cost, row_height, "Cost (INR)", border=1)
+            pdf.ln(row_height)
+            
+            # Budget breakdown data
+            for item in budget.get('breakdown', []):
+                pdf.cell(col_width_item, row_height, str(item.get('item', '')), border=1)
+                pdf.cell(col_width_cost, row_height, f"Rs. {item.get('cost', 0):,}", border=1)
+                pdf.ln(row_height)
+            
+            pdf.ln(5)
         
         # Seating arrangement
         pdf.set_font("Arial", "B", 14)
@@ -599,6 +719,65 @@ def render_seating_visualization(tables: List):
     total_seats = sum(table.get("seats", 0) if isinstance(table, dict) else 0 for table in tables)
     st.caption(f"Total capacity: {total_seats} guests")
 
+def render_budget_visualization(budget: Dict):
+    """
+    Render a visual representation of the budget breakdown
+    
+    Args:
+        budget: Dictionary containing budget information
+    """
+    if not budget:
+        st.warning("No budget information available")
+        return
+    
+    # Budget summary cards
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            label="Total Cost",
+            value=f"₹{budget.get('total_cost', 0):,}",
+            help="Total estimated cost for the event"
+        )
+    
+    with col2:
+        st.metric(
+            label="Cost per Person",
+            value=f"₹{budget.get('cost_per_person', 0):,}",
+            help="Estimated cost per guest"
+        )
+    
+    with col3:
+        st.metric(
+            label="Food Cost per Person",
+            value=f"₹{budget.get('food_cost_per_person', 0):,}",
+            help="Food and beverage cost per guest"
+        )
+    
+    # Budget breakdown table
+    st.subheader("Cost Breakdown")
+    
+    breakdown_data = []
+    for item in budget.get('breakdown', []):
+        breakdown_data.append({
+            "Category": item.get('item', ''),
+            "Cost (INR)": f"₹{item.get('cost', 0):,}",
+            "Percentage": f"{(item.get('cost', 0) / budget.get('total_cost', 1) * 100):.1f}%"
+        })
+    
+    if breakdown_data:
+        df = pd.DataFrame(breakdown_data)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        # Create a simple bar chart for visualization
+        chart_data = pd.DataFrame({
+            'Category': [item['Category'] for item in breakdown_data],
+            'Cost': [item.get('cost', 0) for item in budget.get('breakdown', [])]
+        })
+        
+        if not chart_data.empty:
+            st.bar_chart(chart_data.set_index('Category'))
+
 def render_chatbot_ui():
     """Render the event planning chatbot UI"""
     st.markdown("### 🤖 Event Planning Assistant")
@@ -645,7 +824,7 @@ def render_chatbot_ui():
                     st.markdown(event_plan['theme']['description'])
                     
                     # Create tabs for different aspects of the plan
-                    tabs = st.tabs(["💺 Seating", "🎭 Decor", "🍽️ Recipes", "✉️ Invitation", "📄 Export"])
+                    tabs = st.tabs(["💺 Seating", "💰 Budget", "🎭 Decor", "🍽️ Recipes", "✉️ Invitation", "📄 Export"])
                     
                     with tabs[0]:
                         st.markdown("#### Seating Arrangement")
@@ -656,20 +835,24 @@ def render_chatbot_ui():
                         render_seating_visualization(event_plan['seating']['tables'])
                     
                     with tabs[1]:
+                        st.markdown("#### Budget Estimate")
+                        render_budget_visualization(event_plan.get('budget', {}))
+                    
+                    with tabs[2]:
                         st.markdown("#### Decoration Ideas")
                         for item in event_plan['decor']:
                             st.markdown(f"- {item}")
                     
-                    with tabs[2]:
+                    with tabs[3]:
                         st.markdown("#### Recipe Suggestions")
                         for item in event_plan['recipe_suggestions']:
                             st.markdown(f"- {item}")
                     
-                    with tabs[3]:
+                    with tabs[4]:
                         st.markdown("#### Invitation Template")
                         st.info(event_plan['invitation'])
                     
-                    with tabs[4]:
+                    with tabs[5]:
                         st.markdown("#### Export Event Plan")
                         
                         # Generate PDF
@@ -697,10 +880,22 @@ def render_chatbot_ui():
                             text_export = f"""
                             # Event Plan: {event_plan['theme']['name']}
                             Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}
+                            Expected Guests: {event_plan.get('guest_count', 'Not specified')}
                             
                             ## Theme
                             {event_plan['theme']['description']}
                             
+                            ## Budget Estimate (INR)
+                            Total Cost: Rs. {event_plan.get('budget', {}).get('total_cost', 0):,}
+                            Cost per Person: Rs. {event_plan.get('budget', {}).get('cost_per_person', 0):,}
+                            
+                            ### Cost Breakdown:
+                            """
+                            
+                            for item in event_plan.get('budget', {}).get('breakdown', []):
+                                text_export += f"- {item.get('item', '')}: Rs. {item.get('cost', 0):,}\n"
+                            
+                            text_export += f"""
                             ## Seating Arrangement
                             {event_plan['seating']['layout']}
                             
@@ -734,7 +929,7 @@ def render_chatbot_ui():
                     # Add assistant message to chat history
                     st.session_state.event_chat_history.append({
                         'role': 'assistant',
-                        'content': f"I've created an event plan for '{event_plan['theme']['name']}'. You can view the details above and download it as a PDF."
+                        'content': f"I've created an event plan for '{event_plan['theme']['name']}' with a budget estimate of ₹{event_plan.get('budget', {}).get('total_cost', 0):,}. You can view the details above and download it as a PDF."
                     })
                 else:
                     st.error(f"Failed to generate event plan: {response.get('error', 'Unknown error')}")
