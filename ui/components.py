@@ -20,7 +20,8 @@ from modules.leftover import (
     load_leftovers, parse_manual_leftovers, suggest_recipes,
     generate_dynamic_quiz_questions, calculate_quiz_score, get_user_stats,
     update_user_stats, get_leaderboard, get_xp_progress, award_recipe_xp,
-    fetch_ingredients_from_firebase, parse_firebase_ingredients
+    fetch_ingredients_from_firebase, parse_firebase_ingredients,
+    get_ingredients_by_expiry_priority
 )
 
 logger = logging.getLogger(__name__)
@@ -259,49 +260,78 @@ def leftover_input_manual() -> List[str]:
             st.sidebar.error(f"Error: {str(err)}")
     return leftovers
 
-def leftover_input_firebase() -> List[str]:
+def leftover_input_firebase() -> Tuple[List[str], List[Dict]]:
     """
-    UI component to fetch ingredients from Firebase inventory
+    UI component to fetch ingredients from Firebase inventory with expiry priority
     
     Returns:
-        List[str]: List of ingredient names from Firebase
+        Tuple[List[str], List[Dict]]: (ingredient_names, detailed_ingredient_info)
     """
     st.sidebar.subheader("Current Inventory")
-    use_firebase = st.sidebar.checkbox("Use current inventory from Firebase", help="Fetch ingredients from your current inventory")
+    use_firebase = st.sidebar.checkbox("Use current inventory from Firebase", help="Fetch ingredients from your current inventory, prioritized by expiry date")
     leftovers = []
+    detailed_info = []
     
     if use_firebase:
-        if st.sidebar.button("Fetch Current Ingredients", type="primary"):
+        # Add option to select number of ingredients to use
+        max_ingredients = st.sidebar.slider(
+            "Max ingredients to use", 
+            min_value=3, 
+            max_value=15, 
+            value=8,
+            help="Select how many ingredients to use (prioritized by expiry date)"
+        )
+        
+        if st.sidebar.button("Fetch Priority Ingredients", type="primary"):
             try:
                 # Show spinner in the main area since sidebar doesn't support spinner
                 with st.spinner("Fetching ingredients from inventory..."):
-                    # Fetch ingredients from Firebase
+                    # Fetch ingredients from Firebase (already sorted by expiry date)
                     firebase_ingredients = fetch_ingredients_from_firebase()
                     
                     if firebase_ingredients:
-                        # Display ingredients with expiry dates
-                        st.sidebar.success(f"Found {len(firebase_ingredients)} ingredients in inventory")
+                        # Get ingredients prioritized by expiry date
+                        leftovers, detailed_info = get_ingredients_by_expiry_priority(
+                            firebase_ingredients, max_ingredients
+                        )
                         
-                        # Show a preview of ingredients with expiry dates
-                        with st.sidebar.expander("Inventory Preview", expanded=True):
-                            for item in firebase_ingredients:
-                                ingredient = item.get('Ingredient', 'Unknown')
-                                expiry = item.get('Expiry Date', 'No expiry date')
-                                ingredient_type = item.get('Type', 'No type')
+                        st.sidebar.success(f"Found {len(leftovers)} priority ingredients")
+                        
+                        # Show a preview of ingredients with expiry info
+                        with st.sidebar.expander("Priority Ingredients", expanded=True):
+                            for item in detailed_info:
+                                days_left = item['days_until_expiry']
                                 
-                                st.sidebar.markdown(f"**{ingredient}**  \n"
-                                                   f"Expires: {expiry}  \n"
-                                                   f"Type: {ingredient_type}")
+                                # Color code based on urgency
+                                if days_left <= 1:
+                                    urgency_color = "🔴"  # Red for urgent (expires today/tomorrow)
+                                elif days_left <= 3:
+                                    urgency_color = "🟡"  # Yellow for soon (2-3 days)
+                                elif days_left <= 7:
+                                    urgency_color = "🟢"  # Green for moderate (4-7 days)
+                                else:
+                                    urgency_color = "⚪"  # White for later
+                                
+                                st.sidebar.markdown(f"{urgency_color} **{item['name']}**  \n"
+                                                   f"Expires: {item['expiry_date']}  \n"
+                                                   f"Days left: {days_left}  \n"
+                                                   f"Type: {item['type']}")
                                 st.sidebar.divider()
                         
-                        # Parse ingredients into a simple list
-                        leftovers = parse_firebase_ingredients(firebase_ingredients)
+                        # Store in session state for recipe generation
+                        st.session_state.firebase_ingredients = leftovers
+                        st.session_state.firebase_detailed_info = detailed_info
+                        
                     else:
                         st.sidebar.warning("No ingredients found in inventory")
             except Exception as err:
                 st.sidebar.error(f"Error fetching ingredients: {str(err)}")
     
-    return leftovers
+    # Return stored ingredients if they exist
+    if 'firebase_ingredients' in st.session_state:
+        return st.session_state.firebase_ingredients, st.session_state.get('firebase_detailed_info', [])
+    
+    return leftovers, detailed_info
 
 def display_leftover_summary(leftovers: List[str]):
     if leftovers:
@@ -578,282 +608,4 @@ def display_user_stats_sidebar(user_id: str) -> Dict:
     return stats
 
 def render_cooking_quiz(ingredients: List[str], user_id: str):
-    st.subheader("Cooking Knowledge Quiz")
-    st.caption(f"Based on: {', '.join(ingredients[:3])}{'...' if len(ingredients) > 3 else ''}")
-    if 'quiz_questions' not in st.session_state:
-        st.session_state.quiz_questions = None
-    if 'quiz_answers' not in st.session_state:
-        st.session_state.quiz_answers = []
-    if 'quiz_submitted' not in st.session_state:
-        st.session_state.quiz_submitted = False
-    if 'quiz_results' not in st.session_state:
-        st.session_state.quiz_results = None
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        num_questions = st.selectbox("Questions:", [3, 5, 7], index=1)
-    with col2:
-        if st.button("Start Quiz", type="primary", use_container_width=True):
-            with st.spinner("Loading questions..."):
-                st.session_state.quiz_questions = generate_dynamic_quiz_questions(ingredients, num_questions)
-                st.session_state.quiz_answers = []
-                st.session_state.quiz_submitted = False
-                st.session_state.quiz_results = None
-                st.rerun()
-    if st.session_state.quiz_questions and not st.session_state.quiz_submitted:
-        st.divider()
-        answers = []
-        for i, question in enumerate(st.session_state.quiz_questions):
-            with st.container():
-                st.write(f"**{i+1}.** {question['question']}")
-                difficulty_map = {"easy": "Easy", "medium": "Medium", "hard": "Hard"}
-                st.caption(f"{difficulty_map.get(question['difficulty'], 'Unknown')} • {question['xp_reward']} XP")
-                answer = st.radio("Select answer:", options=question['options'], key=f"q_{i}", index=None, label_visibility="collapsed")
-                if answer:
-                    answers.append(question['options'].index(answer))
-                else:
-                    answers.append(-1)
-            if i < len(st.session_state.quiz_questions) - 1:
-                st.divider()
-        st.write("")
-        if st.button("Submit Quiz", type="primary", use_container_width=True):
-            if -1 in answers:
-                st.error("Please answer all questions before submitting.")
-            else:
-                st.session_state.quiz_answers = answers
-                st.session_state.quiz_submitted = True
-                correct, total, xp_earned = calculate_quiz_score(answers, st.session_state.quiz_questions)
-                st.session_state.quiz_results = {
-                    'correct': correct,
-                    'total': total,
-                    'xp_earned': xp_earned,
-                    'percentage': (correct / total) * 100
-                }
-                update_user_stats(user_id, xp_earned, correct, total)
-                st.rerun()
-    if st.session_state.quiz_submitted and st.session_state.quiz_results:
-        display_quiz_results(st.session_state.quiz_results, st.session_state.quiz_questions, st.session_state.quiz_answers)
-
-def display_quiz_results(results: Dict, questions: List[Dict], user_answers: List[int]):
-    st.divider()
-    st.subheader("Quiz Results")
-    score = results['correct']
-    total = results['total']
-    percentage = results['percentage']
-    xp_earned = results['xp_earned']
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Score", f"{score}/{total}")
-    with col2:
-        st.metric("Accuracy", f"{percentage:.1f}%")
-    with col3:
-        st.metric("XP Earned", f"+{xp_earned}")
-    with col4:
-        if percentage == 100:
-            st.metric("Grade", "Perfect")
-        elif percentage >= 80:
-            st.metric("Grade", "Excellent")
-        elif percentage >= 60:
-            st.metric("Grade", "Good")
-        else:
-            st.metric("Grade", "Practice")
-    if percentage == 100:
-        st.success("Perfect score! Excellent culinary knowledge.")
-    elif percentage >= 80:
-        st.success("Great work! Your cooking knowledge is impressive.")
-    elif percentage >= 60:
-        st.info("Good job! Keep studying to improve further.")
-    else:
-        st.warning("Keep learning! Practice makes perfect.")
-    with st.expander("Review Answers", expanded=False):
-        for i, question in enumerate(questions):
-            user_answer = user_answers[i]
-            correct_answer = question['correct']
-            is_correct = user_answer == correct_answer
-            status = "✓" if is_correct else "✗"
-            st.write(f"**{status} Question {i+1}:** {question['question']}")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write(f"Your answer: {question['options'][user_answer]}")
-            with col2:
-                st.write(f"Correct: {question['options'][correct_answer]}")
-            if 'explanation' in question and question['explanation']:
-                st.caption(f"Explanation: {question['explanation']}")
-            if i < len(questions) - 1:
-                st.divider()
-    if st.button("Take Another Quiz", use_container_width=True):
-        st.session_state.quiz_questions = None
-        st.session_state.quiz_answers = []
-        st.session_state.quiz_submitted = False
-        st.session_state.quiz_results = None
-        st.rerun()
-
-def display_leaderboard():
-    st.subheader("Leaderboard")
-    st.caption("Top players by XP")
-    leaderboard = get_leaderboard(10)
-    if leaderboard:
-        col1, col2, col3, col4, col5 = st.columns([1, 3, 2, 2, 2])
-        with col1: st.write("**Rank**")
-        with col2: st.write("**Player**")
-        with col3: st.write("**Level**")
-        with col4: st.write("**XP**")
-        with col5: st.write("**Quizzes**")
-        st.divider()
-        for entry in leaderboard:
-            col1, col2, col3, col4, col5 = st.columns([1, 3, 2, 2, 2])
-            with col1:
-                if entry['rank'] <= 3:
-                    rank_display = {1: "🥇", 2: "🥈", 3: "🥉"}[entry['rank']]
-                else:
-                    rank_display = str(entry['rank'])
-                st.write(rank_display)
-            with col2:
-                st.write(entry['username'])
-            with col3:
-                st.write(f"Level {entry['level']}")
-            with col4:
-                st.write(f"{entry['total_xp']:,}")
-            with col5:
-                st.write(entry['quizzes_taken'])
-    else:
-        st.info("No leaderboard data available. Be the first to take a quiz!")
-
-def display_achievements_showcase(user_id: str):
-    st.subheader("Achievements")
-    stats = get_user_stats(user_id)
-    achievements = stats.get('achievements', [])
-    if not achievements:
-        st.info("No achievements yet. Take quizzes to start earning achievements!")
-        return
-    achievement_descriptions = {
-        "First Quiz": "Completed your first cooking quiz",
-        "Quiz Novice": "Completed 5 cooking quizzes",
-        "Quiz Enthusiast": "Completed 10 cooking quizzes",
-        "Quiz Master": "Completed 25 cooking quizzes",
-        "Quiz Legend": "Completed 50 cooking quizzes",
-        "Perfectionist": "Achieved your first perfect score",
-        "Streak Master": "Achieved 5 perfect scores",
-        "Flawless Chef": "Achieved 10 perfect scores",
-        "Rising Star": "Reached Level 5",
-        "Kitchen Pro": "Reached Level 10",
-        "Culinary Expert": "Reached Level 15",
-        "Master Chef": "Reached Level 20"
-    }
-    cols = st.columns(2)
-    for i, achievement in enumerate(achievements):
-        col_idx = i % 2
-        with cols[col_idx]:
-            description = achievement_descriptions.get(achievement, "Special achievement")
-            st.success(f"**{achievement}**\n{description}")
-    st.divider()
-    st.write("**Progress Tracking**")
-    quizzes_taken = stats.get('quizzes_taken', 0)
-    perfect_scores = stats.get('perfect_scores', 0)
-    current_level = stats.get('level', 1)
-    quiz_milestones = [1, 5, 10, 25, 50]
-    next_quiz_milestone = next((m for m in quiz_milestones if m > quizzes_taken), None)
-    if next_quiz_milestone:
-        progress = quizzes_taken / next_quiz_milestone
-        st.progress(progress, text=f"Quiz Progress: {quizzes_taken}/{next_quiz_milestone}")
-
-def display_gamification_dashboard(user_id: str):
-    st.title("Player Dashboard")
-    stats = get_user_stats(user_id)
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Level", stats['level'], f"{stats['total_xp']} XP")
-    with col2:
-        st.metric("Quizzes Taken", stats['quizzes_taken'])
-    with col3:
-        accuracy = (stats['correct_answers'] / stats['total_questions'] * 100) if stats['total_questions'] > 0 else 0
-        st.metric("Accuracy", f"{accuracy:.1f}%")
-    with col4:
-        st.metric("Achievements", len(stats.get('achievements', [])))
-    tab1, tab2, tab3 = st.tabs(["Achievements", "Progress", "Leaderboard"])
-    with tab1:
-        display_achievements_showcase(user_id)
-    with tab2:
-        display_progress_tracking(user_id)
-    with tab3:
-        display_leaderboard()
-
-def display_progress_tracking(user_id: str):
-    stats = get_user_stats(user_id)
-    current_level_xp, xp_needed = get_xp_progress(stats['total_xp'], stats['level'])
-    xp_for_current_level = (stats['level'] ** 2) * 100 - ((stats['level'] - 1) ** 2) * 100
-    progress_percentage = (current_level_xp / xp_for_current_level * 100) if xp_for_current_level > 0 else 0
-    st.subheader("Level Progress")
-    st.progress(current_level_xp / xp_for_current_level if xp_for_current_level > 0 else 0)
-    st.write(f"Level {stats['level']}: {current_level_xp}/{xp_for_current_level} XP ({progress_percentage:.1f}%)")
-    st.caption(f"{xp_needed} XP needed for Level {stats['level'] + 1}")
-    st.divider()
-    st.subheader("Statistics")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("**Quiz Performance**")
-        if stats['quizzes_taken'] > 0:
-            perfect_rate = (stats['perfect_scores'] / stats['quizzes_taken']) * 100
-            st.metric("Perfect Score Rate", f"{perfect_rate:.1f}%")
-            st.metric("Questions Answered", stats['total_questions'])
-        else:
-            st.info("No quizzes taken yet")
-    with col2:
-        st.write("**Activity**")
-        st.metric("Recipes Generated", stats.get('recipes_generated', 0))
-        st.metric("Days Active", calculate_days_active(stats))
-    st.divider()
-    st.subheader("Weekly Goals")
-    display_weekly_goals(stats)
-
-def calculate_days_active(stats: Dict) -> int:
-    base_days = max(1, stats.get('quizzes_taken', 0) // 2)
-    return min(base_days, 30)
-
-def display_weekly_goals(stats: Dict):
-    quizzes_this_week = min(stats.get('quizzes_taken', 0), 7)
-    recipes_this_week = min(stats.get('recipes_generated', 0), 5)
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("**Quiz Goal (5/week)**")
-        quiz_progress = min(quizzes_this_week / 5, 1.0)
-        st.progress(quiz_progress, text=f"{quizzes_this_week}/5 completed")
-    with col2:
-        st.write("**Recipe Goal (3/week)**")
-        recipe_progress = min(recipes_this_week / 3, 1.0)
-        st.progress(recipe_progress, text=f"{recipes_this_week}/3 completed")
-
-def award_recipe_generation_xp(user_id: str, num_recipes: int = 1):
-    updated_stats = award_recipe_xp(user_id, num_recipes)
-    xp_earned = num_recipes * 5
-    st.success(f"Recipe generated! +{xp_earned} XP earned")
-    if 'level_up' in st.session_state and st.session_state.level_up:
-        st.balloons()
-        st.success(f"Level Up! You're now Level {updated_stats['level']}")
-        st.session_state.level_up = False
-
-def show_xp_notification(xp_earned: int, level_up: bool = False):
-    if level_up:
-        st.balloons()
-        st.success(f"Level Up! +{xp_earned} XP earned")
-    else:
-        st.success(f"+{xp_earned} XP earned")
-
-def get_daily_challenge(user_id: str) -> Dict:
-    import random
-    challenges = [
-        {"title": "Perfect Score Challenge", "description": "Get a perfect score on any quiz", "xp_reward": 25, "type": "quiz_perfect"},
-        {"title": "Recipe Explorer", "description": "Generate 3 different recipes today", "xp_reward": 20, "type": "recipe_count"},
-        {"title": "Knowledge Seeker", "description": "Take 2 quizzes today", "xp_reward": 15, "type": "quiz_count"},
-        {"title": "Accuracy Master", "description": "Maintain 80%+ accuracy across all quizzes today", "xp_reward": 30, "type": "accuracy"}
-    ]
-    today_seed = datetime.now().strftime("%Y-%m-%d") + user_id
-    random.seed(hash(today_seed))
-    return random.choice(challenges)
-
-def display_daily_challenge(user_id: str):
-    challenge = get_daily_challenge(user_id)
-    st.subheader("Daily Challenge")
-    with st.container():
-        st.write(f"**{challenge['title']}**")
-        st.write(challenge['description'])
-        st.caption(f"Reward: +{challenge['xp_reward']} XP")
+    st.subheader
