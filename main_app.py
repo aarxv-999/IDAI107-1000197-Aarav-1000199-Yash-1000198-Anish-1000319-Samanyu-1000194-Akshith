@@ -11,8 +11,13 @@ from ui.components import (  # Import gamification UI functions
     display_user_stats_sidebar, render_cooking_quiz, display_gamification_dashboard,
     award_recipe_generation_xp, display_daily_challenge, show_xp_notification
 )
-from modules.leftover import suggest_recipes  # Import logic functions
-from modules.leftover import get_user_stats, award_recipe_xp  # Import gamification logic
+
+# Import the enhanced leftover management functions
+from scripts.leftover_combined_updated import (
+    suggest_recipes, fetch_ingredients_from_firebase, prioritize_ingredients, 
+    parse_firebase_ingredients, get_user_stats, award_recipe_xp
+)
+
 from firebase_init import init_firebase
 
 # Import the event planner integration
@@ -61,15 +66,17 @@ def check_feature_access(feature_name):
         
     return False
 
-# Individual feature functions
+# Enhanced leftover management function
 @auth_required
 def leftover_management():
-    """Leftover management feature"""
-    st.title("♻️ Leftover Management")
+    """Enhanced leftover management feature with Firebase prioritization"""
+    st.title("♻️ Enhanced Leftover Management")
     
     # Initialize session state variables if they don't exist
     if 'all_leftovers' not in st.session_state:
         st.session_state.all_leftovers = []
+    if 'firebase_ingredients_data' not in st.session_state:
+        st.session_state.firebase_ingredients_data = []
     if 'recipes' not in st.session_state:
         st.session_state.recipes = []
     if 'recipe_generation_error' not in st.session_state:
@@ -78,10 +85,52 @@ def leftover_management():
     # Sidebar for input methods
     st.sidebar.header("Input Methods")
     
-    # Get leftovers from CSV, manual input, or Firebase
+    # Get leftovers from CSV and manual input (existing functionality)
     csv_leftovers = leftover_input_csv()
     manual_leftovers = leftover_input_manual()
-    firebase_leftovers = leftover_input_firebase()
+    
+    # Enhanced Firebase ingredient fetching with prioritization
+    st.sidebar.subheader("📊 Firebase Ingredients")
+    if st.sidebar.button("🔄 Fetch & Prioritize Ingredients", help="Fetch ingredients from Firebase and prioritize by expiry date and quantity"):
+        try:
+            with st.sidebar.spinner("Fetching and prioritizing ingredients..."):
+                # Fetch raw ingredients from Firebase
+                raw_firebase_ingredients = fetch_ingredients_from_firebase()
+                
+                # Prioritize ingredients
+                prioritized_data = prioritize_ingredients(raw_firebase_ingredients)
+                
+                # Store both the ingredient names and the full data
+                firebase_leftovers = [item['ingredient'] for item in prioritized_data]
+                st.session_state.firebase_ingredients_data = prioritized_data
+                
+                st.sidebar.success(f"✅ Fetched {len(firebase_leftovers)} prioritized ingredients!")
+                
+                # Show priority breakdown
+                priority_counts = {}
+                for item in prioritized_data:
+                    priority = item['priority']
+                    priority_counts[priority] = priority_counts.get(priority, 0) + 1
+                
+                st.sidebar.write("**Priority Breakdown:**")
+                priority_labels = {
+                    1: "🔴 High Priority (Expiring Soon + Large Qty)",
+                    2: "🟡 Medium Priority (Expiring Soon)",
+                    3: "🟠 Good Quantity (Large Qty)",
+                    4: "⚪ Standard Priority"
+                }
+                
+                for priority in sorted(priority_counts.keys()):
+                    count = priority_counts[priority]
+                    label = priority_labels.get(priority, f"Priority {priority}")
+                    st.sidebar.write(f"{label}: {count} items")
+                    
+        except Exception as e:
+            st.sidebar.error(f"❌ Error fetching ingredients: {str(e)}")
+            firebase_leftovers = []
+    else:
+        # Use existing Firebase ingredients if available
+        firebase_leftovers = [item['ingredient'] for item in st.session_state.firebase_ingredients_data]
     
     # Combine leftovers from all sources
     all_leftovers = csv_leftovers + manual_leftovers + firebase_leftovers
@@ -93,17 +142,53 @@ def leftover_management():
     if all_leftovers:
         st.write(f"Found {len(all_leftovers)} ingredients")
         
-        # Create a dropdown for ingredients
-        with st.expander("Available Ingredients", expanded=False):
-            # Display ingredients in a more compact format
-            cols = st.columns(3)
-            for i, ingredient in enumerate(all_leftovers):
-                col_idx = i % 3
-                with cols[col_idx]:
-                    st.write(f"• {ingredient.title()}")
+        # Enhanced ingredient display with priority information
+        with st.expander("Available Ingredients (Prioritized)", expanded=True):
+            if st.session_state.firebase_ingredients_data:
+                # Display Firebase ingredients with priority info
+                st.subheader("🔥 Firebase Ingredients (Prioritized)")
+                
+                # Group by priority
+                priority_groups = {}
+                for item in st.session_state.firebase_ingredients_data:
+                    priority = item['priority']
+                    if priority not in priority_groups:
+                        priority_groups[priority] = []
+                    priority_groups[priority].append(item)
+                
+                priority_colors = {1: "🔴", 2: "🟡", 3: "🟠", 4: "⚪"}
+                priority_names = {
+                    1: "High Priority (Expiring Soon + Large Quantity)",
+                    2: "Medium Priority (Expiring Soon)",
+                    3: "Good Quantity (Large Quantity)",
+                    4: "Standard Priority"
+                }
+                
+                for priority in sorted(priority_groups.keys()):
+                    items = priority_groups[priority]
+                    st.write(f"**{priority_colors[priority]} {priority_names[priority]}**")
+                    
+                    cols = st.columns(2)
+                    for i, item in enumerate(items):
+                        col_idx = i % 2
+                        with cols[col_idx]:
+                            expiry_text = f"Expires in {item['days_until_expiry']} days" if item['days_until_expiry'] < 9999 else "No expiry date"
+                            quantity_text = f"Qty: {item['quantity']}" if item['quantity'] > 0 else "Qty: Unknown"
+                            st.write(f"• **{item['ingredient'].title()}** - {expiry_text}, {quantity_text}")
+                    st.write("")
+            
+            # Display other ingredients
+            other_ingredients = csv_leftovers + manual_leftovers
+            if other_ingredients:
+                st.subheader("📝 Other Ingredients")
+                cols = st.columns(3)
+                for i, ingredient in enumerate(other_ingredients):
+                    col_idx = i % 3
+                    with cols[col_idx]:
+                        st.write(f"• {ingredient.title()}")
         
         # Recipe generation options
-        st.subheader("Recipe Generation Options")
+        st.subheader("🍳 Recipe Generation Options")
         
         col1, col2 = st.columns(2)
         
@@ -121,62 +206,105 @@ def leftover_management():
                                 placeholder="E.g., vegetarian only, quick meals, kid-friendly, etc.",
                                 help="Add any specific requirements for your recipes")
         
+        # Priority information display
+        if st.session_state.firebase_ingredients_data:
+            high_priority_items = [item for item in st.session_state.firebase_ingredients_data if item['priority'] <= 2]
+            if high_priority_items:
+                st.info(f"🔥 **Priority Focus**: {len(high_priority_items)} ingredients are expiring soon and will be prioritized in recipe suggestions!")
+        
         # Generate recipe button - using a form to prevent page reloads
         with st.form(key="recipe_form"):
-            submit_button = st.form_submit_button(label="Generate Recipe Suggestions", type="primary")
+            submit_button = st.form_submit_button(
+                label="🚀 Generate Priority-Based Recipe Suggestions", 
+                type="primary",
+                help="Generate recipes prioritizing ingredients that are expiring soon"
+            )
             
             if submit_button:
                 try:
-                    with st.spinner("Generating recipes..."):
-                        # Call the suggest_recipes function
-                        recipes = suggest_recipes(all_leftovers, num_suggestions, notes)
+                    with st.spinner("🤖 Generating priority-based recipes..."):
+                        # Call the enhanced suggest_recipes function with prioritized data
+                        recipes = suggest_recipes(
+                            leftovers=all_leftovers, 
+                            max_suggestions=num_suggestions, 
+                            notes=notes,
+                            prioritized_ingredients=st.session_state.firebase_ingredients_data
+                        )
                         
                         # Store results in session state
                         st.session_state.recipes = recipes
                         st.session_state.recipe_generation_error = None
                         
                         # Log for debugging
-                        logging.info(f"Generated {len(recipes)} recipes")
+                        logging.info(f"Generated {len(recipes)} priority-based recipes")
+                        
                 except Exception as e:
                     st.session_state.recipe_generation_error = str(e)
                     logging.error(f"Recipe generation error: {str(e)}")
         
         # Display recipes or error message outside the form
         if st.session_state.recipe_generation_error:
-            st.error(f"Error generating recipes: {st.session_state.recipe_generation_error}")
-        elif st.session_state.recipes:
-            st.success(f"Generated {len(st.session_state.recipes)} recipe suggestions!")
+            st.error(f"❌ Error generating recipes: {st.session_state.recipe_generation_error}")
             
-            # Display recipes
-            st.subheader("Recipe Suggestions")
+            # Debugging information
+            with st.expander("🔧 Debug Information"):
+                st.write("**Ingredients being used:**", all_leftovers)
+                st.write("**Firebase data available:**", len(st.session_state.firebase_ingredients_data) > 0)
+                st.write("**Error details:**", st.session_state.recipe_generation_error)
+                
+        elif st.session_state.recipes:
+            st.success(f"🎉 Generated {len(st.session_state.recipes)} priority-based recipe suggestions!")
+            
+            # Display recipes with enhanced formatting
+            st.subheader("🍽️ Recipe Suggestions")
+            
+            # Show which high-priority ingredients were considered
+            if st.session_state.firebase_ingredients_data:
+                high_priority_items = [item for item in st.session_state.firebase_ingredients_data if item['priority'] <= 2]
+                if high_priority_items:
+                    st.info(f"✨ These recipes prioritize ingredients expiring soon: {', '.join([item['ingredient'] for item in high_priority_items[:5]])}")
+            
             for i, recipe in enumerate(st.session_state.recipes):
-                st.write(f"{i+1}. {recipe}")
+                st.markdown(f"**{i+1}.** {recipe}")
             
             # Award XP for generating recipes
             user = get_current_user()
             if user and user.get('user_id'):
-                award_recipe_generation_xp(user['user_id'], len(st.session_state.recipes))
+                try:
+                    award_recipe_generation_xp(user['user_id'], len(st.session_state.recipes))
+                    st.success(f"🎮 Earned {len(st.session_state.recipes) * 5} XP for generating recipes!")
+                except Exception as e:
+                    logging.error(f"Error awarding XP: {str(e)}")
+                    
     else:
         st.info("Please add ingredients using the sidebar options.")
         
-        # Example section
-        st.markdown("### How it works")
+        # Enhanced example section
+        st.markdown("### 🚀 How the Enhanced System Works")
         st.markdown("""
-        1. Add leftover ingredients using the sidebar
-        2. Click 'Generate Recipe Suggestions'
-        3. Get AI-powered recipe ideas that use your ingredients
-        4. Reduce food waste and create delicious meals!
+        1. **Fetch Ingredients**: Click "Fetch & Prioritize Ingredients" to get data from Firebase
+        2. **Smart Prioritization**: Ingredients are automatically prioritized by:
+           - 🔴 **High Priority**: Expiring soon (≤7 days) + Large quantity (≥5 units)
+           - 🟡 **Medium Priority**: Expiring soon (≤7 days) regardless of quantity  
+           - 🟠 **Good Quantity**: Large quantity (≥5 units) regardless of expiry
+           - ⚪ **Standard Priority**: Everything else
+        3. **AI Recipe Generation**: Get recipes that prioritize using ingredients before they expire
+        4. **Reduce Waste**: Save money and help the environment!
         """)
         
         # Example ingredients
-        st.markdown("### Example Ingredients")
-        example_ingredients = ["chicken", "rice", "bell peppers", "onions", "tomatoes", "garlic"]
-        example_cols = st.columns(3)
-        for i, ingredient in enumerate(example_ingredients):
-            col_idx = i % 3
-            with example_cols[col_idx]:
-                st.markdown(f"• {ingredient.title()}")
+        st.markdown("### 📋 Example Priority System")
+        example_data = [
+            {"ingredient": "Chicken Breast", "days": 2, "quantity": 8, "priority": "🔴 High Priority"},
+            {"ingredient": "Milk", "days": 1, "quantity": 2, "priority": "🟡 Medium Priority"},
+            {"ingredient": "Rice", "days": 30, "quantity": 10, "priority": "🟠 Good Quantity"},
+            {"ingredient": "Salt", "days": 365, "quantity": 1, "priority": "⚪ Standard Priority"}
+        ]
+        
+        for item in example_data:
+            st.write(f"**{item['ingredient']}** - Expires in {item['days']} days, Qty: {item['quantity']} → {item['priority']}")
 
+# Keep other functions unchanged
 @auth_required
 def gamification_hub():
     """Gamification hub feature"""
@@ -261,8 +389,10 @@ def main():
         st.markdown('''
         Welcome to the AI-powered smart restaurant system! 🍽️
         
-        **Features include:**
-        - 🧠 **Smart Recipe Generation** from leftover ingredients
+        **Enhanced Features include:**
+        - 🧠 **Smart Recipe Generation** with ingredient prioritization
+        - ⏰ **Expiry Date Management** to reduce food waste
+        - 📊 **Quantity-Based Prioritization** for optimal ingredient usage
         - 🎮 **Gamification System** with quizzes and achievements  
         - 🏆 **Leaderboards** to compete with other chefs
         - 📊 **Progress Tracking** and skill development
@@ -332,3 +462,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+print("Enhanced main app loaded successfully!")
+print("Key improvements:")
+print("1. ✅ Firebase ingredient prioritization system")
+print("2. ✅ Enhanced UI with priority visualization")
+print("3. ✅ Better error handling and debugging")
+print("4. ✅ Improved recipe generation with priority context")
