@@ -62,6 +62,14 @@ def render_dashboard():
             "icon": "👨‍🍳",
             "key": "Chef Recipe Suggestions"
         })
+
+    if user_role in ['admin', 'chef']:
+        features.append({
+            "title": "Ingredient Management",
+            "description": "Manage restaurant ingredient inventory",
+            "icon": "🥬",
+            "key": "Ingredient Management"
+        })
     
     if user_role == 'admin':
         features.append({
@@ -130,6 +138,7 @@ def get_feature_description(feature_name: str) -> str:
         "Event Planning ChatBot": "🎉 AI-powered event planning assistance",
         "Promotion Generator": "📣 Create marketing campaigns",
         "Chef Recipe Suggestions": "👨‍🍳 Professional recipes",
+        "Ingredient Management": "🥬 Manage restaurant inventory",  # New line
         "Visual Menu Search": "🔍 Search with images"
     }
     return descriptions.get(feature_name, "")
