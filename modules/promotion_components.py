@@ -10,10 +10,9 @@ from datetime import datetime
 from modules.promotion_services import (
     get_promotion_firebase_db, filter_valid_ingredients, find_possible_dishes,
     generate_campaign, save_campaign, get_existing_campaign, get_campaigns_for_month,
-    award_promotion_xp, delete_campaign
+    award_promotion_xp, delete_campaign, get_user_stats_promotion
 )
 from ui.components import show_xp_notification
-from modules.leftover import get_user_stats
 import logging
 
 logger = logging.getLogger(__name__)
@@ -54,7 +53,8 @@ def render_promotion_generator():
 def render_clean_gamification_header(user_id):
     """Render clean, minimal gamification stats"""
     try:
-        user_stats = get_user_stats(user_id)
+        # Use the promotion-specific function to get stats from main Firebase
+        user_stats = get_user_stats_promotion(user_id)
         
         # Simple XP info box
         col1, col2, col3 = st.columns(3)
@@ -259,7 +259,7 @@ def create_campaign_with_xp(db, staff_name, user_id, promotion_type, promotion_g
                     xp_earned = 20
                     quality_msg = "Basic"
                 
-                # Award XP
+                # Award XP using the corrected function
                 if user_id:
                     actual_xp = award_promotion_xp(user_id, campaign_quality)
                     xp_earned = actual_xp if actual_xp > 0 else xp_earned
@@ -282,9 +282,14 @@ def create_campaign_with_xp(db, staff_name, user_id, promotion_type, promotion_g
                 with st.expander("📋 Campaign Text (Copy/Paste Ready)"):
                     st.code(campaign, language=None)
                 
-                # Force sidebar update by clearing cache and rerunning
+                # Force sidebar update by clearing cache
                 if hasattr(st, 'cache_data'):
                     st.cache_data.clear()
+                
+                # Update session state to trigger sidebar refresh
+                if 'user_stats_updated' not in st.session_state:
+                    st.session_state.user_stats_updated = 0
+                st.session_state.user_stats_updated += 1
                 
                 # Force a rerun to refresh the campaign status and sidebar
                 st.rerun()
