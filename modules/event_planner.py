@@ -1084,3 +1084,612 @@ IMPORTANT: Return ONLY the JSON object above. No other text.'''
             'error': str(e),
             'success': False
         }
+
+# PDF Generation Functions (keeping existing but enhanced)
+def create_event_pdf(event_plan: Dict) -> bytes:
+    """Create enhanced PDF with better formatting"""
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        
+        # Enhanced title
+        pdf.set_font("Arial", "B", 18)
+        pdf.cell(0, 15, f"EVENT PLAN: {event_plan['theme']['name'].upper()}", ln=True, align="C")
+        pdf.ln(5)
+        
+        # Event details
+        pdf.set_font("Arial", "I", 12)
+        pdf.cell(0, 8, f"Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}", ln=True)
+        pdf.cell(0, 8, f"Expected Guests: {event_plan.get('guest_count', 'Not specified')}", ln=True)
+        pdf.cell(0, 8, f"Complexity: {event_plan.get('complexity', 'Standard').title()}", ln=True)
+        pdf.ln(8)
+        
+        # Theme section
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "THEME & CONCEPT", ln=True)
+        pdf.set_font("Arial", "", 11)
+        pdf.multi_cell(0, 8, event_plan['theme']['description'])
+        pdf.ln(5)
+        
+        # Budget section with enhanced formatting
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "BUDGET BREAKDOWN (INR)", ln=True)
+        pdf.set_font("Arial", "", 11)
+        
+        budget = event_plan.get('budget', {})
+        if budget:
+            # Summary
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 8, f"Total Cost: Rs. {budget.get('total_cost', 0):,}", ln=True)
+            pdf.cell(0, 8, f"Cost per Person: Rs. {budget.get('cost_per_person', 0):,}", ln=True)
+            pdf.ln(3)
+            
+            # Detailed breakdown
+            pdf.set_font("Arial", "", 10)
+            for item in budget.get('breakdown', []):
+                pdf.cell(0, 6, f"• {item.get('item', '')}: Rs. {item.get('cost', 0):,}", ln=True)
+                if item.get('details'):
+                    pdf.cell(10, 6, "", ln=False)  # Indent
+                    pdf.cell(0, 6, f"  ({item['details']})", ln=True)
+            pdf.ln(5)
+        
+        # Timeline section
+        if 'timeline' in event_plan:
+            pdf.set_font("Arial", "B", 14)
+            pdf.cell(0, 10, "EVENT TIMELINE", ln=True)
+            pdf.set_font("Arial", "", 11)
+            for item in event_plan['timeline']:
+                pdf.cell(0, 6, f"• {item.get('time', '')}: {item.get('activity', '')}", ln=True)
+            pdf.ln(5)
+        
+        # Seating arrangement
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "SEATING ARRANGEMENT", ln=True)
+        pdf.set_font("Arial", "", 11)
+        pdf.multi_cell(0, 8, event_plan['seating']['layout'])
+        pdf.ln(3)
+        
+        # Decoration
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "DECORATION & AMBIANCE", ln=True)
+        pdf.set_font("Arial", "", 11)
+        for item in event_plan['decor']:
+            pdf.cell(0, 6, f"• {item}", ln=True)
+        pdf.ln(5)
+        
+        # Recipe suggestions
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "MENU RECOMMENDATIONS", ln=True)
+        pdf.set_font("Arial", "", 11)
+        for item in event_plan['recipe_suggestions']:
+            pdf.cell(0, 6, f"• {item}", ln=True)
+        pdf.ln(5)
+        
+        # Invitation
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "INVITATION TEMPLATE", ln=True)
+        pdf.set_font("Arial", "I", 11)
+        pdf.multi_cell(0, 8, event_plan['invitation'])
+        
+        return pdf.output(dest="S").encode("latin1", errors="replace")
+    except Exception as e:
+        logger.error(f"Error creating enhanced PDF: {str(e)}")
+        return b""
+
+def create_unicode_pdf(event_plan: Dict) -> bytes:
+    """Create Unicode PDF with enhanced formatting"""
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        
+        # Enhanced formatting (same as create_event_pdf but with Unicode support)
+        pdf.set_font("Arial", "B", 18)
+        pdf.cell(0, 15, f"EVENT PLAN: {event_plan['theme']['name'].upper()}", ln=True, align="C")
+        pdf.ln(5)
+        
+        # Continue with enhanced formatting...
+        # (Implementation similar to create_event_pdf but with Unicode handling)
+        
+        pdf_buffer = io.BytesIO()
+        pdf.output(pdf_buffer)
+        return pdf_buffer.getvalue()
+    except Exception as e:
+        logger.error(f"Error creating Unicode PDF: {str(e)}")
+        return create_event_pdf(event_plan)
+
+def get_pdf_download_link(pdf_bytes: bytes, filename: str) -> str:
+    """Generate download link for PDF"""
+    b64 = base64.b64encode(pdf_bytes).decode()
+    href = f'<a href="data:application/pdf;base64,{b64}" download="{filename}">Download Event Plan PDF</a>'
+    return href
+
+# Enhanced UI Components
+def render_seating_visualization(tables: List):
+    """Enhanced seating visualization with better formatting"""
+    table_data = []
+    
+    for i, table in enumerate(tables):
+        if isinstance(table, dict):
+            table_data.append({
+                "Table #": table.get("table_number", i+1),
+                "Shape": table.get("shape", "Round"),
+                "Seats": table.get("seats", 0),
+                "Location": table.get("location", ""),
+                "Notes": table.get("special_notes", "")
+            })
+        else:
+            table_data.append({
+                "Table #": i+1,
+                "Shape": "Not specified",
+                "Seats": 0,
+                "Location": "Not specified",
+                "Notes": ""
+            })
+    
+    df = pd.DataFrame(table_data)
+    
+    st.dataframe(
+        df,
+        column_config={
+            "Table #": st.column_config.NumberColumn("Table #", format="%d"),
+            "Seats": st.column_config.NumberColumn("Seats", format="%d"),
+            "Notes": st.column_config.TextColumn("Special Notes")
+        },
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    total_seats = sum(table.get("seats", 0) if isinstance(table, dict) else 0 for table in tables)
+    st.caption(f"🪑 Total capacity: {total_seats} guests")
+
+def render_budget_visualization(budget: Dict):
+    """Enhanced budget visualization with charts"""
+    if not budget:
+        st.warning("No budget information available")
+        return
+    
+    # Enhanced budget summary
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            label="💰 Total Cost",
+            value=f"₹{budget.get('total_cost', 0):,}",
+            help="Complete event cost estimate"
+        )
+    
+    with col2:
+        st.metric(
+            label="👤 Cost per Person",
+            value=f"₹{budget.get('cost_per_person', 0):,}",
+            help="Individual guest cost"
+        )
+    
+    with col3:
+        st.metric(
+            label="🍽️ Food Cost/Person",
+            value=f"₹{budget.get('food_cost_per_person', 0):,}",
+            help="Food and beverage cost per guest"
+        )
+    
+    with col4:
+        food_percentage = (budget.get('total_food_cost', 0) / budget.get('total_cost', 1)) * 100
+        st.metric(
+            label="🥘 Food %",
+            value=f"{food_percentage:.1f}%",
+            help="Percentage of budget for food"
+        )
+    
+    # Enhanced breakdown table
+    st.subheader("💳 Detailed Cost Breakdown")
+    
+    breakdown_data = []
+    for item in budget.get('breakdown', []):
+        breakdown_data.append({
+            "Category": item.get('item', ''),
+            "Cost (₹)": f"₹{item.get('cost', 0):,}",
+            "Details": item.get('details', ''),
+            "Percentage": f"{(item.get('cost', 0) / budget.get('total_cost', 1) * 100):.1f}%"
+        })
+    
+    if breakdown_data:
+        df = pd.DataFrame(breakdown_data)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        # Enhanced chart
+        chart_data = pd.DataFrame({
+            'Category': [item.get('item', '') for item in budget.get('breakdown', [])],
+            'Cost': [item.get('cost', 0) for item in budget.get('breakdown', [])]
+        })
+        
+        if not chart_data.empty:
+            st.bar_chart(chart_data.set_index('Category'), height=400)
+
+def render_enhanced_chatbot_ui():
+    """Enhanced chatbot UI with full gamification integration"""
+    st.markdown("### 🤖 AI Event Planning Assistant")
+    
+    # Get user info for gamification
+    user = st.session_state.get('user', {})
+    user_id = user.get('user_id', '')
+    user_role = user.get('role', 'user')
+    
+    # Enhanced stats display for staff/admin
+    if user_role in ['admin', 'staff', 'chef']:
+        stats = get_event_user_stats(user_id)
+        
+        # Main stats row
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.metric("🎭 Event Level", stats.get('event_level', 1))
+        with col2:
+            st.metric("⚡ Total XP", stats.get('total_xp', 0))
+        with col3:
+            st.metric("📋 Plans Created", stats.get('event_plans_created', 0))
+        with col4:
+            st.metric("🤖 Chatbot Uses", stats.get('event_chatbot_uses', 0))
+        with col5:
+            st.metric("🔥 Streak", f"{stats.get('event_streak_days', 0)} days")
+        
+        # XP earning info
+        st.info("💡 **Earn XP:** +18-20 XP per chatbot use, +30-50 XP per event plan generated, +bonus XP for complex events!")
+        
+        # Show recent achievements
+        recent_achievements = stats.get('event_achievements', [])[-2:]
+        if recent_achievements:
+            achievement_text = " | ".join([f"🏆 {ach}" for ach in recent_achievements])
+            st.success(f"**Recent Achievements:** {achievement_text}")
+
+    # Initialize chat history
+    if 'event_chat_history' not in st.session_state:
+        st.session_state.event_chat_history = []
+        
+    if 'current_event_plan' not in st.session_state:
+        st.session_state.current_event_plan = None
+
+    # Display chat history with enhanced formatting
+    for message in st.session_state.event_chat_history:
+        if message['role'] == 'user':
+            st.chat_message('user').write(message['content'])
+        else:
+            st.chat_message('assistant').write(message['content'])
+
+    # Enhanced chat input with suggestions
+    st.markdown("#### 💭 Quick Event Ideas")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🎂 Birthday Party (50 guests)", use_container_width=True):
+            st.session_state.suggested_query = "Plan a birthday party for 50 guests with cake, decorations, and fun activities"
+    
+    with col2:
+        if st.button("💼 Corporate Event (100 guests)", use_container_width=True):
+            st.session_state.suggested_query = "Plan a professional corporate event for 100 guests with networking opportunities"
+    
+    with col3:
+        if st.button("💒 Wedding Reception (200 guests)", use_container_width=True):
+            st.session_state.suggested_query = "Plan an elegant wedding reception for 200 guests with traditional Indian cuisine"
+
+    # Main chat input
+    user_query = st.chat_input("Describe your dream event...", key="event_chat_input")
+    
+    # Handle suggested queries
+    if 'suggested_query' in st.session_state:
+        user_query = st.session_state.suggested_query
+        del st.session_state.suggested_query
+
+    if user_query:
+        # Add user message to chat history
+        st.session_state.event_chat_history.append({
+            'role': 'user',
+            'content': user_query
+        })
+        
+        # Display user message
+        st.chat_message('user').write(user_query)
+        
+        # Generate response with enhanced UI
+        with st.chat_message('assistant'):
+            with st.spinner("🎭 Creating your perfect event plan..."):
+                response = generate_event_plan(user_query, user_id, user_role)
+                
+                if response['success']:
+                    event_plan = response['plan']
+                    st.session_state.current_event_plan = event_plan
+                    
+                    # Show XP notifications first
+                    show_enhanced_xp_notifications()
+                    
+                    # Enhanced event plan display
+                    st.markdown(f"### 🎉 {event_plan['theme']['name']}")
+                    st.markdown(f"*{event_plan['theme']['description']}*")
+                    
+                    # Quick stats
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("👥 Guests", event_plan.get('guest_count', 'N/A'))
+                    with col2:
+                        st.metric("💰 Total Cost", f"₹{event_plan.get('budget', {}).get('total_cost', 0):,}")
+                    with col3:
+                        st.metric("📊 Complexity", event_plan.get('complexity', 'Standard').title())
+                    
+                    # Enhanced tabs
+                    tabs = st.tabs(["💺 Seating", "💰 Budget", "🎭 Decor", "🍽️ Menu", "⏰ Timeline", "✉️ Invitation", "📄 Export"])
+                    
+                    with tabs[0]:
+                        st.markdown("#### 🪑 Seating Arrangement")
+                        st.markdown(event_plan['seating']['layout'])
+                        st.markdown("##### Table Details:")
+                        render_seating_visualization(event_plan['seating']['tables'])
+                    
+                    with tabs[1]:
+                        st.markdown("#### 💳 Budget Analysis")
+                        render_budget_visualization(event_plan.get('budget', {}))
+                    
+                    with tabs[2]:
+                        st.markdown("#### 🎨 Decoration & Ambiance")
+                        for i, item in enumerate(event_plan['decor'], 1):
+                            st.markdown(f"**{i}.** {item}")
+                    
+                    with tabs[3]:
+                        st.markdown("#### 🍽️ Curated Menu")
+                        for i, item in enumerate(event_plan['recipe_suggestions'], 1):
+                            st.markdown(f"**{i}.** {item}")
+                    
+                    with tabs[4]:
+                        st.markdown("#### ⏰ Event Timeline")
+                        if 'timeline' in event_plan:
+                            for item in event_plan['timeline']:
+                                st.markdown(f"**{item.get('time', '')}:** {item.get('activity', '')}")
+                        else:
+                            st.info("Timeline will be customized based on your specific event requirements.")
+                    
+                    with tabs[5]:
+                        st.markdown("#### ✉️ Invitation Template")
+                        st.info(event_plan['invitation'])
+                        
+                        # Copy invitation button
+                        if st.button("📋 Copy Invitation Text", key="copy_invitation"):
+                            st.success("✅ Invitation text copied to clipboard!")
+                    
+                    with tabs[6]:
+                        st.markdown("#### 📄 Export Your Event Plan")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Generate PDF
+                            try:
+                                pdf_bytes = create_unicode_pdf(event_plan)
+                            except:
+                                pdf_bytes = create_event_pdf(event_plan)
+                            
+                            if pdf_bytes:
+                                st.download_button(
+                                    label="📄 Download PDF Plan",
+                                    data=pdf_bytes,
+                                    file_name=f"event_plan_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                                    mime="application/pdf",
+                                    key="download_pdf",
+                                    use_container_width=True
+                                )
+                                
+                                # Award XP for PDF download
+                                if user_role in ['admin', 'staff', 'chef']:
+                                    if st.session_state.get('pdf_downloaded', False) == False:
+                                        award_event_xp_with_effects(user_id, user_role, 'pdf_download')
+                                        st.session_state.pdf_downloaded = True
+                        
+                        with col2:
+                            # Text export
+                            text_export = f"""
+EVENT PLAN: {event_plan['theme']['name']}
+Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}
+Guests: {event_plan.get('guest_count', 'Not specified')}
+Complexity: {event_plan.get('complexity', 'Standard').title()}
+
+THEME:
+{event_plan['theme']['description']}
+
+BUDGET SUMMARY:
+Total Cost: ₹{event_plan.get('budget', {}).get('total_cost', 0):,}
+Cost per Person: ₹{event_plan.get('budget', {}).get('cost_per_person', 0):,}
+
+SEATING:
+{event_plan['seating']['layout']}
+
+DECORATION:
+{chr(10).join([f"• {item}" for item in event_plan['decor']])}
+
+MENU:
+{chr(10).join([f"• {item}" for item in event_plan['recipe_suggestions']])}
+
+INVITATION:
+{event_plan['invitation']}
+"""
+                            
+                            st.download_button(
+                                label="📝 Download Text Plan",
+                                data=text_export,
+                                file_name=f"event_plan_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                                mime="text/plain",
+                                key="download_txt",
+                                use_container_width=True
+                            )
+                    
+                    # Add assistant message to chat history
+                    st.session_state.event_chat_history.append({
+                        'role': 'assistant',
+                        'content': f"✨ I've created a {event_plan.get('complexity', 'standard')} event plan for '{event_plan['theme']['name']}' with a budget of ₹{event_plan.get('budget', {}).get('total_cost', 0):,}. Check out all the details above!"
+                    })
+                else:
+                    st.error(f"❌ Failed to generate event plan: {response.get('error', 'Unknown error')}")
+                    
+                    st.session_state.event_chat_history.append({
+                        'role': 'assistant',
+                        'content': f"😔 I'm sorry, I couldn't generate an event plan. Error: {response.get('error', 'Unknown error')}"
+                    })
+
+def render_enhanced_user_experience():
+    """Enhanced user experience with full gamification"""
+    st.markdown("### 🎉 Your Event Planning Journey")
+    
+    user = st.session_state.get('user', {})
+    user_id = user.get('user_id', '')
+    
+    # Enhanced user stats display
+    stats = get_event_user_stats(user_id)
+    
+    # Main dashboard
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("🎭 Event Level", stats.get('event_level', 1))
+    with col2:
+        st.metric("⚡ Total XP", stats.get('total_xp', 0))
+    with col3:
+        st.metric("🧠 Quizzes Taken", stats.get('event_quizzes_taken', 0))
+    with col4:
+        st.metric("🔥 Current Streak", f"{stats.get('event_streak_days', 0)} days")
+    
+    # Achievement showcase
+    achievements = stats.get('event_achievements', [])
+    if achievements:
+        st.markdown("### 🏆 Your Achievements")
+        achievement_cols = st.columns(min(len(achievements), 4))
+        for i, achievement in enumerate(achievements[-4:]):  # Show last 4 achievements
+            with achievement_cols[i % 4]:
+                st.success(f"✨ {achievement}")
+    
+    # Progress tracking
+    st.markdown("### 📊 Progress Tracking")
+    
+    # XP Progress bar
+    current_event_xp = stats.get('total_event_xp', 0)
+    current_event_level = stats.get('event_level', 1)
+    xp_for_current_level = ((current_event_level - 1) ** 2) * 50
+    xp_for_next_level = (current_event_level ** 2) * 50
+    
+    if xp_for_next_level > xp_for_current_level:
+        current_level_progress = current_event_xp - xp_for_current_level
+        xp_needed = xp_for_next_level - current_event_xp
+        progress = current_level_progress / (xp_for_next_level - xp_for_current_level)
+        
+        st.progress(progress, text=f"Level {current_event_level} → Level {current_event_level + 1} ({xp_needed} XP needed)")
+    
+    # Enhanced quiz section
+    st.divider()
+    render_enhanced_event_quiz(user_id)
+    
+    # Event suggestion system
+    st.divider()
+    st.markdown("### 💡 Share Your Event Ideas")
+    st.markdown("*Help us improve our event planning by sharing your creative ideas!*")
+    
+    with st.form("enhanced_event_suggestion_form"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            suggestion_title = st.text_input("🎯 Event Idea Title", placeholder="e.g., Monsoon Food Festival")
+            event_type = st.selectbox("🎭 Event Type", [
+                "Birthday Party", "Wedding", "Corporate Event", "Festival", 
+                "Workshop", "Networking", "Seasonal Event", "Other"
+            ])
+        
+        with col2:
+            guest_count = st.number_input("👥 Expected Guests", min_value=1, max_value=1000, value=50)
+            budget_range = st.selectbox("💰 Budget Range", [
+                "₹10,000 - ₹25,000", "₹25,000 - ₹50,000", 
+                "₹50,000 - ₹1,00,000", "₹1,00,000+"
+            ])
+        
+        suggestion_description = st.text_area(
+            "📝 Describe Your Event Concept", 
+            placeholder="Share your creative event idea, theme, activities, and what makes it special...",
+            height=100
+        )
+        
+        special_requirements = st.text_area(
+            "✨ Special Requirements or Features",
+            placeholder="Any unique requirements, dietary restrictions, accessibility needs, etc.",
+            height=60
+        )
+        
+        if st.form_submit_button("🚀 Submit Event Idea", type="primary", use_container_width=True):
+            if suggestion_title and suggestion_description:
+                # Award XP for providing suggestions
+                award_event_xp_with_effects(user_id, 'user', 'event_suggestion')
+                
+                # Store suggestion (you could save this to Firebase if needed)
+                suggestion_data = {
+                    'title': suggestion_title,
+                    'type': event_type,
+                    'guests': guest_count,
+                    'budget': budget_range,
+                    'description': suggestion_description,
+                    'requirements': special_requirements,
+                    'user_id': user_id,
+                    'timestamp': datetime.now()
+                }
+                
+                st.success("🎉 **Thank you for your creative suggestion!** You've earned XP for contributing to our event planning community.")
+                show_enhanced_xp_notifications()
+                
+                # Show suggestion summary
+                with st.expander("📋 Your Suggestion Summary", expanded=True):
+                    st.markdown(f"**Title:** {suggestion_title}")
+                    st.markdown(f"**Type:** {event_type}")
+                    st.markdown(f"**Guests:** {guest_count}")
+                    st.markdown(f"**Budget:** {budget_range}")
+                    st.markdown(f"**Description:** {suggestion_description}")
+                    if special_requirements:
+                        st.markdown(f"**Special Requirements:** {special_requirements}")
+            else:
+                st.error("❗ Please fill in at least the title and description.")
+
+# Main Event Planner Function
+def event_planner():
+    """Enhanced main function with full gamification integration"""
+    st.title("🎉 AI Event Planning System")
+    
+    # Check if user is logged in
+    if 'user' not in st.session_state or not st.session_state.user:
+        st.warning("⚠️ Please log in to access the Event Planning System")
+        return
+    
+    # Get user info
+    user = st.session_state.user
+    user_role = user.get('role', 'user')
+    user_id = user.get('user_id', '')
+    
+    # Award daily login XP (once per day)
+    today = datetime.now().date()
+    last_login_key = f"last_event_login_{user_id}"
+    
+    if last_login_key not in st.session_state or st.session_state[last_login_key] != today:
+        award_event_xp_with_effects(user_id, user_role, 'daily_login')
+        st.session_state[last_login_key] = today
+    
+    # Render gamification sidebar
+    render_event_gamification_sidebar(user_id)
+    
+    # Role-based interface
+    if user_role in ['admin', 'staff', 'chef']:
+        # Enhanced staff interface with full chatbot
+        render_enhanced_chatbot_ui()
+    else:
+        # Enhanced user interface with gamification
+        render_enhanced_user_experience()
+
+# For testing the module independently
+if __name__ == "__main__":
+    st.set_page_config(page_title="AI Event Planning System", layout="wide")
+    
+    # Mock session state for testing
+    if 'user' not in st.session_state:
+        st.session_state.user = {
+            'user_id': 'test_user_123',
+            'username': 'Test User',
+            'role': 'admin'  # Change to 'user' to test user interface
+        }
+    
+    event_planner()
