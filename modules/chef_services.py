@@ -104,21 +104,24 @@ Respond in the following JSON format:
     try:
         model = configure_gemini_ai()
         if not model:
-            return {"rating": "NA", "rating_comment": "AI service unavailable"}
+            return {"rating": 3, "rating_comment": "AI service unavailable"}
             
         response = model.generate_content(prompt)
         match = re.search(r"\{.*\}", response.text, re.DOTALL)
         
         if match:
-            return json.loads(match.group(0))
+            rating_data = json.loads(match.group(0))
+            # Ensure rating is an integer
+            rating_data["rating"] = int(rating_data.get("rating", 3))
+            return rating_data
         else:
             return {
-                "rating": "NA",
+                "rating": 3,
                 "rating_comment": "Could not parse AI response"
             }
     except Exception as e:
         logger.error(f"Error generating dish rating: {str(e)}")
-        return {"rating": "NA", "rating_comment": str(e)}
+        return {"rating": 3, "rating_comment": f"Rating error: {str(e)}"}
 
 def parse_ingredients(db):
     """Parse ingredients from Firebase inventory (READ-ONLY)"""
@@ -164,14 +167,3 @@ def parse_ingredients(db):
     except Exception as e:
         logger.error(f"Error parsing ingredients: {str(e)}")
         return []
-
-def create_chef_sub_ratings_collection(db):
-    """Create chef_sub_ratings collection if it doesn't exist"""
-    try:
-        # Check if collection exists by trying to get a document
-        test_query = db.collection("chef_sub_ratings").limit(1).get()
-        logger.info("chef_sub_ratings collection already exists")
-        return True
-    except Exception as e:
-        logger.info("chef_sub_ratings collection doesn't exist, will be created on first write")
-        return True
