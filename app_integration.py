@@ -1,31 +1,17 @@
 """
 Integration module for adding the Event Planning Chatbot to the main app
-This file provides the necessary functions to integrate with main_app.py
 """
 
 import streamlit as st
 from modules.event_planner import event_planner, init_event_firebase
 
 def integrate_event_planner():
-    """
-    Function to be called from main_app.py to integrate the event planner
-    
-    This replaces the placeholder function in main_app.py
-    """
-    # Initialize Firebase for event data
+    """Function to be called from main_app.py to integrate the event planner"""
     init_event_firebase()
-    
-    # Call the main event planner function
     event_planner()
 
-# Additional integration functions if needed
 def check_event_firebase_config():
-    """
-    Check if all required environment variables for Event Firebase are set
-    
-    Returns:
-        bool: True if all required variables are set, False otherwise
-    """
+    """Check if all required environment variables for Event Firebase are set"""
     required_vars = [
         "event_firebase_type",
         "event_firebase_project_id",
