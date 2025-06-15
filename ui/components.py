@@ -25,24 +25,9 @@ def initialize_session_state():
         st.session_state.auth_error = None
 
 def get_firestore_client():
-    """Get Firestore client for authentication - using event Firebase"""
+    """Get Firestore client for authentication - using MAIN Firebase"""
     try:
-        # Use the event Firebase app for user authentication
-        if 'event_app' in [app.name for app in firebase_admin._apps.values()]:
-            return firestore.client(app=firebase_admin.get_app(name='event_app'))
-        else:
-            # Initialize event Firebase if not already done
-            from modules.event_planner import init_event_firebase
-            init_event_firebase()
-            return firestore.client(app=firebase_admin.get_app(name='event_app'))
-    except Exception as e:
-        logger.error(f"Error getting Firestore client for auth: {str(e)}")
-        return None
-
-def get_main_firestore_client():
-    """Get main Firestore client for gamification stats"""
-    try:
-        # Use the main Firebase app (default) for gamification
+        # Use the main Firebase app (default) for user authentication
         if firebase_admin._DEFAULT_APP_NAME in [app.name for app in firebase_admin._apps.values()]:
             return firestore.client()
         else:
@@ -51,17 +36,32 @@ def get_main_firestore_client():
             init_firebase()
             return firestore.client()
     except Exception as e:
-        logger.error(f"Error getting main Firestore client: {str(e)}")
+        logger.error(f"Error getting Firestore client for auth: {str(e)}")
+        return None
+
+def get_event_firestore_client():
+    """Get event Firestore client for other features"""
+    try:
+        # Use the event Firebase app for other features
+        if 'event_app' in [app.name for app in firebase_admin._apps.values()]:
+            return firestore.client(app=firebase_admin.get_app(name='event_app'))
+        else:
+            # Initialize event Firebase if not already done
+            from modules.event_planner import init_event_firebase
+            init_event_firebase()
+            return firestore.client(app=firebase_admin.get_app(name='event_app'))
+    except Exception as e:
+        logger.error(f"Error getting event Firestore client: {str(e)}")
         return None
 
 def authenticate_user(username, password):
-    """Authenticate user against event Firebase"""
+    """Authenticate user against MAIN Firebase"""
     try:
-        db = get_firestore_client()  # This now uses event Firebase
+        db = get_firestore_client()  # This now uses MAIN Firebase
         if not db:
             return None, "Database connection failed"
         
-        # Query users collection in event Firebase
+        # Query users collection in MAIN Firebase
         users_ref = db.collection('users')
         query = users_ref.where('username', '==', username).where('password', '==', password)
         docs = query.stream()
@@ -85,9 +85,9 @@ def authenticate_user(username, password):
         return None, f"Authentication error: {str(e)}"
 
 def register_user(username, password, role='user'):
-    """Register a new user in event Firebase"""
+    """Register a new user in MAIN Firebase"""
     try:
-        db = get_firestore_client()  # This now uses event Firebase
+        db = get_firestore_client()  # This now uses MAIN Firebase
         if not db:
             return False, "Database connection failed"
         
@@ -198,7 +198,7 @@ def display_user_stats_sidebar(user_id):
     try:
         from modules.leftover import get_user_stats
         
-        # Get user stats from main Firebase (gamification uses main Firebase)
+        # Get user stats from main Firebase (same as authentication)
         user_stats = get_user_stats(user_id)
         
         st.sidebar.markdown("---")
