@@ -215,212 +215,237 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
                     show_xp_notification(20, "Personalized Menu Recommendations")
 
 def render_custom_filters(db, allergies):
-    """Render custom menu filters tab"""
+    """Render custom menu filters tab - realistic implementation based on actual Firebase structure"""
     st.header("⚙️ Custom Menu Filters")
-    st.markdown("Filter our menu based on your specific dietary needs and preferences!")
+    st.markdown("Filter our menu based on available data from your restaurant database!")
     
-    # Enhanced filter layout with organized sections
-    st.subheader("🍽️ Meal Preferences")
+    # Fetch menu items first to get available options
+    menu_items = fetch_menu_items(db)
+    if not menu_items:
+        st.error("❌ No menu items found.")
+        return
+    
+    # Extract unique values from database for realistic filter options
+    available_categories = list(set([item.get('category', 'Unknown') for item in menu_items if item.get('category')]))
+    available_cuisines = list(set([item.get('cuisine', 'Unknown') for item in menu_items if item.get('cuisine')]))
+    available_diets = list(set([diet for item in menu_items for diet in (item.get('diet', []) if isinstance(item.get('diet'), list) else [item.get('diet')] if item.get('diet') else [])]))
+    available_types = list(set([type_item for item in menu_items for type_item in (item.get('types', []) if isinstance(item.get('types'), list) else [item.get('types')] if item.get('types') else [])]))
+    
+    # Main filter options based on actual database fields
+    st.subheader("🍽️ Menu Categories & Types")
     col1, col2 = st.columns(2)
     
     with col1:
-        meal_type = st.selectbox("Meal Type", ["All", "Breakfast", "Lunch", "Dinner", "Snacks", "Dessert"])
-        portion_size = st.selectbox("Portion Size", ["All", "Small", "Regular", "Large", "Family"])
+        selected_category = st.selectbox("Category", ["All"] + sorted(available_categories))
+        selected_cuisine = st.selectbox("Cuisine", ["All"] + sorted(available_cuisines))
         
     with col2:
-        prep_time = st.selectbox("Preparation Time", ["All", "Quick (< 15 min)", "Medium (15-30 min)", "Long (> 30 min)"])
-        difficulty = st.selectbox("Difficulty Level", ["All", "Easy", "Medium", "Hard", "Expert"])
+        selected_diet = st.selectbox("Dietary Type", ["All"] + sorted(available_diets))
+        selected_type = st.selectbox("Special Types", ["All"] + sorted(available_types))
 
-    st.subheader("🌶️ Taste & Style Preferences")
+    # Cook time filter (based on actual cook_time field)
+    st.subheader("⏱️ Cooking Time")
+    cook_time_filter = st.selectbox(
+        "Maximum Cooking Time", 
+        ["All", "Quick (≤ 20 min)", "Medium (21-40 min)", "Long (> 40 min)"]
+    )
+    
+    # Ingredient-based filters
+    st.subheader("🥘 Ingredient Preferences")
     col3, col4 = st.columns(2)
     
     with col3:
-        spice_level = st.selectbox("Spice Level", ["All", "Mild", "Medium", "Hot", "Extra Hot"])
-        cooking_method = st.selectbox("Cooking Method", ["All", "Grilled", "Fried", "Baked", "Steamed", "Raw", "Roasted"])
+        must_include = st.text_input("Must Include Ingredient", placeholder="e.g., paneer, chicken")
         
     with col4:
-        temperature = st.selectbox("Serving Temperature", ["All", "Hot", "Cold", "Room Temperature"])
-        texture = st.selectbox("Texture Preference", ["All", "Crispy", "Soft", "Chewy", "Crunchy", "Smooth", "Creamy"])
+        must_exclude = st.text_input("Must Exclude Ingredient", placeholder="e.g., onion, garlic")
 
-    # Advanced filters in expandable section
-    with st.expander("🔧 Advanced Filters"):
-        col5, col6 = st.columns(2)
-        
-        with col5:
-            ingredient_swap = st.text_input("Ingredient to Avoid", placeholder="e.g., onions, garlic, nuts")
-            cuisine_type = st.selectbox("Cuisine Type", ["All", "Italian", "Chinese", "Indian", "Mexican", "American", "Thai", "Japanese", "Mediterranean", "French", "Korean"])
-            
-        with col6:
-            calorie_range = st.selectbox("Calorie Range", ["All", "Light (< 300 cal)", "Moderate (300-600 cal)", "Heavy (> 600 cal)"])
-            protein_level = st.selectbox("Protein Content", ["All", "Low Protein", "Medium Protein", "High Protein"])
+    # AI-powered smart filtering option
+    with st.expander("🤖 AI Smart Filtering (Powered by Gemini)"):
+        st.markdown("Use AI to find dishes based on natural language descriptions!")
+        ai_query = st.text_area(
+            "Describe what you're looking for", 
+            placeholder="e.g., 'Something spicy and vegetarian for dinner' or 'Light appetizer with paneer'"
+        )
+        use_ai_filter = st.checkbox("Enable AI Smart Filtering")
 
     # Apply filters button
-    if st.button("🔍 Apply Advanced Filters", type="primary"):
-        with st.spinner("Filtering menu items with advanced criteria..."):
-            # Fetch menu items
-            menu_items = fetch_menu_items(db)
-            if not menu_items:
-                st.error("❌ No menu items found.")
-                return
+    if st.button("🔍 Apply Filters", type="primary"):
+        with st.spinner("Filtering menu items based on your database..."):
             
-            # Apply allergy filters first
-            filtered_menu, debug_info = filter_menu_by_allergies(menu_items, allergies)
+            # Start with all menu items
+            filtered_menu = menu_items.copy()
             
-            # Apply meal type filter
-            if meal_type != "All":
+            # Apply allergy filters first (existing functionality)
+            filtered_menu, debug_info = filter_menu_by_allergies(filtered_menu, allergies)
+            
+            # Apply category filter
+            if selected_category != "All":
                 filtered_menu = [
                     item for item in filtered_menu 
-                    if item.get('meal_type', '').lower() == meal_type.lower() or
-                       meal_type.lower() in item.get('description', '').lower()
+                    if item.get('category', '').lower() == selected_category.lower()
                 ]
             
-            # Apply spice level filter
-            if spice_level != "All":
-                spice_keywords = {
-                    "Mild": ["mild", "gentle", "light", "subtle"],
-                    "Medium": ["medium", "moderate", "balanced"],
-                    "Hot": ["hot", "spicy", "chili", "pepper", "jalapeño"],
-                    "Extra Hot": ["extra hot", "very spicy", "fiery", "ghost pepper", "habanero", "carolina reaper"]
-                }
-                if spice_level in spice_keywords:
-                    filtered_menu = [
-                        item for item in filtered_menu 
-                        if any(keyword in item.get('description', '').lower() or 
-                              keyword in ' '.join(item.get('ingredients', [])).lower() 
-                              for keyword in spice_keywords[spice_level])
-                    ]
-            
-            # Apply cooking method filter
-            if cooking_method != "All":
+            # Apply cuisine filter
+            if selected_cuisine != "All":
                 filtered_menu = [
                     item for item in filtered_menu 
-                    if cooking_method.lower() in item.get('description', '').lower() or 
-                       cooking_method.lower() in ' '.join(item.get('ingredients', [])).lower() or
-                       cooking_method.lower() in item.get('name', '').lower()
+                    if item.get('cuisine', '').lower() == selected_cuisine.lower()
                 ]
             
-            # Apply temperature filter
-            if temperature != "All":
-                temp_keywords = {
-                    "Hot": ["hot", "warm", "heated", "grilled", "fried", "baked", "roasted", "steamed"],
-                    "Cold": ["cold", "chilled", "frozen", "ice", "gazpacho", "salad", "smoothie"],
-                    "Room Temperature": ["room temperature", "ambient", "cheese", "bread"]
-                }
-                if temperature in temp_keywords:
-                    filtered_menu = [
-                        item for item in filtered_menu 
-                        if any(keyword in item.get('description', '').lower() or
-                              keyword in item.get('name', '').lower()
-                              for keyword in temp_keywords[temperature])
-                    ]
-            
-            # Apply texture filter
-            if texture != "All":
-                texture_keywords = {
-                    "Crispy": ["crispy", "crunchy", "fried", "toasted", "baked"],
-                    "Soft": ["soft", "tender", "moist", "fluffy"],
-                    "Chewy": ["chewy", "al dente", "pasta", "bread"],
-                    "Crunchy": ["crunchy", "crispy", "nuts", "seeds", "crackers"],
-                    "Smooth": ["smooth", "pureed", "soup", "sauce"],
-                    "Creamy": ["creamy", "cream", "butter", "cheese", "yogurt"]
-                }
-                if texture in texture_keywords:
-                    filtered_menu = [
-                        item for item in filtered_menu 
-                        if any(keyword in item.get('description', '').lower() or
-                              keyword in ' '.join(item.get('ingredients', [])).lower()
-                              for keyword in texture_keywords[texture])
-                    ]
-            
-            # Apply prep time filter
-            if prep_time != "All":
-                # This would require prep_time data in menu items
-                # For now, we'll filter based on cooking method complexity
-                if prep_time == "Quick (< 15 min)":
-                    quick_methods = ["raw", "salad", "smoothie", "sandwich"]
-                    filtered_menu = [
-                        item for item in filtered_menu 
-                        if any(method in item.get('description', '').lower() or
-                              method in item.get('name', '').lower()
-                              for method in quick_methods)
-                    ]
-            
-            # Apply existing filters (ingredient_swap and cuisine_type)
-            if ingredient_swap:
+            # Apply diet filter
+            if selected_diet != "All":
                 filtered_menu = [
                     item for item in filtered_menu 
-                    if not any(ingredient_swap.lower() in ing.lower() for ing in item.get('ingredients', []))
+                    if selected_diet in (item.get('diet', []) if isinstance(item.get('diet'), list) else [item.get('diet')] if item.get('diet') else [])
                 ]
             
-            if cuisine_type != "All":
+            # Apply type filter
+            if selected_type != "All":
                 filtered_menu = [
                     item for item in filtered_menu 
-                    if item.get('cuisine', '').lower() == cuisine_type.lower()
+                    if selected_type in (item.get('types', []) if isinstance(item.get('types'), list) else [item.get('types')] if item.get('types') else [])
                 ]
             
-            # Apply calorie filter (if calorie info is available)
-            if calorie_range != "All":
-                # Since most menu items might not have calorie data, we'll use dish type as proxy
-                calorie_proxies = {
-                    "Light (< 300 cal)": ["salad", "soup", "smoothie", "fruit", "vegetable"],
-                    "Moderate (300-600 cal)": ["pasta", "rice", "chicken", "fish"],
-                    "Heavy (> 600 cal)": ["burger", "pizza", "steak", "fried", "cheese", "cream"]
-                }
-                if calorie_range in calorie_proxies:
-                    filtered_menu = [
-                        item for item in filtered_menu 
-                        if any(proxy in item.get('name', '').lower() or
-                              proxy in item.get('description', '').lower() or
-                              proxy in ' '.join(item.get('ingredients', [])).lower()
-                              for proxy in calorie_proxies[calorie_range])
-                    ]
+            # Apply cook time filter
+            if cook_time_filter != "All":
+                def extract_cook_time_minutes(cook_time_str):
+                    """Extract minutes from cook_time string like '30 minutes'"""
+                    if not cook_time_str:
+                        return 999  # Unknown cook time, treat as long
+                    try:
+                        # Extract number from string like "30 minutes"
+                        import re
+                        numbers = re.findall(r'\d+', str(cook_time_str))
+                        return int(numbers[0]) if numbers else 999
+                    except:
+                        return 999
+                
+                if cook_time_filter == "Quick (≤ 20 min)":
+                    filtered_menu = [item for item in filtered_menu if extract_cook_time_minutes(item.get('cook_time')) <= 20]
+                elif cook_time_filter == "Medium (21-40 min)":
+                    filtered_menu = [item for item in filtered_menu if 21 <= extract_cook_time_minutes(item.get('cook_time')) <= 40]
+                elif cook_time_filter == "Long (> 40 min)":
+                    filtered_menu = [item for item in filtered_menu if extract_cook_time_minutes(item.get('cook_time')) > 40]
+            
+            # Apply ingredient inclusion filter
+            if must_include:
+                filtered_menu = [
+                    item for item in filtered_menu 
+                    if any(must_include.lower() in ing.lower() for ing in item.get('ingredients', []))
+                ]
+            
+            # Apply ingredient exclusion filter
+            if must_exclude:
+                filtered_menu = [
+                    item for item in filtered_menu 
+                    if not any(must_exclude.lower() in ing.lower() for ing in item.get('ingredients', []))
+                ]
+            
+            # Apply AI smart filtering if enabled
+            if use_ai_filter and ai_query:
+                try:
+                    gemini_model = configure_visual_gemini_ai()
+                    if gemini_model:
+                        # Create menu context for AI
+                        menu_context = "\n".join([
+                            f"- {item.get('name', 'Unknown')}: {item.get('description', '')} "
+                            f"(Category: {item.get('category', 'Unknown')}, "
+                            f"Cuisine: {item.get('cuisine', 'Unknown')}, "
+                            f"Diet: {', '.join(item.get('diet', []) if isinstance(item.get('diet'), list) else [str(item.get('diet', ''))])}, "
+                            f"Ingredients: {', '.join(item.get('ingredients', []))})"
+                            for item in filtered_menu
+                        ])
+                        
+                        ai_prompt = f"""
+                        Based on the user query: "{ai_query}"
+                        
+                        From the following menu items, identify which ones best match the user's request:
+                        {menu_context}
+                        
+                        Return only the exact dish names that match, one per line, no additional text.
+                        If no dishes match well, return "NO_MATCHES".
+                        """
+                        
+                        response = gemini_model.generate_content(ai_prompt)
+                        ai_matches = response.text.strip().split('\n')
+                        
+                        if ai_matches and ai_matches[0] != "NO_MATCHES":
+                            # Filter menu based on AI recommendations
+                            ai_filtered = []
+                            for item in filtered_menu:
+                                for match in ai_matches:
+                                    if match.strip().lower() in item.get('name', '').lower():
+                                        ai_filtered.append(item)
+                                        break
+                            
+                            if ai_filtered:
+                                filtered_menu = ai_filtered
+                                st.info(f"🤖 AI found {len(ai_filtered)} dishes matching your description!")
+                            else:
+                                st.warning("🤖 AI couldn't find exact matches, showing regular filtered results.")
+                        else:
+                            st.warning("🤖 AI couldn't find dishes matching your description, showing regular filtered results.")
+                            
+                except Exception as e:
+                    st.warning(f"🤖 AI filtering unavailable: {str(e)}")
             
             # Display results
             if filtered_menu:
-                st.success(f"✅ Found {len(filtered_menu)} dishes matching your advanced criteria")
+                st.success(f"✅ Found {len(filtered_menu)} dishes matching your criteria")
                 
-                # Create enhanced display dataframe
+                # Create realistic display dataframe based on actual database fields
                 display_data = []
                 for item in filtered_menu:
                     display_data.append({
                         "Dish Name": item.get('name', 'Unknown'),
-                        "Description": item.get('description', '')[:80] + ("..." if len(item.get('description', '')) > 80 else ""),
+                        "Category": item.get('category', 'Unknown'),
                         "Cuisine": item.get('cuisine', 'Unknown'),
-                        "Ingredients": ', '.join(item.get('ingredients', [])[:4]) + ("..." if len(item.get('ingredients', [])) > 4 else ""),
-                        "Dietary Tags": ', '.join(item.get('diet', []) if isinstance(item.get('diet'), list) else [str(item.get('diet', ''))]),
-                        "Portion": portion_size if portion_size != "All" else "Regular"
+                        "Cook Time": item.get('cook_time', 'Unknown'),
+                        "Description": item.get('description', '')[:60] + ("..." if len(item.get('description', '')) > 60 else ""),
+                        "Diet": ', '.join(item.get('diet', []) if isinstance(item.get('diet'), list) else [str(item.get('diet', ''))]),
+                        "Ingredients": ', '.join(item.get('ingredients', [])[:3]) + ("..." if len(item.get('ingredients', [])) > 3 else ""),
+                        "Special Types": ', '.join(item.get('types', []) if isinstance(item.get('types'), list) else [str(item.get('types', ''))])
                     })
                 
                 df = pd.DataFrame(display_data)
                 st.dataframe(df, use_container_width=True)
                 
-                # Show filter summary
-                st.info(f"🎯 **Active Filters:** {meal_type}, {spice_level} spice, {cooking_method} cooking, {temperature} temperature, {texture} texture")
+                # Show active filters summary
+                active_filters = []
+                if selected_category != "All": active_filters.append(f"Category: {selected_category}")
+                if selected_cuisine != "All": active_filters.append(f"Cuisine: {selected_cuisine}")
+                if selected_diet != "All": active_filters.append(f"Diet: {selected_diet}")
+                if selected_type != "All": active_filters.append(f"Type: {selected_type}")
+                if cook_time_filter != "All": active_filters.append(f"Cook Time: {cook_time_filter}")
+                if must_include: active_filters.append(f"Includes: {must_include}")
+                if must_exclude: active_filters.append(f"Excludes: {must_exclude}")
+                if allergies: active_filters.append(f"Allergies: {', '.join(allergies)}")
+                
+                if active_filters:
+                    st.info(f"🎯 **Active Filters:** {' | '.join(active_filters)}")
                 
             else:
-                st.warning("⚠️ No menu items match your selected criteria. Try adjusting your filters.")
+                st.warning("⚠️ No menu items match your selected criteria.")
                 
-                # Show debug information
+                # Show helpful debug information
                 with st.expander("🔍 Filter Debug Information"):
-                    st.write("**Selected Advanced Filters:**")
-                    st.write(f"- Dietary Restrictions: {allergies}")
-                    st.write(f"- Meal Type: {meal_type}")
-                    st.write(f"- Portion Size: {portion_size}")
-                    st.write(f"- Spice Level: {spice_level}")
-                    st.write(f"- Cooking Method: {cooking_method}")
-                    st.write(f"- Temperature: {temperature}")
-                    st.write(f"- Texture: {texture}")
-                    st.write(f"- Prep Time: {prep_time}")
-                    st.write(f"- Difficulty: {difficulty}")
-                    st.write(f"- Ingredient to Avoid: {ingredient_swap}")
-                    st.write(f"- Cuisine Type: {cuisine_type}")
-                    st.write(f"- Calorie Range: {calorie_range}")
-                    st.write(f"- Protein Level: {protein_level}")
+                    st.write("**Available in Database:**")
+                    st.write(f"- Categories: {', '.join(available_categories)}")
+                    st.write(f"- Cuisines: {', '.join(available_cuisines)}")
+                    st.write(f"- Diet Types: {', '.join(available_diets)}")
+                    st.write(f"- Special Types: {', '.join(available_types)}")
+                    st.write(f"- Total Menu Items: {len(menu_items)}")
                     
-                    if debug_info:
-                        st.write("**Allergy Filter Debug Info:**")
-                        for info in debug_info[:10]:  # Show first 10
-                            st.write(f"- {info}")
+                    st.write("**Your Selected Filters:**")
+                    st.write(f"- Category: {selected_category}")
+                    st.write(f"- Cuisine: {selected_cuisine}")
+                    st.write(f"- Diet: {selected_diet}")
+                    st.write(f"- Type: {selected_type}")
+                    st.write(f"- Cook Time: {cook_time_filter}")
+                    st.write(f"- Must Include: {must_include}")
+                    st.write(f"- Must Exclude: {must_exclude}")
+                    st.write(f"- Allergies: {allergies}")
 
 def render_visual_challenge(db, user_role, username, user_id):
     """Render visual menu challenge tab (Staff/Chef/Admin only)"""
