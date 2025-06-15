@@ -1,22 +1,22 @@
 """
-Enhanced Visual Menu Components - Updated to work with improved services.
+Enhanced Visual Menu Components with improved custom filters UI and accuracy.
 """
 
 import streamlit as st
 from PIL import Image
 import logging
 from typing import Dict, List, Optional
-from modules.visual_menu_services import (
-    search_similar_dishes, analyze_food_image_with_gemini, FilterCriteria,
+from modules.enhanced_visual_services import (
+    enhanced_visual_search, enhanced_image_analysis, FilterCriteria,
     get_smart_filter_suggestions
 )
 
 logger = logging.getLogger(__name__)
 
-def render_visual_menu_search():
+def render_enhanced_visual_search():
     """Main enhanced visual search interface"""
-    st.title("🔍 Visual Menu Search")
-    st.markdown("Upload a food image and use advanced filters to find similar dishes!")
+    st.title("🔍 Enhanced Visual Menu Search")
+    st.markdown("Upload a food image and use advanced filters to find similar dishes with improved accuracy!")
     
     # Check user access
     user = st.session_state.get('user', {})
@@ -31,11 +31,11 @@ def render_visual_menu_search():
         render_image_upload_section()
     
     with col2:
-        render_filters_section()
+        render_enhanced_filters_section()
     
     # Search results section
     if st.session_state.get('visual_search_results'):
-        render_results_section()
+        render_enhanced_results_section()
 
 def render_image_upload_section():
     """Enhanced image upload section with analysis preview"""
@@ -58,7 +58,7 @@ def render_image_upload_section():
             # Quick analysis button
             if st.button("🔍 Analyze Image", type="primary", use_container_width=True):
                 with st.spinner("Analyzing image..."):
-                    analysis = analyze_food_image_with_gemini(image)
+                    analysis = enhanced_image_analysis(image)
                     
                     if "error" not in analysis:
                         st.session_state.image_analysis = analysis
@@ -87,23 +87,23 @@ def render_image_upload_section():
                         suggestions = get_smart_filter_suggestions(analysis)
                         st.session_state.filter_suggestions = suggestions
                         
-                        st.info("💡 Smart filter suggestions have been generated!")
+                        st.info("💡 Smart filter suggestions have been generated based on your image!")
                     else:
                         st.error(f"❌ Analysis failed: {analysis['error']}")
         
         except Exception as e:
             st.error(f"❌ Error processing image: {str(e)}")
 
-def render_filters_section():
-    """Enhanced filters section with smart suggestions"""
-    st.markdown("### 🎛️ Search Filters")
+def render_enhanced_filters_section():
+    """Enhanced filters section with smart suggestions and better UI"""
+    st.markdown("### 🎛️ Advanced Filters")
     
     # Smart suggestions section
     if st.session_state.get('filter_suggestions'):
         render_smart_suggestions()
     
     # Create filter tabs for better organization
-    tab1, tab2 = st.tabs(["🍽️ Basic Filters", "🌶️ Advanced Filters"])
+    tab1, tab2, tab3 = st.tabs(["🍽️ Basic", "🌶️ Advanced", "⚙️ Custom"])
     
     with tab1:
         render_basic_filters()
@@ -111,14 +111,13 @@ def render_filters_section():
     with tab2:
         render_advanced_filters()
     
+    with tab3:
+        render_custom_filters()
+    
     # Search button
     st.markdown("---")
     if st.button("🔍 Search with Filters", type="primary", use_container_width=True):
-        perform_search()
-    
-    # Clear filters button
-    if st.button("🗑️ Clear All Filters", use_container_width=True):
-        clear_all_filters()
+        perform_enhanced_search()
 
 def render_smart_suggestions():
     """Render AI-generated smart filter suggestions"""
@@ -128,7 +127,7 @@ def render_smart_suggestions():
     if not any(suggestions.values()):
         return
     
-    st.info("💡 Based on your image analysis:")
+    st.info("💡 Based on your image analysis, here are recommended filters:")
     
     cols = st.columns(2)
     
@@ -142,7 +141,6 @@ def render_smart_suggestions():
                         st.session_state.selected_cuisine_types = []
                     if cuisine not in st.session_state.selected_cuisine_types:
                         st.session_state.selected_cuisine_types.append(cuisine)
-                        st.rerun()
         
         # Dietary suggestions
         if suggestions.get('dietary_preferences'):
@@ -153,16 +151,14 @@ def render_smart_suggestions():
                         st.session_state.selected_dietary_preferences = []
                     if diet not in st.session_state.selected_dietary_preferences:
                         st.session_state.selected_dietary_preferences.append(diet)
-                        st.rerun()
     
     with cols[1]:
         # Spice level suggestions
         if suggestions.get('spice_levels'):
-            st.write("**Suggested Spice:**")
+            st.write("**Suggested Spice Level:**")
             for spice in suggestions['spice_levels']:
                 if st.button(f"🌶️ {spice}", key=f"suggest_spice_{spice}"):
                     st.session_state.selected_spice_levels = [spice]
-                    st.rerun()
         
         # Cooking method suggestions
         if suggestions.get('cooking_methods'):
@@ -173,7 +169,6 @@ def render_smart_suggestions():
                         st.session_state.selected_cooking_methods = []
                     if method not in st.session_state.selected_cooking_methods:
                         st.session_state.selected_cooking_methods.append(method)
-                        st.rerun()
 
 def render_basic_filters():
     """Render basic filter options"""
@@ -276,12 +271,33 @@ def render_advanced_filters():
         )
         st.session_state.selected_allergen_free = selected_allergen_free
         
+        # Nutritional focus
+        nutrition_options = [
+            "High-Protein", "Low-Carb", "High-Fiber", "Low-Fat",
+            "Antioxidant-Rich", "Vitamin-Rich", "Mineral-Rich"
+        ]
+        
+        selected_nutrition = st.multiselect(
+            "💪 Nutritional Focus",
+            options=nutrition_options,
+            default=st.session_state.get('selected_nutritional_focus', []),
+            help="Select nutritional priorities"
+        )
+        st.session_state.selected_nutritional_focus = selected_nutrition
+
+def render_custom_filters():
+    """Render custom filter options"""
+    st.markdown("#### 🎨 Custom Preferences")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
         # Custom ingredients
         ingredient_input = st.text_input(
             "🥕 Preferred Ingredients",
             value=", ".join(st.session_state.get('selected_ingredient_preferences', [])),
             placeholder="e.g., tomato, cheese, chicken",
-            help="Enter ingredients you want (comma-separated)"
+            help="Enter ingredients you want to include (comma-separated)"
         )
         
         if ingredient_input:
@@ -289,29 +305,68 @@ def render_advanced_filters():
             st.session_state.selected_ingredient_preferences = ingredients
         else:
             st.session_state.selected_ingredient_preferences = []
+        
+        # Texture preferences
+        texture_options = [
+            "Crispy", "Soft", "Chewy", "Crunchy", "Smooth", "Creamy",
+            "Flaky", "Tender", "Firm", "Juicy"
+        ]
+        
+        selected_texture = st.multiselect(
+            "🤏 Texture Preferences",
+            options=texture_options,
+            default=st.session_state.get('selected_texture_preferences', []),
+            help="Select preferred textures"
+        )
+        st.session_state.selected_texture_preferences = selected_texture
+    
+    with col2:
+        # Search sensitivity
+        search_sensitivity = st.slider(
+            "🎯 Search Sensitivity",
+            min_value=0.1,
+            max_value=1.0,
+            value=st.session_state.get('search_sensitivity', 0.5),
+            step=0.1,
+            help="Higher = more strict matching, Lower = more results"
+        )
+        st.session_state.search_sensitivity = search_sensitivity
+        
+        # Result limit
+        result_limit = st.slider(
+            "📊 Max Results",
+            min_value=5,
+            max_value=50,
+            value=st.session_state.get('result_limit', 15),
+            step=5,
+            help="Maximum number of results to show"
+        )
+        st.session_state.result_limit = result_limit
 
-def perform_search():
-    """Perform visual search with all filters"""
+def perform_enhanced_search():
+    """Perform enhanced visual search with all filters"""
     if 'uploaded_image' not in st.session_state:
         st.error("❌ Please upload an image first!")
         return
     
-    # Create filter dictionary for backward compatibility
-    custom_filters = {
-        'dietary_preferences': st.session_state.get('selected_dietary_preferences', []),
-        'cuisine_types': st.session_state.get('selected_cuisine_types', []),
-        'spice_levels': st.session_state.get('selected_spice_levels', []),
-        'price_ranges': st.session_state.get('selected_price_ranges', []),
-        'cooking_methods': st.session_state.get('selected_cooking_methods', []),
-        'meal_types': st.session_state.get('selected_meal_types', []),
-        'allergen_free': st.session_state.get('selected_allergen_free', []),
-        'nutritional_focus': st.session_state.get('selected_nutritional_focus', []),
-        'ingredient_preferences': st.session_state.get('selected_ingredient_preferences', []),
-        'texture_preferences': st.session_state.get('selected_texture_preferences', [])
-    }
+    # Create filter criteria
+    filters = FilterCriteria(
+        dietary_preferences=st.session_state.get('selected_dietary_preferences', []),
+        cuisine_types=st.session_state.get('selected_cuisine_types', []),
+        spice_levels=st.session_state.get('selected_spice_levels', []),
+        price_ranges=st.session_state.get('selected_price_ranges', []),
+        cooking_methods=st.session_state.get('selected_cooking_methods', []),
+        meal_types=st.session_state.get('selected_meal_types', []),
+        allergen_free=st.session_state.get('selected_allergen_free', []),
+        nutritional_focus=st.session_state.get('selected_nutritional_focus', []),
+        ingredient_preferences=st.session_state.get('selected_ingredient_preferences', []),
+        texture_preferences=st.session_state.get('selected_texture_preferences', [])
+    )
     
-    with st.spinner("🔍 Searching with filters..."):
-        results = search_similar_dishes(st.session_state.uploaded_image, custom_filters, 15)
+    limit = st.session_state.get('result_limit', 15)
+    
+    with st.spinner("🔍 Searching with enhanced filters..."):
+        results = enhanced_visual_search(st.session_state.uploaded_image, filters, limit)
         
         if results:
             st.session_state.visual_search_results = results
@@ -320,8 +375,8 @@ def perform_search():
         else:
             st.warning("⚠️ No matching dishes found. Try adjusting your filters.")
 
-def render_results_section():
-    """Render search results with detailed scoring"""
+def render_enhanced_results_section():
+    """Render enhanced search results with detailed scoring"""
     st.markdown("### 🎯 Search Results")
     
     results = st.session_state.get('visual_search_results', [])
@@ -343,12 +398,29 @@ def render_results_section():
         high_confidence = len([r for r in results if r.get('match_score', 0) > 0.7])
         st.metric("High Confidence", high_confidence)
     
+    # Sort options
+    sort_option = st.selectbox(
+        "📊 Sort by:",
+        options=["Match Score", "Name", "Cuisine", "Spice Level"],
+        index=0
+    )
+    
+    if sort_option == "Match Score":
+        results.sort(key=lambda x: x.get('match_score', 0), reverse=True)
+    elif sort_option == "Name":
+        results.sort(key=lambda x: x.get('name', ''))
+    elif sort_option == "Cuisine":
+        results.sort(key=lambda x: x.get('cuisine', ''))
+    elif sort_option == "Spice Level":
+        spice_order = {"Mild": 1, "Medium": 2, "Hot": 3, "Very Hot": 4}
+        results.sort(key=lambda x: spice_order.get(x.get('analysis_match', {}).get('spice_level', 'Mild'), 0))
+    
     # Display results
     for i, dish in enumerate(results):
-        render_result_card(dish, i)
+        render_enhanced_result_card(dish, i)
 
-def render_result_card(dish: Dict, index: int):
-    """Render result card with detailed information"""
+def render_enhanced_result_card(dish: Dict, index: int):
+    """Render enhanced result card with detailed information"""
     match_score = dish.get('match_score', 0)
     score_breakdown = dish.get('score_breakdown', {})
     
@@ -396,19 +468,20 @@ def render_result_card(dish: Dict, index: int):
             
             # Score breakdown in expander
             if score_breakdown:
-                with st.expander("📊 Details"):
+                with st.expander("📊 Score Details"):
                     for category, score in score_breakdown.items():
                         st.write(f"**{category.title()}:** {score:.1%}")
         
         st.markdown("---")
 
+# Clear filters function
 def clear_all_filters():
     """Clear all selected filters"""
     filter_keys = [
         'selected_dietary_preferences', 'selected_cuisine_types', 'selected_spice_levels',
         'selected_price_ranges', 'selected_cooking_methods', 'selected_meal_types',
         'selected_allergen_free', 'selected_nutritional_focus', 'selected_ingredient_preferences',
-        'selected_texture_preferences'
+        'selected_texture_preferences', 'search_sensitivity', 'result_limit'
     ]
     
     for key in filter_keys:
