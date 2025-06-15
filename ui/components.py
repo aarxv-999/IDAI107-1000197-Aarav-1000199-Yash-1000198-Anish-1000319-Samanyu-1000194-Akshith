@@ -11,6 +11,8 @@ import firebase_admin
 from firebase_admin import firestore
 import logging
 import random
+import hashlib
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,8 @@ def initialize_session_state():
         st.session_state.user = None
     if 'auth_error' not in st.session_state:
         st.session_state.auth_error = None
+    if 'show_signup' not in st.session_state:
+        st.session_state.show_signup = False
 
 def get_firestore_client():
     """Get Firestore client for authentication - using MAIN Firebase"""
@@ -54,121 +58,316 @@ def get_event_firestore_client():
         logger.error(f"Error getting event Firestore client: {str(e)}")
         return None
 
-def authenticate_user(username, password):
-    """Authenticate user against MAIN Firebase"""
+def hash_password(password):
+    """Hash password using SHA-256"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def validate_email(email):
+    """Validate email format"""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
+def validate_password(password):
+    """Validate password strength"""
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
+    if not re.search(r'[A-Z]', password):
+        return False, "Password must contain at least one uppercase letter"
+    if not re.search(r'[a-z]', password):
+        return False, "Password must contain at least one lowercase letter"
+    if not re.search(r'\d', password):
+        return False, "Password must contain at least one number"
+    return True, "Password is valid"
+
+def authenticate_user(login_identifier, password):
+    """Authenticate user against MAIN Firebase using email or username"""
     try:
-        db = get_firestore_client()  # This now uses MAIN Firebase
+        db = get_firestore_client()
         if not db:
             return None, "Database connection failed"
         
+        # Hash the provided password
+        hashed_password = hash_password(password)
+        
         # Query users collection in MAIN Firebase
         users_ref = db.collection('users')
-        query = users_ref.where('username', '==', username).where('password', '==', password)
-        docs = query.stream()
         
+        # Try to find user by email first, then by username
         user_doc = None
-        for doc in docs:
-            user_doc = doc
-            break
         
-        if user_doc:
+        # Check if login_identifier is an email
+        if validate_email(login_identifier):
+            query = users_ref.where('email', '==', login_identifier).where('password_hash', '==', hashed_password)
+        else:
+            query = users_ref.where('username', '==', login_identifier).where('password_hash', '==', hashed_password)
+        
+        docs = list(query.stream())
+        
+        if docs:
+            user_doc = docs[0]
             user_data = user_doc.to_dict()
-            user_data['user_id'] = doc.id  # Add document ID as user_id
-            logger.info(f"User authenticated successfully: {username}")
+            user_data['user_id'] = user_doc.id
+            
+            # Update last login
+            user_doc.reference.update({
+                'last_login': firestore.SERVER_TIMESTAMP
+            })
+            
+            logger.info(f"User authenticated successfully: {login_identifier}")
             return user_data, None
         else:
-            logger.warning(f"Authentication failed for user: {username}")
-            return None, "Invalid username or password"
+            logger.warning(f"Authentication failed for user: {login_identifier}")
+            return None, "Invalid email/username or password"
             
     except Exception as e:
         logger.error(f"Authentication error: {str(e)}")
         return None, f"Authentication error: {str(e)}"
 
-def register_user(username, password, role='user'):
-    """Register a new user in MAIN Firebase"""
+def check_user_exists(email, username):
+    """Check if user already exists with given email or username"""
     try:
-        db = get_firestore_client()  # This now uses MAIN Firebase
+        db = get_firestore_client()
+        if not db:
+            return True, "Database connection failed"
+        
+        users_ref = db.collection('users')
+        
+        # Check email
+        email_query = users_ref.where('email', '==', email)
+        email_docs = list(email_query.stream())
+        if email_docs:
+            return True, "Email already registered"
+        
+        # Check username
+        username_query = users_ref.where('username', '==', username)
+        username_docs = list(username_query.stream())
+        if username_docs:
+            return True, "Username already taken"
+        
+        return False, "User does not exist"
+        
+    except Exception as e:
+        logger.error(f"Error checking user existence: {str(e)}")
+        return True, f"Error checking user: {str(e)}"
+
+def register_user(email, username, password, full_name, role='user'):
+    """Register a new user in MAIN Firebase with proper validation"""
+    try:
+        db = get_firestore_client()
         if not db:
             return False, "Database connection failed"
         
-        # Check if username already exists
-        users_ref = db.collection('users')
-        existing_query = users_ref.where('username', '==', username)
-        existing_docs = list(existing_query.stream())
+        # Validate email
+        if not validate_email(email):
+            return False, "Invalid email format"
         
-        if existing_docs:
-            return False, "Username already exists"
+        # Validate password
+        is_valid, password_message = validate_password(password)
+        if not is_valid:
+            return False, password_message
+        
+        # Check if user already exists
+        exists, message = check_user_exists(email, username)
+        if exists:
+            return False, message
+        
+        # Hash password
+        password_hash = hash_password(password)
         
         # Create new user
         user_data = {
+            'email': email,
             'username': username,
-            'password': password,  # In production, hash this!
+            'password_hash': password_hash,
+            'full_name': full_name,
             'role': role,
-            'created_at': firestore.SERVER_TIMESTAMP
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'last_login': None,
+            'is_active': True,
+            'profile_completed': True
         }
         
-        doc_ref = users_ref.add(user_data)
+        doc_ref = db.collection('users').add(user_data)
         user_data['user_id'] = doc_ref[1].id
         
-        logger.info(f"User registered successfully: {username}")
-        return True, "User registered successfully"
+        # Initialize user stats in gamification system
+        try:
+            stats_data = {
+                'user_id': doc_ref[1].id,
+                'username': username,
+                'total_xp': 0,
+                'level': 1,
+                'recipes_generated': 0,
+                'quizzes_completed': 0,
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'last_activity': firestore.SERVER_TIMESTAMP
+            }
+            db.collection('user_stats').document(doc_ref[1].id).set(stats_data)
+            logger.info(f"Created user stats for new user: {username}")
+        except Exception as e:
+            logger.warning(f"Failed to create user stats: {str(e)}")
+        
+        logger.info(f"User registered successfully: {username} ({email})")
+        return True, "Registration successful! You can now log in."
         
     except Exception as e:
         logger.error(f"Registration error: {str(e)}")
         return False, f"Registration error: {str(e)}"
 
-def render_auth_ui():
-    """Render authentication UI in sidebar"""
-    if st.session_state.is_authenticated:
-        user = st.session_state.user
-        st.sidebar.success(f"Welcome, {user['username']}!")
-        st.sidebar.write(f"Role: {user['role'].title()}")
+def render_login_form():
+    """Render the login form"""
+    st.markdown("### 🔐 Login to Your Account")
+    
+    with st.form("login_form"):
+        login_identifier = st.text_input(
+            "Email or Username",
+            placeholder="Enter your email or username",
+            help="You can use either your email address or username to log in"
+        )
+        password = st.text_input(
+            "Password",
+            type="password",
+            placeholder="Enter your password"
+        )
         
-        if st.sidebar.button("Logout"):
-            st.session_state.is_authenticated = False
-            st.session_state.user = None
-            st.rerun()
+        col1, col2 = st.columns(2)
+        with col1:
+            login_button = st.form_submit_button("🚀 Login", type="primary", use_container_width=True)
+        with col2:
+            if st.form_submit_button("📝 Create Account", use_container_width=True):
+                st.session_state.show_signup = True
+                st.rerun()
         
-        return True
-    else:
-        st.sidebar.subheader("Login / Register")
-        
-        # Toggle between login and register
-        auth_mode = st.sidebar.radio("Mode", ["Login", "Register"])
-        
-        with st.sidebar.form("auth_form"):
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            
-            if auth_mode == "Register":
-                role = st.selectbox("Role", ["user", "staff", "chef", "admin"])
-            
-            submit_button = st.form_submit_button(auth_mode)
-            
-            if submit_button:
-                if not username or not password:
-                    st.sidebar.error("Please fill in all fields")
-                elif auth_mode == "Login":
-                    user_data, error = authenticate_user(username, password)
+        if login_button:
+            if not login_identifier or not password:
+                st.error("Please fill in all fields")
+            else:
+                with st.spinner("Authenticating..."):
+                    user_data, error = authenticate_user(login_identifier, password)
                     if user_data:
                         st.session_state.is_authenticated = True
                         st.session_state.user = user_data
-                        st.sidebar.success("Login successful!")
+                        st.success("Login successful!")
                         st.rerun()
                     else:
-                        st.sidebar.error(error)
-                else:  # Register
-                    success, message = register_user(username, password, role)
+                        st.error(error)
+
+def render_signup_form():
+    """Render the signup form"""
+    st.markdown("### 📝 Create Your Account")
+    
+    with st.form("signup_form"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            full_name = st.text_input(
+                "Full Name *",
+                placeholder="Enter your full name",
+                help="Your display name in the system"
+            )
+            email = st.text_input(
+                "Email Address *",
+                placeholder="Enter your email address",
+                help="Used for login and notifications"
+            )
+        
+        with col2:
+            username = st.text_input(
+                "Username *",
+                placeholder="Choose a unique username",
+                help="Used for login and leaderboards"
+            )
+            role = st.selectbox(
+                "Role *",
+                ["user", "staff", "chef", "admin"],
+                help="Select your role in the restaurant system"
+            )
+        
+        password = st.text_input(
+            "Password *",
+            type="password",
+            placeholder="Create a strong password",
+            help="Must be at least 8 characters with uppercase, lowercase, and numbers"
+        )
+        
+        confirm_password = st.text_input(
+            "Confirm Password *",
+            type="password",
+            placeholder="Confirm your password"
+        )
+        
+        # Terms and conditions
+        terms_accepted = st.checkbox(
+            "I agree to the Terms of Service and Privacy Policy",
+            help="You must accept the terms to create an account"
+        )
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            signup_button = st.form_submit_button("🎉 Create Account", type="primary", use_container_width=True)
+        with col2:
+            if st.form_submit_button("← Back to Login", use_container_width=True):
+                st.session_state.show_signup = False
+                st.rerun()
+        
+        if signup_button:
+            # Validation
+            if not all([full_name, email, username, password, confirm_password]):
+                st.error("Please fill in all required fields")
+            elif not terms_accepted:
+                st.error("Please accept the Terms of Service and Privacy Policy")
+            elif password != confirm_password:
+                st.error("Passwords do not match")
+            else:
+                with st.spinner("Creating your account..."):
+                    success, message = register_user(email, username, password, full_name, role)
                     if success:
-                        st.sidebar.success(message)
-                        # Auto-login after registration
-                        user_data, _ = authenticate_user(username, password)
+                        st.success(message)
+                        st.session_state.show_signup = False
+                        st.balloons()
+                        
+                        # Auto-login after successful registration
+                        user_data, _ = authenticate_user(email, password)
                         if user_data:
                             st.session_state.is_authenticated = True
                             st.session_state.user = user_data
                             st.rerun()
                     else:
-                        st.sidebar.error(message)
+                        st.error(message)
+
+def render_auth_ui():
+    """Render authentication UI in sidebar"""
+    if st.session_state.is_authenticated:
+        user = st.session_state.user
+        st.sidebar.success(f"Welcome, {user.get('full_name', user['username'])}!")
+        st.sidebar.write(f"**Role:** {user['role'].title()}")
+        st.sidebar.write(f"**Username:** @{user['username']}")
+        
+        if st.sidebar.button("🚪 Logout", use_container_width=True):
+            st.session_state.is_authenticated = False
+            st.session_state.user = None
+            st.session_state.show_signup = False
+            st.rerun()
+        
+        return True
+    else:
+        st.sidebar.markdown("### 🔐 Authentication")
+        
+        # Show signup or login form based on state
+        if st.session_state.show_signup:
+            render_signup_form()
+        else:
+            render_login_form()
+        
+        # Additional info
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### ℹ️ Account Types")
+        st.sidebar.markdown("""
+        **👤 User:** Access to basic features, quizzes, and visual menu
+        **👨‍💼 Staff:** Can create marketing campaigns and access analytics
+        **👨‍🍳 Chef:** Can submit recipes and manage menu items
+        **🔧 Admin:** Full access to all features and management tools
+        """)
         
         return False
 
