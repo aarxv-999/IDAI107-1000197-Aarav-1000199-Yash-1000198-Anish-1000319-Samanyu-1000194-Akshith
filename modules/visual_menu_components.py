@@ -19,6 +19,71 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def initialize_collections_if_needed(db):
+    """Initialize required collections if they don't exist - RUNS ONLY ONCE"""
+    try:
+        if not db:
+            return False
+            
+        # Check if collections already exist by trying to read them
+        collections_to_create = []
+        
+        # Check user_preferences collection
+        try:
+            prefs_docs = list(db.collection("user_preferences").limit(1).stream())
+            logger.info("user_preferences collection already exists")
+        except:
+            collections_to_create.append("user_preferences")
+            
+        # Check user_dish_likes collection  
+        try:
+            likes_docs = list(db.collection("user_dish_likes").limit(1).stream())
+            logger.info("user_dish_likes collection already exists")
+        except:
+            collections_to_create.append("user_dish_likes")
+        
+        # Create collections only if they don't exist
+        if collections_to_create:
+            st.info(f"🔧 Setting up required collections: {', '.join(collections_to_create)}")
+            
+            if "user_preferences" in collections_to_create:
+                # Create a dummy document to initialize the collection
+                dummy_prefs = {
+                    'user_id': 'system_init',
+                    'favorite_cuisines': [],
+                    'preferred_categories': [],
+                    'last_updated': datetime.now().isoformat(),
+                    'is_system_init': True
+                }
+                db.collection("user_preferences").document("system_init").set(dummy_prefs)
+                logger.info("Created user_preferences collection")
+                
+            if "user_dish_likes" in collections_to_create:
+                # Create a dummy document to initialize the collection
+                dummy_like = {
+                    'user_id': 'system_init',
+                    'dish_name': 'System Initialization',
+                    'dish_cuisine': 'System',
+                    'dish_category': 'System',
+                    'dish_ingredients': [],
+                    'liked_at': datetime.now().isoformat(),
+                    'recommendation_context': 'system_init',
+                    'is_system_init': True
+                }
+                db.collection("user_dish_likes").document("system_init").set(dummy_like)
+                logger.info("Created user_dish_likes collection")
+            
+            st.success("✅ Collections initialized successfully!")
+            return True
+        else:
+            logger.info("All required collections already exist")
+            return True
+            
+    except Exception as e:
+        logger.error(f"Error initializing collections: {str(e)}")
+        st.error(f"❌ Error setting up collections: {str(e)}")
+        return False
+
 def render_visual_menu_search():
     """Main function to render Visual Menu Challenge & Recommendation Platform"""
     st.title("🍽️ Visual Menu Challenge & Recommendation Platform")
@@ -34,6 +99,13 @@ def render_visual_menu_search():
     if not db:
         st.error("❌ Database connection failed. Please check your configuration.")
         return
+    
+    # Initialize collections if needed (RUNS ONLY ONCE)
+    if 'collections_initialized' not in st.session_state:
+        if initialize_collections_if_needed(db):
+            st.session_state.collections_initialized = True
+        else:
+            st.warning("⚠️ Some features may not work properly due to collection setup issues.")
     
     # Initialize AI services
     vision_client = configure_vision_api()
@@ -162,12 +234,12 @@ def render_ai_dish_detection(db, vision_client, gemini_model, allergies, user_id
             st.error("❌ Failed to process the uploaded image. Please try again.")
 
 def render_personalized_menu(db, gemini_model, allergies, user_id):
-    """Render personalized menu recommendations tab - AI-powered without order history"""
+    """Render personalized menu recommendations tab - AI-powered with learning system"""
     st.header("🎯 Personalized AI Menu")
-    st.markdown("Get AI-powered menu recommendations based on your preferences and our smart analysis!")
+    st.markdown("Get AI-powered menu recommendations that learn from your preferences!")
     
     # XP info
-    st.info("💡 **Earn 20 XP** for generating personalized recommendations!")
+    st.info("💡 **Earn 20 XP** for generating recommendations • **Earn 5 XP** for each like!")
     
     # User preferences section
     st.subheader("👤 Your Preferences (Optional)")
@@ -179,7 +251,19 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
             prefs_doc = db.collection("user_preferences").document(user_id).get()
             if prefs_doc.exists:
                 user_prefs = prefs_doc.to_dict()
-                st.success("✅ Loaded your saved preferences!")
+                if not user_prefs.get('is_system_init', False):  # Don't show system init as success
+                    st.success("✅ Loaded your saved preferences!")
+        except:
+            pass
+    
+    # Load user's liked dishes for AI learning
+    user_likes = []
+    if user_id and db:
+        try:
+            likes_docs = db.collection("user_dish_likes").where("user_id", "==", user_id).stream()
+            user_likes = [doc.to_dict() for doc in likes_docs if not doc.to_dict().get('is_system_init', False)]
+            if user_likes:
+                st.info(f"🧠 AI has learned from {len(user_likes)} dishes you've liked!")
         except:
             pass
     
@@ -216,7 +300,8 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
                     'user_id': user_id,
                     'favorite_cuisines': favorite_cuisines,
                     'preferred_categories': preferred_categories,
-                    'last_updated': datetime.now().isoformat()
+                    'last_updated': datetime.now().isoformat(),
+                    'is_system_init': False
                 }
                 db.collection("user_preferences").document(user_id).set(prefs_data)
                 st.success("✅ Preferences saved!")
@@ -233,7 +318,7 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
     with col3:
         recommendation_type = st.selectbox(
             "Recommendation Style",
-            ["Balanced Variety", "Cuisine Focus", "Dietary Optimized", "Chef's Special", "Quick & Easy"]
+            ["Balanced Variety", "Cuisine Focus", "Dietary Optimized", "Chef's Special", "Quick & Easy", "Based on Likes"]
         )
         
     with col4:
@@ -254,7 +339,7 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
             st.error("❌ Gemini AI not configured. Please check your API key.")
             return
             
-        with st.spinner("🤖 AI is analyzing your preferences and our menu..."):
+        with st.spinner("🤖 AI is analyzing your preferences and learning from your likes..."):
             
             if not menu_items:
                 st.error("❌ No menu items found.")
@@ -274,24 +359,65 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
                     'types': item.get('types', [])
                 })
             
-            # Build AI prompt
+            # Build AI prompt with learning data
             user_profile = {
                 'dietary_restrictions': allergies,
                 'favorite_cuisines': favorite_cuisines,
                 'preferred_categories': preferred_categories,
                 'recommendation_type': recommendation_type,
-                'meal_context': meal_context
+                'meal_context': meal_context,
+                'liked_dishes': user_likes  # Include learning data
             }
             
             try:
-                recommendations = generate_smart_personalized_recommendations(
+                recommendations_data = generate_smart_personalized_recommendations_with_learning(
                     gemini_model, menu_context, user_profile, num_recommendations, 
                     include_description, include_ingredients
                 )
                 
+                # Store recommendations in session state for liking
+                st.session_state['current_recommendations'] = recommendations_data['dishes']
+                st.session_state['recommendation_context'] = f"{recommendation_type}_{meal_context}"
+                
                 # Display recommendations
                 st.success("✅ **Your AI-Powered Personalized Recommendations:**")
-                st.markdown(recommendations)
+                st.markdown(recommendations_data['explanation'])
+                
+                # Display each recommendation with like button
+                st.subheader("💖 Like dishes to help AI learn your preferences!")
+                
+                for i, dish in enumerate(recommendations_data['dishes']):
+                    with st.container():
+                        st.markdown("---")
+                        col_dish, col_like = st.columns([4, 1])
+                        
+                        with col_dish:
+                            st.markdown(f"### 🍽️ {dish['name']}")
+                            st.write(f"**Cuisine:** {dish['cuisine']} | **Category:** {dish['category']}")
+                            if dish.get('description'):
+                                st.write(f"**Description:** {dish['description']}")
+                            if dish.get('ingredients'):
+                                st.write(f"**Key Ingredients:** {', '.join(dish['ingredients'])}")
+                            st.write(f"**Why recommended:** {dish['reason']}")
+                        
+                        with col_like:
+                            # Check if already liked
+                            already_liked = any(
+                                like['dish_name'].lower() == dish['name'].lower() 
+                                for like in user_likes
+                            )
+                            
+                            if already_liked:
+                                st.success("❤️ Liked!")
+                            else:
+                                if st.button(f"❤️ Like", key=f"like_rec_{i}"):
+                                    if save_dish_like(db, user_id, dish, st.session_state.get('recommendation_context', 'unknown')):
+                                        st.success("❤️ Liked! AI will learn from this.")
+                                        # Award XP for liking
+                                        if user_id:
+                                            award_visual_menu_xp(user_id, 5, "dish_like")
+                                            show_xp_notification(5, "Liking Dish")
+                                        st.rerun()
                 
                 # Award XP for generating recommendations
                 if user_id:
@@ -302,8 +428,39 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
             except Exception as e:
                 st.error(f"❌ Error generating recommendations: {str(e)}")
 
-def generate_smart_personalized_recommendations(gemini_model, menu_context, user_profile, num_recommendations, include_description, include_ingredients):
-    """Generate smart personalized recommendations using Gemini AI"""
+def save_dish_like(db, user_id, dish, recommendation_context):
+    """Save user's dish like to Firebase for AI learning - DOESN'T OVERWRITE"""
+    try:
+        if not db or not user_id:
+            return False
+            
+        # Check if already liked to prevent duplicates
+        existing_likes = db.collection("user_dish_likes").where("user_id", "==", user_id).where("dish_name", "==", dish['name']).stream()
+        if any(doc.to_dict() for doc in existing_likes):
+            logger.info(f"Dish {dish['name']} already liked by user {user_id}")
+            return True  # Already liked, but return success
+            
+        like_data = {
+            'user_id': user_id,
+            'dish_name': dish['name'],
+            'dish_cuisine': dish['cuisine'],
+            'dish_category': dish['category'],
+            'dish_ingredients': dish.get('ingredients', []),
+            'liked_at': datetime.now().isoformat(),
+            'recommendation_context': recommendation_context,
+            'is_system_init': False
+        }
+        
+        db.collection("user_dish_likes").add(like_data)
+        logger.info(f"Saved dish like for user {user_id}: {dish['name']}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error saving dish like: {str(e)}")
+        return False
+
+def generate_smart_personalized_recommendations_with_learning(gemini_model, menu_context, user_profile, num_recommendations, include_description, include_ingredients):
+    """Generate smart personalized recommendations using Gemini AI with learning from likes"""
     
     # Convert menu context to text
     menu_text = "\n".join([
@@ -314,9 +471,28 @@ def generate_smart_personalized_recommendations(gemini_model, menu_context, user
         for item in menu_context
     ])
     
+    # Build learning context from liked dishes
+    learning_context = ""
+    if user_profile['liked_dishes']:
+        liked_cuisines = [like['dish_cuisine'] for like in user_profile['liked_dishes']]
+        liked_categories = [like['dish_category'] for like in user_profile['liked_dishes']]
+        liked_ingredients = []
+        for like in user_profile['liked_dishes']:
+            liked_ingredients.extend(like.get('dish_ingredients', []))
+        
+        learning_context = f"""
+        **LEARNING DATA - User has previously liked:**
+        - Cuisines: {', '.join(set(liked_cuisines))}
+        - Categories: {', '.join(set(liked_categories))}
+        - Common ingredients in liked dishes: {', '.join(set(liked_ingredients))}
+        - Recently liked dishes: {', '.join([like['dish_name'] for like in user_profile['liked_dishes'][-5:]])}
+        
+        IMPORTANT: Use this learning data to heavily influence recommendations. Prioritize similar cuisines, categories, and ingredients.
+        """
+    
     # Build comprehensive prompt
     prompt = f"""
-    You are a professional restaurant AI sommelier and menu curator. Analyze the following menu and user profile to provide {num_recommendations} personalized dish recommendations.
+    You are a professional restaurant AI sommelier that learns from user preferences. Analyze the menu and user profile to provide {num_recommendations} personalized dish recommendations.
 
     **User Profile:**
     - Dietary Restrictions: {', '.join(user_profile['dietary_restrictions']) if user_profile['dietary_restrictions'] else 'None'}
@@ -325,42 +501,80 @@ def generate_smart_personalized_recommendations(gemini_model, menu_context, user
     - Recommendation Style: {user_profile['recommendation_type']}
     - Meal Context: {user_profile['meal_context']}
 
+    {learning_context}
+
     **Available Menu:**
     {menu_text}
 
     **Instructions:**
-    1. Select {num_recommendations} dishes that best match the user's profile
-    2. Ensure variety in cuisines and categories unless user specifically prefers certain ones
-    3. Respect all dietary restrictions strictly
-    4. Consider the meal context and recommendation style
-    5. For "Balanced Variety": Mix different cuisines and categories
-    6. For "Cuisine Focus": Prioritize user's favorite cuisines
-    7. For "Dietary Optimized": Focus on dishes that perfectly match dietary needs
-    8. For "Chef's Special": Recommend unique or special items
-    9. For "Quick & Easy": Prioritize dishes with shorter cook times
+    1. If learning data exists, HEAVILY prioritize dishes similar to what the user has liked
+    2. Select {num_recommendations} dishes that best match the user's profile and learning data
+    3. Ensure variety unless user specifically prefers certain cuisines/categories
+    4. Respect all dietary restrictions strictly
+    5. Consider the meal context and recommendation style
+    6. For "Based on Likes": Only recommend if learning data exists, otherwise use "Balanced Variety"
 
     **Output Format:**
-    For each recommendation, provide:
-    
+    Return a JSON-like structure with:
+    1. First, provide a brief explanation of your recommendation strategy
+    2. Then list each dish with: name, cuisine, category, description (if requested), key ingredients (if requested), and reason for recommendation
+
+    Start with: **Recommendation Strategy:** [Your strategy explanation]
+
+    Then for each dish:
     ## 🍽️ [Dish Name]
-    **Why recommended:** [Brief explanation of why this matches the user]
-    **Cuisine:** [Cuisine type] | **Category:** [Category] | **Cook Time:** [Time]
+    **Cuisine:** [Cuisine] | **Category:** [Category] | **Cook Time:** [Time]
     {"**Description:** [Description]" if include_description else ""}
     {"**Key Ingredients:** [List 3-4 main ingredients]" if include_ingredients else ""}
+    **Why recommended:** [Specific reason based on user profile and learning data]
     
     ---
-
-    Make recommendations feel personal and explain the reasoning clearly. Focus on dishes that truly match the user's preferences and dietary needs.
     """
     
     try:
         response = gemini_model.generate_content(prompt)
-        return response.text.strip()
+        response_text = response.text.strip()
+        
+        # Parse the response to extract dish data
+        dishes = []
+        lines = response_text.split('\n')
+        current_dish = {}
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith('## 🍽️'):
+                if current_dish:
+                    dishes.append(current_dish)
+                current_dish = {'name': line.replace('## 🍽️', '').strip()}
+            elif line.startswith('**Cuisine:**'):
+                parts = line.split('|')
+                current_dish['cuisine'] = parts[0].replace('**Cuisine:**', '').strip()
+                current_dish['category'] = parts[1].replace('**Category:**', '').strip() if len(parts) > 1 else 'Unknown'
+            elif line.startswith('**Description:**'):
+                current_dish['description'] = line.replace('**Description:**', '').strip()
+            elif line.startswith('**Key Ingredients:**'):
+                ingredients_text = line.replace('**Key Ingredients:**', '').strip()
+                current_dish['ingredients'] = [ing.strip() for ing in ingredients_text.split(',')]
+            elif line.startswith('**Why recommended:**'):
+                current_dish['reason'] = line.replace('**Why recommended:**', '').strip()
+        
+        # Add the last dish
+        if current_dish:
+            dishes.append(current_dish)
+        
+        return {
+            'explanation': response_text,
+            'dishes': dishes
+        }
+        
     except Exception as e:
-        return f"Error generating recommendations: {str(e)}"
+        return {
+            'explanation': f"Error generating recommendations: {str(e)}",
+            'dishes': []
+        }
 
 def render_custom_filters(db, allergies):
-    """Render custom menu filters tab - realistic implementation based on actual Firebase structure"""
+    """Render custom menu filters tab - FIXED filtering logic"""
     st.header("⚙️ Custom Menu Filters")
     st.markdown("Filter our menu based on available data from your restaurant database!")
     
@@ -424,18 +638,18 @@ def render_custom_filters(db, allergies):
             # Apply allergy filters first (existing functionality)
             filtered_menu, debug_info = filter_menu_by_allergies(filtered_menu, allergies)
             
-            # Apply category filter
+            # FIXED: Apply category filter with exact matching
             if selected_category != "All":
                 filtered_menu = [
                     item for item in filtered_menu 
-                    if item.get('category', '').lower() == selected_category.lower()
+                    if item.get('category', '').strip().lower() == selected_category.strip().lower()
                 ]
             
-            # Apply cuisine filter
+            # FIXED: Apply cuisine filter with exact matching
             if selected_cuisine != "All":
                 filtered_menu = [
                     item for item in filtered_menu 
-                    if item.get('cuisine', '').lower() == selected_cuisine.lower()
+                    if item.get('cuisine', '').strip().lower() == selected_cuisine.strip().lower()
                 ]
             
             # Apply diet filter
