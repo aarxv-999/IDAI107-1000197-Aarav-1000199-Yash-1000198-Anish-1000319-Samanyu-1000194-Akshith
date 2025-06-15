@@ -53,7 +53,7 @@ def check_feature_access(feature_name):
     user = get_current_user()
 
     # Public features accessible to all authenticated users
-    public_features = ["Event Planning ChatBot", "Gamification Hub", "Cooking Quiz", "Visual Menu Search"]
+    public_features = ["Event Planning ChatBot", "Gamification Hub", "Visual Menu Search"]
 
     # Staff/admin only features
     staff_admin_features = ["Leftover Management", "Promotion Generator", "Ingredients Management"]
@@ -84,10 +84,12 @@ def check_feature_access(feature_name):
 # Individual feature functions
 @auth_required
 def leftover_management():
-    """Leftover management feature with automatic Firebase integration"""
-    st.title("♻️ Leftover Management")
+    """Leftover management feature with step-by-step selection"""
+    st.title("Leftover Management")
 
     # Initialize session state variables if they don't exist
+    if 'leftover_method' not in st.session_state:
+        st.session_state.leftover_method = None
     if 'all_leftovers' not in st.session_state:
         st.session_state.all_leftovers = []
     if 'detailed_ingredient_info' not in st.session_state:
@@ -97,166 +99,192 @@ def leftover_management():
     if 'recipe_generation_error' not in st.session_state:
         st.session_state.recipe_generation_error = None
 
-    # Sidebar for input methods
-    st.sidebar.header("Input Methods")
-
-    # Get leftovers from CSV, manual input, or Firebase
-    csv_leftovers = leftover_input_csv()
-    manual_leftovers = leftover_input_manual()
-    firebase_leftovers, firebase_detailed_info = leftover_input_firebase()
-
-    # Combine leftovers from all sources
-    all_leftovers = csv_leftovers + manual_leftovers + firebase_leftovers
-
-    # Store in session state
-    st.session_state.all_leftovers = all_leftovers
-    st.session_state.detailed_ingredient_info = firebase_detailed_info
-
-    # Main content
-    if all_leftovers:
-        st.write(f"Found {len(all_leftovers)} ingredients")
+    # Step 1: Method Selection
+    if st.session_state.leftover_method is None:
+        st.subheader("Choose Input Method")
+        st.markdown("Select how you want to input your leftover ingredients:")
         
-        # Display priority information if Firebase ingredients are used
-        if firebase_detailed_info:
-            st.info("Ingredients are prioritized by expiry date, closest to expiry first")
-            
-            # Show urgency summary
-            urgent_count = len([item for item in firebase_detailed_info if item['days_until_expiry'] <= 3])
-            if urgent_count > 0:
-                st.warning(f"{urgent_count} ingredients expire within 3 days - recipes will prioritize these!!!")
-        
-        # Create a dropdown for ingredients with expiry info
-        with st.expander("Available Ingredients", expanded=False):
-            if firebase_detailed_info:
-                # Display Firebase ingredients with expiry info
-                for item in firebase_detailed_info:
-                    days_left = item['days_until_expiry']
-                    
-                    # Color code based on urgency
-                    if days_left <= 1:
-                        st.error(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
-                    elif days_left <= 3:
-                        st.warning(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
-                    elif days_left <= 7:
-                        st.success(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
-                    else:
-                        st.info(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
-            else:
-                # Display other ingredients in a compact format
-                cols = st.columns(3)
-                for i, ingredient in enumerate(all_leftovers):
-                    col_idx = i % 3
-                    with cols[col_idx]:
-                        st.write(f"• {ingredient.title()}")
-        
-        # Recipe generation options
-        st.subheader("Recipe Generation Options")
-        
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            # Number of recipe suggestions
-            num_suggestions = st.slider("Number of recipe suggestions", 
-                                       min_value=1, 
-                                       max_value=10, 
-                                       value=3,
-                                       help="Select how many recipe suggestions you want")
+            if st.button("Manual Entry", use_container_width=True, type="primary"):
+                st.session_state.leftover_method = "manual"
+                st.rerun()
+            st.markdown("Enter ingredients manually")
         
         with col2:
-            # Additional notes or requirements
-            notes = st.text_area("Additional notes or requirements", 
-                                placeholder="E.g., vegetarian only, quick meals, kid-friendly, etc.",
-                                help="Add any specific requirements for your recipes")
+            if st.button("CSV Upload", use_container_width=True, type="primary"):
+                st.session_state.leftover_method = "csv"
+                st.rerun()
+            st.markdown("Upload a CSV file with ingredients")
         
-        # Auto-generate recipes for Firebase ingredients or manual generation
-        if firebase_leftovers and firebase_detailed_info:
-            # Automatic generation for Firebase ingredients
-            st.info("Ready to generate recipes using your inventory ingredients!")
+        with col3:
+            if st.button("Firebase Inventory", use_container_width=True, type="primary"):
+                st.session_state.leftover_method = "firebase"
+                st.rerun()
+            st.markdown("Use ingredients from your inventory")
+    
+    # Step 2: Input based on selected method
+    else:
+        # Back button
+        if st.button("← Back to Method Selection"):
+            st.session_state.leftover_method = None
+            st.session_state.all_leftovers = []
+            st.session_state.detailed_ingredient_info = []
+            st.session_state.recipes = []
+            st.rerun()
+        
+        st.subheader(f"Input Method: {st.session_state.leftover_method.title()}")
+        
+        # Handle different input methods
+        if st.session_state.leftover_method == "manual":
+            manual_input = st.text_area(
+                "Enter ingredients (one per line or comma-separated)",
+                placeholder="tomatoes\nonions\ngarlic\nrice\n\nOr: tomatoes, onions, garlic, rice",
+                height=150
+            )
             
-            # Show auto-generate button
-            if st.button("Generate Smart Recipes", type="primary", use_container_width=True):
+            if st.button("Process Ingredients", type="primary"):
+                if manual_input:
+                    # Handle both line-separated and comma-separated input
+                    if '\n' in manual_input:
+                        ingredients = [ing.strip().lower() for ing in manual_input.split('\n') if ing.strip()]
+                    else:
+                        ingredients = [ing.strip().lower() for ing in manual_input.split(',') if ing.strip()]
+                    
+                    st.session_state.all_leftovers = ingredients
+                    st.session_state.detailed_ingredient_info = []
+                    st.success(f"Added {len(ingredients)} ingredients")
+                else:
+                    st.error("Please enter some ingredients")
+        
+        elif st.session_state.leftover_method == "csv":
+            uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+            
+            if uploaded_file is not None:
                 try:
-                    with st.spinner("Generating recipes based on expiry priority..."):
-                        # Call the suggest_recipes function with priority information
+                    import pandas as pd
+                    df = pd.read_csv(uploaded_file)
+                    if 'ingredient' in df.columns:
+                        ingredients = df['ingredient'].dropna().tolist()
+                        ingredients = [ing.lower().strip() for ing in ingredients]
+                        st.session_state.all_leftovers = ingredients
+                        st.session_state.detailed_ingredient_info = []
+                        st.success(f"Loaded {len(ingredients)} ingredients from CSV")
+                    else:
+                        st.error("CSV must have an 'ingredient' column")
+                except Exception as e:
+                    st.error(f"Error reading CSV: {str(e)}")
+        
+        elif st.session_state.leftover_method == "firebase":
+            max_ingredients = st.slider(
+                "Max ingredients to fetch", 
+                min_value=5, 
+                max_value=50, 
+                value=20,
+                help="Limit the number of ingredients to prioritize those expiring soon"
+            )
+            
+            if st.button("Fetch Priority Ingredients", type="primary"):
+                try:
+                    from modules.leftover import get_ingredients_by_expiry_priority, fetch_ingredients_from_firebase
+                    firebase_ingredients = fetch_ingredients_from_firebase()
+                    ingredients, detailed_info = get_ingredients_by_expiry_priority(firebase_ingredients, max_ingredients)
+                    
+                    if ingredients:
+                        st.session_state.all_leftovers = ingredients
+                        st.session_state.detailed_ingredient_info = detailed_info
+                        st.success(f"Fetched {len(ingredients)} priority ingredients")
+                    else:
+                        st.error("No ingredients found in Firebase inventory")
+                except Exception as e:
+                    st.error(f"Firebase error: {str(e)}")
+                    logging.error(f"Firebase integration error: {str(e)}")
+        
+        # Step 3: Recipe Generation (if ingredients are loaded)
+        if st.session_state.all_leftovers:
+            st.markdown("---")
+            st.subheader("Generate Recipes")
+            
+            # Display loaded ingredients
+            with st.expander("Loaded Ingredients", expanded=False):
+                if st.session_state.detailed_ingredient_info:
+                    # Display Firebase ingredients with expiry info
+                    for item in st.session_state.detailed_ingredient_info:
+                        days_left = item['days_until_expiry']
+                        
+                        # Color code based on urgency
+                        if days_left <= 1:
+                            st.error(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
+                        elif days_left <= 3:
+                            st.warning(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
+                        elif days_left <= 7:
+                            st.success(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
+                        else:
+                            st.info(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
+                else:
+                    # Display other ingredients in a compact format
+                    cols = st.columns(3)
+                    for i, ingredient in enumerate(st.session_state.all_leftovers):
+                        col_idx = i % 3
+                        with cols[col_idx]:
+                            st.write(f"• {ingredient.title()}")
+            
+            # Recipe generation options
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                num_suggestions = st.slider("Number of recipe suggestions", 
+                                           min_value=1, 
+                                           max_value=10, 
+                                           value=3,
+                                           help="Select how many recipe suggestions you want")
+            
+            with col2:
+                notes = st.text_area("Additional notes or requirements", 
+                                    placeholder="E.g., vegetarian only, quick meals, kid-friendly, etc.",
+                                    help="Add any specific requirements for your recipes")
+            
+            # Generate recipes button
+            if st.button("Generate Recipe Suggestions", type="primary", use_container_width=True):
+                try:
+                    with st.spinner("Generating recipes..."):
                         recipes = suggest_recipes(
-                            all_leftovers, 
+                            st.session_state.all_leftovers, 
                             num_suggestions, 
                             notes, 
-                            priority_ingredients=firebase_detailed_info
+                            priority_ingredients=st.session_state.detailed_ingredient_info
                         )
                         
-                        # Store results in session state
                         st.session_state.recipes = recipes
                         st.session_state.recipe_generation_error = None
                         
-                        # Log for debugging
-                        logging.info(f"Generated {len(recipes)} recipes with priority ingredients")
+                        logging.info(f"Generated {len(recipes)} recipes")
                 except Exception as e:
                     st.session_state.recipe_generation_error = str(e)
                     logging.error(f"Recipe generation error: {str(e)}")
-        else:
-            # Manual generation for other ingredients
-            with st.form(key="recipe_form"):
-                submit_button = st.form_submit_button(label="Generate Recipe Suggestions", type="primary")
+            
+            # Display recipes or error message
+            if st.session_state.recipe_generation_error:
+                st.error(f"Error generating recipes: {st.session_state.recipe_generation_error}")
+            elif st.session_state.recipes:
+                st.success(f"Generated {len(st.session_state.recipes)} recipe suggestions!")
                 
-                if submit_button:
-                    try:
-                        with st.spinner("Generating recipes..."):
-                            # Call the suggest_recipes function
-                            recipes = suggest_recipes(all_leftovers, num_suggestions, notes)
-                            
-                            # Store results in session state
-                            st.session_state.recipes = recipes
-                            st.session_state.recipe_generation_error = None
-                            
-                            # Log for debugging
-                            logging.info(f"Generated {len(recipes)} recipes")
-                    except Exception as e:
-                        st.session_state.recipe_generation_error = str(e)
-                        logging.error(f"Recipe generation error: {str(e)}")
-        
-        # Display recipes or error message
-        if st.session_state.recipe_generation_error:
-            st.error(f"Error generating recipes: {st.session_state.recipe_generation_error}")
-        elif st.session_state.recipes:
-            st.success(f"Generated {len(st.session_state.recipes)} recipe suggestions!")
-            
-            # Display recipes
-            st.subheader("Recipe Suggestions")
-            for i, recipe in enumerate(st.session_state.recipes):
-                st.write(f"{i+1}. **{recipe}**")
-            
-            # Show which ingredients were prioritized
-            if firebase_detailed_info:
-                urgent_ingredients = [item['name'] for item in firebase_detailed_info if item['days_until_expiry'] <= 3]
-                if urgent_ingredients:
-                    st.info(f"✨ These recipes prioritize ingredients expiring soon: {', '.join(urgent_ingredients)}")
-            
-            # Award XP for generating recipes
-            user = get_current_user()
-            if user and user.get('user_id'):
-                award_recipe_generation_xp(user['user_id'], len(st.session_state.recipes))
-    else:
-        st.info("Please add ingredients using the sidebar options.")
-        
-        # Example section
-        st.markdown("### How it works")
-        st.markdown("""
-        1. **Firebase Integration**: Automatically fetch ingredients from your inventory, sorted by expiry date
-        2. **Smart Prioritization**: Ingredients closest to expiry are prioritized in recipe suggestions
-        3. **AI-Powered Recipes**: Get personalized recipe ideas that reduce food waste
-        4. **Manual Options**: Also supports CSV upload and manual ingredient entry
-        """)
-        
-        # Example ingredients
-        st.markdown("### Example Workflow")
-        st.markdown("""
-        1. Check "Use current inventory from Firebase"
-        2. Select max ingredients to use (prioritized by expiry)
-        3. Click "Fetch Priority Ingredients"
-        4. Click "Generate Smart Recipes"
-        5. Get recipes that use ingredients expiring soonest!
-        """)
+                # Display recipes
+                st.subheader("Recipe Suggestions")
+                for i, recipe in enumerate(st.session_state.recipes):
+                    st.write(f"{i+1}. **{recipe}**")
+                
+                # Show which ingredients were prioritized
+                if st.session_state.detailed_ingredient_info:
+                    urgent_ingredients = [item['name'] for item in st.session_state.detailed_ingredient_info if item['days_until_expiry'] <= 3]
+                    if urgent_ingredients:
+                        st.info(f"These recipes prioritize ingredients expiring soon: {', '.join(urgent_ingredients)}")
+                
+                # Award XP for generating recipes
+                user = get_current_user()
+                if user and user.get('user_id'):
+                    award_recipe_generation_xp(user['user_id'], len(st.session_state.recipes))
 
 @auth_required
 def ingredients_management():
@@ -274,25 +302,6 @@ def gamification_hub():
         display_gamification_dashboard(user['user_id'])
     else:
         st.warning("Please log in to view your gamification stats")
-
-@auth_required
-def cooking_quiz():
-    """Cooking quiz feature"""
-    st.title("Cooking Knowledge Quiz")
-
-    user = get_current_user()
-    if not user or not user.get('user_id'):
-        st.warning("Please log in to take quizzes")
-        return
-        
-    # Sample ingredients for quiz generation
-    sample_ingredients = ["chicken", "rice", "tomatoes", "onions", "garlic", "olive oil"]
-
-    # Display daily challenge
-    display_daily_challenge(user['user_id'])
-
-    # Render the cooking quiz
-    render_cooking_quiz(sample_ingredients, user['user_id'])
 
 @auth_required
 def event_planning():
@@ -368,10 +377,9 @@ def main():
     # List of all available features
     features = [
         "Dashboard",
-        "Ingredients Management",  # Added the missing feature
+        "Ingredients Management",
         "Leftover Management",
         "Gamification Hub", 
-        "Cooking Quiz",
         "Event Planning ChatBot",
         "Promotion Generator", 
         "Chef Recipe Suggestions",
@@ -385,6 +393,11 @@ def main():
     user = get_current_user()
     if user and user.get('user_id'):
         display_user_stats_sidebar(user['user_id'])
+
+    # Add cooking quiz to sidebar
+    st.sidebar.divider()
+    if st.sidebar.button("Take Cooking Quiz", use_container_width=True, type="secondary"):
+        st.session_state.show_cooking_quiz = True
 
     # Feature selection
     selected_feature = st.sidebar.selectbox(
@@ -402,6 +415,28 @@ def main():
     if feature_description:
         st.sidebar.info(feature_description)
 
+    # Show cooking quiz if requested
+    if st.session_state.get('show_cooking_quiz', False):
+        st.title("Cooking Knowledge Quiz")
+        user = get_current_user()
+        if user and user.get('user_id'):
+            # Sample ingredients for quiz generation
+            sample_ingredients = ["chicken", "rice", "tomatoes", "onions", "garlic", "olive oil"]
+            
+            # Display daily challenge
+            display_daily_challenge(user['user_id'])
+            
+            # Render the cooking quiz
+            render_cooking_quiz(sample_ingredients, user['user_id'])
+            
+            # Back button
+            if st.button("← Back to Dashboard"):
+                st.session_state.show_cooking_quiz = False
+                st.rerun()
+        else:
+            st.warning("Please log in to take quizzes")
+        return
+
     # Display the selected feature
     if selected_feature == "Dashboard":
         dashboard()
@@ -411,8 +446,6 @@ def main():
         leftover_management()
     elif selected_feature == "Gamification Hub":
         gamification_hub()
-    elif selected_feature == "Cooking Quiz":
-        cooking_quiz()
     elif selected_feature == "Event Planning ChatBot":
         event_planning()
     elif selected_feature == "Promotion Generator":
