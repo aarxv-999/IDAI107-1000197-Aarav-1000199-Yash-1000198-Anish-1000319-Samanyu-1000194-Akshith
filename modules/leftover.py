@@ -248,7 +248,7 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
                 urgent_details = [f"{ing['name']} (expires in {ing['days_until_expiry']} days)" for ing in urgent_ingredients]
                 priority_text = f"\nURGENT: Must use these ingredients first: {', '.join(urgent_details)}"
         
-        prompt = f'''You are a creative chef tasked with creating NEW, ORIGINAL recipes using leftover ingredients.
+        prompt = f'''You are a creative chef tasked with creating NEW, ORIGINAL recipes using leftover ingredients. 
 
 LEFTOVER INGREDIENTS TO USE: {ingredients_list}
 
@@ -326,9 +326,6 @@ def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int =
     """Generate completely random and different quiz questions each time"""
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            return generate_fallback_questions(num_questions)
-            
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
 
@@ -432,202 +429,16 @@ Make each question completely unique and random - no patterns or similarities!''
                     logger.info(f"Generated {len(valid_questions)} completely random quiz questions")
                     return valid_questions[:num_questions]
                 else:
-                    logger.warning(f"Only {len(valid_questions)} valid questions generated, using random fallback")
-                    return generate_random_fallback_questions(num_questions)
+                    logger.warning(f"Only {len(valid_questions)} valid questions generated")
             else:
                 logger.warning(f"Expected {num_questions} questions, got {len(questions) if isinstance(questions, list) else 0}")
-                return generate_random_fallback_questions(num_questions)
                 
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {str(e)}")
-            return generate_random_fallback_questions(num_questions)
 
     except Exception as e:
         logger.error(f"Error generating quiz questions: {str(e)}")
-        return generate_random_fallback_questions(num_questions)
 
-def generate_random_fallback_questions(num_questions: int = 5) -> List[Dict]:
-    """Generate completely random fallback quiz questions"""
-    all_questions = [
-        {
-            "question": "What is the safe minimum internal temperature for cooking ground beef?",
-            "options": ["145°F (63°C)", "160°F (71°C)", "165°F (74°C)", "180°F (82°C)"],
-            "correct": 1,
-            "difficulty": "easy",
-            "xp_reward": 10,
-            "explanation": "Ground beef should be cooked to 160°F to eliminate harmful bacteria."
-        },
-        {
-            "question": "Which knife cut produces small cubes approximately 1/4 inch?",
-            "options": ["Julienne", "Brunoise", "Chiffonade", "Batonnet"],
-            "correct": 1,
-            "difficulty": "medium",
-            "xp_reward": 15,
-            "explanation": "Brunoise is a precise knife cut that creates small 1/4 inch cubes."
-        },
-        {
-            "question": "What type of flour has the highest protein content?",
-            "options": ["All-purpose flour", "Cake flour", "Bread flour", "Pastry flour"],
-            "correct": 2,
-            "difficulty": "medium",
-            "xp_reward": 15,
-            "explanation": "Bread flour has the highest protein content, making it ideal for yeast breads."
-        },
-        {
-            "question": "Which mother sauce is made with a blonde roux and white stock?",
-            "options": ["Béchamel", "Velouté", "Espagnole", "Hollandaise"],
-            "correct": 1,
-            "difficulty": "hard",
-            "xp_reward": 20,
-            "explanation": "Velouté is made with blonde roux and white stock (chicken, fish, or vegetable)."
-        },
-        {
-            "question": "At what temperature should a medium-rare steak be cooked?",
-            "options": ["120°F (49°C)", "130°F (54°C)", "140°F (60°C)", "150°F (66°C)"],
-            "correct": 1,
-            "difficulty": "medium",
-            "xp_reward": 15,
-            "explanation": "Medium-rare steak should reach an internal temperature of 130°F."
-        },
-        {
-            "question": "What does 'mise en place' mean in cooking?",
-            "options": ["Seasoning food", "Everything in its place", "Cooking technique", "Plating method"],
-            "correct": 1,
-            "difficulty": "easy",
-            "xp_reward": 10,
-            "explanation": "Mise en place means 'everything in its place' - having all ingredients prepared."
-        },
-        {
-            "question": "Which cooking method involves cooking food in its own fat at low temperature?",
-            "options": ["Braising", "Confit", "Poaching", "Steaming"],
-            "correct": 1,
-            "difficulty": "hard",
-            "xp_reward": 20,
-            "explanation": "Confit involves slow-cooking food submerged in its own fat."
-        },
-        {
-            "question": "What is the 'danger zone' temperature range for food safety?",
-            "options": ["32-40°F", "40-140°F", "140-180°F", "180-212°F"],
-            "correct": 1,
-            "difficulty": "easy",
-            "xp_reward": 10,
-            "explanation": "The danger zone is 40-140°F where bacteria multiply rapidly."
-        },
-        {
-            "question": "Which spice is derived from the Crocus flower?",
-            "options": ["Turmeric", "Paprika", "Saffron", "Cardamom"],
-            "correct": 2,
-            "difficulty": "medium",
-            "xp_reward": 15,
-            "explanation": "Saffron comes from the stigmas of the Crocus sativus flower."
-        },
-        {
-            "question": "What does 'al dente' mean when cooking pasta?",
-            "options": ["Very soft", "Firm to the bite", "Overcooked", "Raw"],
-            "correct": 1,
-            "difficulty": "easy",
-            "xp_reward": 10,
-            "explanation": "Al dente means pasta that is firm to the bite, not mushy."
-        },
-        {
-            "question": "Which technique involves cooking vegetables quickly in boiling water then ice water?",
-            "options": ["Sautéing", "Blanching", "Braising", "Roasting"],
-            "correct": 1,
-            "difficulty": "medium",
-            "xp_reward": 15,
-            "explanation": "Blanching involves brief boiling followed by ice water to stop cooking."
-        },
-        {
-            "question": "What is the main ingredient in a traditional roux?",
-            "options": ["Butter and cream", "Flour and fat", "Eggs and oil", "Milk and starch"],
-            "correct": 1,
-            "difficulty": "easy",
-            "xp_reward": 10,
-            "explanation": "A roux is made from equal parts flour and fat, cooked together."
-        },
-        {
-            "question": "Which wine is traditionally used in Coq au Vin?",
-            "options": ["White wine", "Red wine", "Champagne", "Port"],
-            "correct": 1,
-            "difficulty": "medium",
-            "xp_reward": 15,
-            "explanation": "Coq au Vin traditionally uses red wine, usually Burgundy."
-        },
-        {
-            "question": "What is the ideal water temperature for brewing green tea?",
-            "options": ["160-180°F", "180-200°F", "200-212°F", "Boiling"],
-            "correct": 0,
-            "difficulty": "hard",
-            "xp_reward": 20,
-            "explanation": "Green tea should be brewed with water at 160-180°F to avoid bitterness."
-        },
-        {
-            "question": "Which cut of beef is used for making traditional carpaccio?",
-            "options": ["Ribeye", "Tenderloin", "Sirloin", "Chuck"],
-            "correct": 1,
-            "difficulty": "hard",
-            "xp_reward": 20,
-            "explanation": "Tenderloin (beef fillet) is traditionally used for carpaccio due to its tenderness."
-        },
-        {
-            "question": "What does 'flambé' mean in cooking?",
-            "options": ["Deep frying", "Igniting alcohol", "Grilling over flame", "Smoking food"],
-            "correct": 1,
-            "difficulty": "medium",
-            "xp_reward": 15,
-            "explanation": "Flambé involves igniting alcohol to burn off the alcohol and add flavor."
-        },
-        {
-            "question": "Which herb is the main ingredient in pesto?",
-            "options": ["Parsley", "Cilantro", "Basil", "Oregano"],
-            "correct": 2,
-            "difficulty": "easy",
-            "xp_reward": 10,
-            "explanation": "Traditional pesto is made primarily with fresh basil leaves."
-        },
-        {
-            "question": "What is the smoking point of extra virgin olive oil?",
-            "options": ["325°F", "375°F", "425°F", "475°F"],
-            "correct": 1,
-            "difficulty": "hard",
-            "xp_reward": 20,
-            "explanation": "Extra virgin olive oil has a smoking point around 375°F."
-        },
-        {
-            "question": "Which fermented fish sauce is essential in Vietnamese cuisine?",
-            "options": ["Soy sauce", "Fish sauce", "Oyster sauce", "Hoisin sauce"],
-            "correct": 1,
-            "difficulty": "medium",
-            "xp_reward": 15,
-            "explanation": "Fish sauce (nuoc mam) is a fundamental ingredient in Vietnamese cooking."
-        },
-        {
-            "question": "What is the main difference between stock and broth?",
-            "options": ["Cooking time", "Bones vs meat", "Temperature", "Seasoning"],
-            "correct": 1,
-            "difficulty": "medium",
-            "xp_reward": 15,
-            "explanation": "Stock is made primarily from bones, while broth is made from meat."
-        }
-    ]
-    
-    # Completely randomize the questions each time
-    import random
-    import time
-    
-    # Use current time as seed for true randomness
-    random.seed(int(time.time() * 1000))
-    random.shuffle(all_questions)
-    
-    # Take random questions
-    selected_questions = all_questions[:num_questions]
-    
-    logger.info(f"Using {len(selected_questions)} random fallback questions")
-    return selected_questions
-
-def generate_fallback_questions(num_questions: int = 5) -> List[Dict]:
-    """Wrapper for backward compatibility"""
-    return generate_random_fallback_questions(num_questions)
 
 def calculate_quiz_score(answers: List[int], questions: List[Dict]) -> Tuple[int, int, int]:
     """Calculate quiz score and XP"""
