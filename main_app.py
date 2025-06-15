@@ -47,39 +47,74 @@ import logging
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Page/feature access control
+# Updated feature access control based on new requirements
 def check_feature_access(feature_name):
     """Check if the current user has access to a specific feature"""
     user = get_current_user()
-
-    # Public features accessible to all authenticated users
-    public_features = ["Event Planning ChatBot", "Gamification Hub", "Visual Menu Search"]
-
-    # Staff/admin only features
-    staff_admin_features = ["Leftover Management", "Promotion Generator", "Ingredients Management"]
-
-    # Chef/admin features
-    chef_features = ["Chef Recipe Suggestions"]
-
-    # Admin only features (none currently, but keeping structure)
-    admin_features = []
-
-    if feature_name in public_features:
-        return True
-
     if not user:
         return False
-        
-    if feature_name in staff_admin_features and user['role'] in ['staff', 'admin']:
-        return True
-        
-    if feature_name in chef_features and user['role'] in ['chef', 'admin']:
-        return True
-        
-    if feature_name in admin_features and user['role'] in ['admin']:
-        return True
-        
-    return False
+    
+    user_role = user['role']
+    
+    # Define feature access by role
+    role_access = {
+        'user': [
+            'Visual Menu Search',
+            'Event Planning ChatBot',
+            'Gamification Hub'
+        ],
+        'staff': [
+            'Leftover Management',
+            'Ingredients Management', 
+            'Visual Menu Search',
+            'Promotion Generator',
+            'Gamification Hub',
+            'Event Planning ChatBot'
+        ],
+        'chef': [
+            'Leftover Management',
+            'Chef Recipe Suggestions',
+            'Ingredients Management',
+            'Visual Menu Search',
+            'Gamification Hub',
+            'Event Planning ChatBot'
+        ],
+        'admin': [
+            'Leftover Management',
+            'Ingredients Management',
+            'Promotion Generator',
+            'Chef Recipe Suggestions',
+            'Visual Menu Search',
+            'Gamification Hub',
+            'Event Planning ChatBot'
+        ]
+    }
+    
+    return feature_name in role_access.get(user_role, [])
+
+def get_inaccessible_features_message(user_role):
+    """Get message about features the user cannot access"""
+    all_features = {
+        'Leftover Management': 'Staff, Chef, and Admin only',
+        'Ingredients Management': 'Staff, Chef, and Admin only', 
+        'Promotion Generator': 'Staff and Admin only',
+        'Chef Recipe Suggestions': 'Chef and Admin only',
+        'Visual Menu Search': 'Available to all users',
+        'Gamification Hub': 'Available to all users',
+        'Event Planning ChatBot': 'Available to all users'
+    }
+    
+    # Get features the current user cannot access
+    inaccessible = []
+    
+    for feature, access_info in all_features.items():
+        if not check_feature_access(feature):
+            inaccessible.append(f"{feature} ({access_info})")
+    
+    if inaccessible:
+        return "**Features you can't access:** " + ", ".join(inaccessible)
+    else:
+        return "**You have access to all features!**"
 
 # Individual feature functions
 @auth_required
@@ -375,7 +410,7 @@ def main():
     st.sidebar.header("Features")
 
     # List of all available features
-    features = [
+    all_features = [
         "Dashboard",
         "Ingredients Management",
         "Leftover Management",
@@ -387,7 +422,7 @@ def main():
     ]
 
     # Filter features based on user role
-    available_features = ["Dashboard"] + [f for f in features[1:] if check_feature_access(f)]
+    available_features = ["Dashboard"] + [f for f in all_features[1:] if check_feature_access(f)]
 
     # Display user gamification stats in sidebar if authenticated
     user = get_current_user()
@@ -406,6 +441,11 @@ def main():
         index=available_features.index(st.session_state.selected_feature) if st.session_state.selected_feature in available_features else 0,
         help="Select a feature to explore different aspects of the restaurant management system"
     )
+
+    # Show inaccessible features message
+    if user:
+        inaccessible_message = get_inaccessible_features_message(user['role'])
+        st.sidebar.markdown(inaccessible_message)
 
     # Update session state with selected feature
     st.session_state.selected_feature = selected_feature
