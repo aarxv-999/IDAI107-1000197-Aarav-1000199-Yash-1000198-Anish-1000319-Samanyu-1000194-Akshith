@@ -12,7 +12,7 @@ def render_dashboard():
     Render the main dashboard that users see after logging in.
     This serves as the central hub for accessing all features.
     """
-    st.title("🍽️ Restaurant Management Dashboard")
+    st.title("Restaurant Management Dashboard")
     
     # Get current user
     user = st.session_state.get('user', {})
@@ -79,7 +79,6 @@ def render_dashboard():
         features.append({
             "title": "Ingredients Management",
             "description": "Complete CRUD operations for ingredient inventory with AI suggestions",
-            "icon": "🥬",
             "key": "Ingredients Management"
         })
     
@@ -87,7 +86,6 @@ def render_dashboard():
         features.append({
             "title": "Leftover Management",
             "description": "Generate recipes from leftover ingredients to reduce waste",
-            "icon": "♻️",
             "key": "Leftover Management"
         })
     
@@ -95,7 +93,6 @@ def render_dashboard():
         features.append({
             "title": "Promotion Generator",
             "description": "AI-powered marketing campaign generation with automatic scoring",
-            "icon": "📣",
             "key": "Promotion Generator"
         })
     
@@ -103,7 +100,6 @@ def render_dashboard():
         features.append({
             "title": "Chef Recipe Suggestions",
             "description": "AI-powered menu generation, chef submissions, and analytics",
-            "icon": "👨‍🍳",
             "key": "Chef Recipe Suggestions"
         })
     
@@ -111,28 +107,18 @@ def render_dashboard():
     features.append({
         "title": "Visual Menu Search",
         "description": "AI-powered dish detection, personalized recommendations, and staff challenges",
-        "icon": "📷",
         "key": "Visual Menu Search"
     })
     
     features.append({
         "title": "Gamification Hub",
         "description": "View achievements, leaderboard, and progress",
-        "icon": "🎮",
         "key": "Gamification Hub"
-    })
-    
-    features.append({
-        "title": "Cooking Quiz",
-        "description": "Test your culinary knowledge and earn XP",
-        "icon": "🧠",
-        "key": "Cooking Quiz"
     })
     
     features.append({
         "title": "Event Planning ChatBot",
         "description": "AI-powered event planning assistance",
-        "icon": "🎉",
         "key": "Event Planning ChatBot"
     })
     
@@ -144,7 +130,7 @@ def render_dashboard():
             with st.container():
                 st.markdown(f"""
                 <div style="padding: 1rem; border-radius: 0.5rem; border: 1px solid #e0e0e0; margin-bottom: 1rem;">
-                    <h3>{feature['icon']} {feature['title']}</h3>
+                    <h3>{feature['title']}</h3>
                     <p>{feature['description']}</p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -179,7 +165,7 @@ def render_dashboard():
         st.markdown("""
         - Use the sidebar to navigate between different features
         - Click on feature cards above for quick access
-        - **NEW**: Use Ingredients Management for complete inventory control
+        - Use Ingredients Management for complete inventory control
         - Check the Gamification Hub to track your progress
         - Chefs and Admins can access advanced menu management tools
         - Staff and Admins can create AI-powered marketing campaigns
@@ -191,13 +177,12 @@ def render_dashboard():
 def get_feature_description(feature_name: str) -> str:
     """Get the description for a specific feature"""
     descriptions = {
-        "Ingredients Management": "🥬 Complete CRUD operations for ingredient inventory",
-        "Leftover Management": "♻️ Generate recipes from leftover ingredients",
-        "Gamification Hub": "🎮 View achievements, leaderboard, and progress",
-        "Cooking Quiz": "🧠 Test your culinary knowledge and earn XP",
-        "Promotion Generator": "📣 AI marketing campaigns with automatic scoring",
-        "Chef Recipe Suggestions": "👨‍🍳 AI menu generation, chef submissions & analytics",
-        "Visual Menu Search": "📷 AI dish detection, personalized recommendations & staff challenges",
-        "Event Planning ChatBot": "🎉 AI-powered event planning assistance"
+        "Ingredients Management": "Complete CRUD operations for ingredient inventory",
+        "Leftover Management": "Generate recipes from leftover ingredients",
+        "Gamification Hub": "View achievements, leaderboard, and progress",
+        "Promotion Generator": "AI marketing campaigns with automatic scoring",
+        "Chef Recipe Suggestions": "AI menu generation, chef submissions & analytics",
+        "Visual Menu Search": "AI dish detection, personalized recommendations & staff challenges",
+        "Event Planning ChatBot": "AI-powered event planning assistance"
     }
     return descriptions.get(feature_name, "")
