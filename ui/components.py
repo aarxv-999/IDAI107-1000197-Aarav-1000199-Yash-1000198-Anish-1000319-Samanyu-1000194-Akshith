@@ -393,7 +393,7 @@ def is_user_role(required_role):
 
 # Gamification Components
 def display_user_stats_sidebar(user_id):
-    """Display user gamification stats in sidebar with fixed progress calculation"""
+    """Display user gamification stats in sidebar as expandable section with Gamification Hub button"""
     try:
         from modules.leftover import get_user_stats
         
@@ -401,44 +401,51 @@ def display_user_stats_sidebar(user_id):
         user_stats = get_user_stats(user_id)
         
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### Your Stats")
         
-        # Extract stats with safe defaults
-        total_xp = max(0, user_stats.get('total_xp', 0))
-        level = max(1, user_stats.get('level', 1))
-        
-        # Calculate current level XP and progress
-        xp_for_current_level = (level - 1) * 100
-        current_level_xp = total_xp - xp_for_current_level
-        xp_needed = 100 - current_level_xp
-        
-        # Ensure current_level_xp is within bounds
-        current_level_xp = max(0, min(100, current_level_xp))
-        
-        # Calculate progress as a value between 0.0 and 1.0
-        progress = current_level_xp / 100.0
-        progress = max(0.0, min(1.0, progress))  # Clamp between 0 and 1
-        
-        # Display metrics
-        col1, col2 = st.sidebar.columns(2)
-        with col1:
-            st.metric("Level", level)
-        with col2:
-            st.metric("Total XP", f"{total_xp:,}")
-        
-        # Progress bar with safe values
-        st.sidebar.progress(progress, text=f"{max(0, xp_needed)} XP to next level")
-        
-        # Additional stats
-        recipes_generated = user_stats.get('recipes_generated', 0)
-        quizzes_completed = user_stats.get('quizzes_completed', 0)
-        
-        if recipes_generated > 0 or quizzes_completed > 0:
-            st.sidebar.markdown("**Activity:**")
-            if recipes_generated > 0:
-                st.sidebar.write(f"Recipes: {recipes_generated}")
-            if quizzes_completed > 0:
-                st.sidebar.write(f"Quizzes: {quizzes_completed}")
+        # Create an expandable section for user stats
+        with st.sidebar.expander("Your Stats & Progress", expanded=False):
+            # Extract stats with safe defaults
+            total_xp = max(0, user_stats.get('total_xp', 0))
+            level = max(1, user_stats.get('level', 1))
+            
+            # Calculate current level XP and progress
+            xp_for_current_level = (level - 1) * 100
+            current_level_xp = total_xp - xp_for_current_level
+            xp_needed = 100 - current_level_xp
+            
+            # Ensure current_level_xp is within bounds
+            current_level_xp = max(0, min(100, current_level_xp))
+            
+            # Calculate progress as a value between 0.0 and 1.0
+            progress = current_level_xp / 100.0
+            progress = max(0.0, min(1.0, progress))  # Clamp between 0 and 1
+            
+            # Display metrics
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Level", level)
+            with col2:
+                st.metric("Total XP", f"{total_xp:,}")
+            
+            # Progress bar with safe values
+            st.progress(progress, text=f"{max(0, xp_needed)} XP to next level")
+            
+            # Additional stats
+            recipes_generated = user_stats.get('recipes_generated', 0)
+            quizzes_completed = user_stats.get('quizzes_completed', 0)
+            
+            if recipes_generated > 0 or quizzes_completed > 0:
+                st.markdown("**Activity:**")
+                if recipes_generated > 0:
+                    st.write(f"Recipes: {recipes_generated}")
+                if quizzes_completed > 0:
+                    st.write(f"Quizzes: {quizzes_completed}")
+            
+            # Gamification Hub button
+            st.markdown("---")
+            if st.button("Open Gamification Hub", use_container_width=True, type="primary", key="gamification_hub_btn"):
+                st.session_state.selected_feature = "Gamification Hub"
+                st.rerun()
         
         logger.info(f"Displayed stats for user {user_id}: Level {level}, XP {total_xp}, Progress {progress:.2f}")
         
