@@ -19,85 +19,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def initialize_collections_if_needed(db):
-    """Initialize required collections if they don't exist - FIXED VERSION"""
-    try:
-        if not db:
-            st.error("❌ Database connection failed")
-            return False
-            
-        st.info("🔧 Checking and setting up required collections...")
-        
-        collections_created = []
-        
-        # Force create user_preferences collection
-        try:
-            # Try to create the collection by adding a document
-            dummy_prefs = {
-                'user_id': 'system_init',
-                'favorite_cuisines': [],
-                'preferred_categories': [],
-                'last_updated': datetime.now().isoformat(),
-                'is_system_init': True,
-                'created_at': datetime.now().isoformat()
-            }
-            db.collection("user_preferences").document("system_init").set(dummy_prefs)
-            collections_created.append("user_preferences")
-            logger.info("✅ Created user_preferences collection")
-        except Exception as e:
-            logger.error(f"❌ Error creating user_preferences: {str(e)}")
-            st.error(f"❌ Error creating user_preferences: {str(e)}")
-            
-        # Force create user_dish_likes collection
-        try:
-            dummy_like = {
-                'user_id': 'system_init',
-                'dish_name': 'System Initialization',
-                'dish_cuisine': 'System',
-                'dish_category': 'System',
-                'dish_ingredients': [],
-                'liked_at': datetime.now().isoformat(),
-                'recommendation_context': 'system_init',
-                'is_system_init': True,
-                'created_at': datetime.now().isoformat()
-            }
-            db.collection("user_dish_likes").document("system_init").set(dummy_like)
-            collections_created.append("user_dish_likes")
-            logger.info("✅ Created user_dish_likes collection")
-        except Exception as e:
-            logger.error(f"❌ Error creating user_dish_likes: {str(e)}")
-            st.error(f"❌ Error creating user_dish_likes: {str(e)}")
-        
-        if collections_created:
-            st.success(f"✅ Successfully created collections: {', '.join(collections_created)}")
-            st.info("🎯 Collections are now ready for your data!")
-            return True
-        else:
-            st.warning("⚠️ No new collections were created")
-            return False
-            
-    except Exception as e:
-        logger.error(f"❌ Critical error in collection initialization: {str(e)}")
-        st.error(f"❌ Critical error setting up collections: {str(e)}")
-        return False
-
-def cleanup_system_collections(db):
-    """CLEANUP FUNCTION - Call this to remove system initialization documents"""
-    try:
-        if not db:
-            return False
-            
-        # Delete system init documents
-        db.collection("user_preferences").document("system_init").delete()
-        db.collection("user_dish_likes").document("system_init").delete()
-        
-        st.success("✅ System initialization documents cleaned up!")
-        return True
-        
-    except Exception as e:
-        st.error(f"❌ Error cleaning up: {str(e)}")
-        return False
-
 def render_visual_menu_search():
     """Main function to render Visual Menu Challenge & Recommendation Platform"""
     st.title("🍽️ Visual Menu Challenge & Recommendation Platform")
@@ -111,39 +32,8 @@ def render_visual_menu_search():
     # Initialize database connection - ENSURE IT'S THE EVENT FIREBASE
     db = get_visual_menu_firebase_db()
     if not db:
-        st.error("❌ Event Firebase database connection failed. Please check your configuration.")
-        st.info("💡 Make sure you're connected to the EVENT Firebase database, not the main one.")
+        st.error("❌ Database connection failed. Please check your configuration.")
         return
-    
-    # Show database info for debugging
-    with st.expander("🔍 Database Debug Info"):
-        st.write("**Current Database Connection:**")
-        st.write(f"- Database object: {type(db)}")
-        st.write(f"- User ID: {user_id}")
-        st.write("- Target Collections: user_preferences, user_dish_likes")
-        
-        # Test database connection
-        try:
-            # Try to read any collection to test connection
-            test_docs = list(db.collection("menu_items").limit(1).stream())
-            st.success("✅ Database connection is working")
-            st.write(f"- Found menu items: {len(test_docs) > 0}")
-        except Exception as e:
-            st.error(f"❌ Database connection test failed: {str(e)}")
-    
-    # Initialize collections - ALWAYS TRY TO CREATE
-    if st.button("🔧 Initialize Collections (Click if first time)"):
-        with st.spinner("Setting up collections in Event Firebase..."):
-            if initialize_collections_if_needed(db):
-                st.session_state.collections_initialized = True
-                st.balloons()
-            else:
-                st.error("❌ Failed to initialize collections")
-    
-    # Cleanup button (for when you want to remove system docs)
-    if st.button("🧹 Cleanup System Documents"):
-        if cleanup_system_collections(db):
-            st.balloons()
     
     # Initialize AI services
     vision_client = configure_vision_api()
@@ -276,7 +166,6 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
     st.header("🎯 Personalized AI Menu")
     st.markdown("Get AI-powered menu recommendations that learn from your preferences!")
     
-    # Check if collections are ready
     if not user_id:
         st.warning("⚠️ Please log in to use personalized features")
         return
