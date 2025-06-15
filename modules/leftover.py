@@ -293,39 +293,35 @@ Example format:
             line = line.strip('"\'')
             
             if line and len(new_recipes) < max_suggestions:
-                # Add creative indicator
-                new_recipes.append(f"🆕 {line}")
+                # Add without emoji indicator
+                new_recipes.append(line)
         
         if not new_recipes:
-            # Fallback if parsing fails
-            return [f"🆕 Creative {ingredients_list.split(',')[0].strip()} Recipe {i+1}" for i in range(max_suggestions)]
+            # Return empty list if parsing fails - no fallback
+            return []
         
         logger.info(f"Generated {len(new_recipes)} new creative recipes using leftovers")
         return new_recipes[:max_suggestions]
 
     except Exception as e:
         logger.error(f"Error generating new recipes: {str(e)}")
-        # Return creative fallback suggestions
-        base_ingredients = leftovers[:3] if len(leftovers) >= 3 else leftovers
-        fallback_recipes = []
-        
-        for i in range(max_suggestions):
-            if len(base_ingredients) > 0:
-                main_ing = base_ingredients[i % len(base_ingredients)]
-                fallback_recipes.append(f"🆕 Creative {main_ing.title()} Fusion Dish")
-        
-        return fallback_recipes if fallback_recipes else ["🆕 Creative Leftover Recipe"]
+        # Return empty list instead of fallback
+        return []
 
-# Gamification functions (unchanged)
+# Gamification functions
 def get_firestore_db():
     """Get Firestore client"""
     init_firebase()
     return firestore.client()
 
 def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int = 5) -> List[Dict]:
-    """Generate completely random and different quiz questions each time"""
+    """Generate completely random and different quiz questions each time - AI ONLY"""
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            logger.error("GEMINI_API_KEY not found")
+            return []
+            
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
 
@@ -402,10 +398,10 @@ Make each question completely unique and random - no patterns or similarities!''
         response_text = response.text.strip()
 
         # Clean up the response
-        if "\`\`\`json" in response_text:
-            response_text = response_text.split("\`\`\`json")[1].split("\`\`\`")[0]
-        elif "\`\`\`" in response_text:
-            response_text = response_text.split("\`\`\`")[1].split("\`\`\`")[0]
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0]
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0]
 
         try:
             questions = json.loads(response_text)
@@ -430,15 +426,18 @@ Make each question completely unique and random - no patterns or similarities!''
                     return valid_questions[:num_questions]
                 else:
                     logger.warning(f"Only {len(valid_questions)} valid questions generated")
+                    return []
             else:
                 logger.warning(f"Expected {num_questions} questions, got {len(questions) if isinstance(questions, list) else 0}")
+                return []
                 
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {str(e)}")
+            return []
 
     except Exception as e:
         logger.error(f"Error generating quiz questions: {str(e)}")
-
+        return []
 
 def calculate_quiz_score(answers: List[int], questions: List[Dict]) -> Tuple[int, int, int]:
     """Calculate quiz score and XP"""
