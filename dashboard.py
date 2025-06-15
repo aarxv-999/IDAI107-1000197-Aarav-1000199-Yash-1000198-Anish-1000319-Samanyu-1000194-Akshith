@@ -75,6 +75,14 @@ def render_dashboard():
     features = []
     
     # Role-specific features
+    if user_role in ['admin', 'staff']:
+        features.append({
+            "title": "Ingredients Management",
+            "description": "Complete CRUD operations for ingredient inventory with AI suggestions",
+            "icon": "🥬",
+            "key": "Ingredients Management"
+        })
+    
     if user_role in ['admin', 'chef']:
         features.append({
             "title": "Leftover Management",
@@ -150,7 +158,7 @@ def render_dashboard():
     # Different activity items based on user role
     if user_role in ['admin', 'chef', 'staff']:
         activities = [
-            {"time": "Today, 10:30 AM", "description": "New recipes added to the archive"},
+            {"time": "Today, 10:30 AM", "description": "New ingredients added to inventory"},
             {"time": "Yesterday", "description": "Weekly menu generated with 35 dishes"},
             {"time": "2 days ago", "description": "Chef submitted 3 new signature dishes"},
             {"time": "3 days ago", "description": "Staff challenge received 15 customer votes"}
@@ -171,6 +179,7 @@ def render_dashboard():
         st.markdown("""
         - Use the sidebar to navigate between different features
         - Click on feature cards above for quick access
+        - **NEW**: Use Ingredients Management for complete inventory control
         - Check the Gamification Hub to track your progress
         - Chefs and Admins can access advanced menu management tools
         - Staff and Admins can create AI-powered marketing campaigns
@@ -182,6 +191,7 @@ def render_dashboard():
 def get_feature_description(feature_name: str) -> str:
     """Get the description for a specific feature"""
     descriptions = {
+        "Ingredients Management": "🥬 Complete CRUD operations for ingredient inventory",
         "Leftover Management": "♻️ Generate recipes from leftover ingredients",
         "Gamification Hub": "🎮 View achievements, leaderboard, and progress",
         "Cooking Quiz": "🧠 Test your culinary knowledge and earn XP",
