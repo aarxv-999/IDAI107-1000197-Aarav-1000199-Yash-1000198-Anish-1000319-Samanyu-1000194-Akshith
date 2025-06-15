@@ -215,16 +215,29 @@ def register_user(email, username, password, full_name, role='user'):
         return False, f"Registration error: {str(e)}"
 
 def render_login_form():
-    st.markdown("#### Login")
+    """Render the login form"""
+    st.markdown("### 🔐 Login to Your Account")
+    
     with st.form("login_form"):
-        login_identifier = st.text_input("Email or Username")
-        password = st.text_input("Password", type="password")
-
-        login_button = st.form_submit_button("Login")
-        if st.form_submit_button("Create Account"):
-            st.session_state.show_signup = True
-            st.rerun()
-
+        login_identifier = st.text_input(
+            "Email or Username",
+            placeholder="Enter your email or username",
+            help="You can use either your email address or username to log in"
+        )
+        password = st.text_input(
+            "Password",
+            type="password",
+            placeholder="Enter your password"
+        )
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            login_button = st.form_submit_button("🚀 Login", type="primary", use_container_width=True)
+        with col2:
+            if st.form_submit_button("📝 Create Account", use_container_width=True):
+                st.session_state.show_signup = True
+                st.rerun()
+        
         if login_button:
             if not login_identifier or not password:
                 st.error("Please fill in all fields")
@@ -239,31 +252,81 @@ def render_login_form():
                     else:
                         st.error(error)
 
-
 def render_signup_form():
-    st.markdown("#### Create Account")
+    """Render the signup form"""
+    st.markdown("### 📝 Create Your Account")
+    
     with st.form("signup_form"):
-        full_name = st.text_input("Full Name")
-        email = st.text_input("Email")
-        username = st.text_input("Username")
-        role = st.selectbox("Role", ["user", "staff", "chef", "admin"])
-        password = st.text_input("Password", type="password")
-        confirm_password = st.text_input("Confirm Password", type="password")
-        terms_accepted = st.checkbox("I agree to the Terms of Service")
-
-        if st.form_submit_button("Create Account"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            full_name = st.text_input(
+                "Full Name *",
+                placeholder="Enter your full name",
+                help="Your display name in the system"
+            )
+            email = st.text_input(
+                "Email Address *",
+                placeholder="Enter your email address",
+                help="Used for login and notifications"
+            )
+        
+        with col2:
+            username = st.text_input(
+                "Username *",
+                placeholder="Choose a unique username",
+                help="Used for login and leaderboards"
+            )
+            role = st.selectbox(
+                "Role *",
+                ["user", "staff", "chef", "admin"],
+                help="Select your role in the restaurant system"
+            )
+        
+        password = st.text_input(
+            "Password *",
+            type="password",
+            placeholder="Create a strong password",
+            help="Must be at least 8 characters with uppercase, lowercase, and numbers"
+        )
+        
+        confirm_password = st.text_input(
+            "Confirm Password *",
+            type="password",
+            placeholder="Confirm your password"
+        )
+        
+        # Terms and conditions
+        terms_accepted = st.checkbox(
+            "I agree to the Terms of Service and Privacy Policy",
+            help="You must accept the terms to create an account"
+        )
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            signup_button = st.form_submit_button("🎉 Create Account", type="primary", use_container_width=True)
+        with col2:
+            if st.form_submit_button("← Back to Login", use_container_width=True):
+                st.session_state.show_signup = False
+                st.rerun()
+        
+        if signup_button:
+            # Validation
             if not all([full_name, email, username, password, confirm_password]):
                 st.error("Please fill in all required fields")
             elif not terms_accepted:
-                st.error("You must accept the terms")
+                st.error("Please accept the Terms of Service and Privacy Policy")
             elif password != confirm_password:
                 st.error("Passwords do not match")
             else:
-                with st.spinner("Creating account..."):
+                with st.spinner("Creating your account..."):
                     success, message = register_user(email, username, password, full_name, role)
                     if success:
                         st.success(message)
                         st.session_state.show_signup = False
+                        st.balloons()
+                        
+                        # Auto-login after successful registration
                         user_data, _ = authenticate_user(email, password)
                         if user_data:
                             st.session_state.is_authenticated = True
@@ -273,22 +336,39 @@ def render_signup_form():
                         st.error(message)
 
 def render_auth_ui():
+    """Render authentication UI in sidebar"""
     if st.session_state.is_authenticated:
         user = st.session_state.user
-        st.sidebar.markdown(f"**Welcome, {user.get('full_name', user['username'])}**")
-        st.sidebar.markdown(f"Role: {user['role'].title()}")
-        st.sidebar.markdown(f"Username: @{user['username']}")
-        if st.sidebar.button("Logout"):
+        st.sidebar.success(f"Welcome, {user.get('full_name', user['username'])}!")
+        st.sidebar.write(f"**Role:** {user['role'].title()}")
+        st.sidebar.write(f"**Username:** @{user['username']}")
+        
+        if st.sidebar.button("🚪 Logout", use_container_width=True):
             st.session_state.is_authenticated = False
             st.session_state.user = None
             st.session_state.show_signup = False
             st.rerun()
+        
         return True
     else:
+        st.sidebar.markdown("### 🔐 Authentication")
+        
+        # Show signup or login form based on state
         if st.session_state.show_signup:
             render_signup_form()
         else:
             render_login_form()
+        
+        # Additional info
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### ℹ️ Account Types")
+        st.sidebar.markdown("""
+        **👤 User:** Access to basic features, quizzes, and visual menu
+        **👨‍💼 Staff:** Can create marketing campaigns and access analytics
+        **👨‍🍳 Chef:** Can submit recipes and manage menu items
+        **🔧 Admin:** Full access to all features and management tools
+        """)
+        
         return False
 
 def auth_required(func):
