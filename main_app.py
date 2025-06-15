@@ -30,6 +30,9 @@ from modules.promotion_components import render_promotion_generator
 # Import the NEW visual menu components
 from modules.visual_menu_components import render_visual_menu_search
 
+# Import the ingredients management module
+from ingredients_management import render_ingredient_management
+
 init_firebase()
 
 import logging
@@ -45,7 +48,7 @@ def check_feature_access(feature_name):
     public_features = ["Event Planning ChatBot", "Gamification Hub", "Cooking Quiz", "Visual Menu Search"]
 
     # Staff/admin only features
-    staff_admin_features = ["Leftover Management", "Promotion Generator"]
+    staff_admin_features = ["Leftover Management", "Promotion Generator", "Ingredients Management"]
 
     # Chef/admin features
     chef_features = ["Chef Recipe Suggestions"]
@@ -248,6 +251,11 @@ def leftover_management():
         """)
 
 @auth_required
+def ingredients_management():
+    """Ingredients management feature - CRUD operations for inventory"""
+    render_ingredient_management()
+
+@auth_required
 def gamification_hub():
     """Gamification hub feature"""
     user = get_current_user()
@@ -334,6 +342,7 @@ def main():
         **Features include:**
         - 🧠 **Smart Recipe Generation** from leftover ingredients
         - 🎯 **Expiry-Based Prioritization** to reduce food waste
+        - 🥬 **Complete Ingredient Management** with CRUD operations
         - 🎮 **Gamification System** with quizzes and achievements  
         - 🏆 **Leaderboards** to compete with other chefs
         - 📊 **Progress Tracking** and skill development
@@ -353,13 +362,14 @@ def main():
     # List of all available features
     features = [
         "Dashboard",
+        "Ingredients Management",  # Added the missing feature
         "Leftover Management",
         "Gamification Hub", 
         "Cooking Quiz",
         "Event Planning ChatBot",
         "Promotion Generator", 
         "Chef Recipe Suggestions",
-        "Visual Menu Search"  # Updated feature name
+        "Visual Menu Search"
     ]
 
     # Filter features based on user role
@@ -389,6 +399,8 @@ def main():
     # Display the selected feature
     if selected_feature == "Dashboard":
         dashboard()
+    elif selected_feature == "Ingredients Management":  # Added the route
+        ingredients_management()
     elif selected_feature == "Leftover Management":
         leftover_management()
     elif selected_feature == "Gamification Hub":
@@ -402,7 +414,7 @@ def main():
     elif selected_feature == "Chef Recipe Suggestions":
         chef_recipe_suggestions()
     elif selected_feature == "Visual Menu Search":
-        visual_menu_search()  # Updated to call new integrated function
+        visual_menu_search()
 
 if __name__ == "__main__":
     main()
