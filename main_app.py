@@ -30,8 +30,16 @@ from modules.promotion_components import render_promotion_generator
 # Import the NEW visual menu components
 from modules.visual_menu_components import render_visual_menu_search
 
-# Import the ingredients management module
-from modules.ingredients_management import render_ingredient_management
+# Import the ingredients management module (your existing file)
+try:
+    from modules.ingredients_management import render_ingredient_management
+except ImportError:
+    # Fallback if the module is in a different location
+    try:
+        from ingredients_management import render_ingredient_management
+    except ImportError:
+        st.error("Ingredients management module not found. Please check the file location.")
+        render_ingredient_management = None
 
 init_firebase()
 
@@ -253,7 +261,10 @@ def leftover_management():
 @auth_required
 def ingredients_management():
     """Ingredients management feature - CRUD operations for inventory"""
-    render_ingredient_management()
+    if render_ingredient_management:
+        render_ingredient_management()
+    else:
+        st.error("Ingredients management feature is not available. Please check the module installation.")
 
 @auth_required
 def gamification_hub():
