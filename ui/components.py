@@ -554,10 +554,14 @@ def render_cooking_quiz(ingredients, user_id):
     """Render cooking quiz component - AI generated questions only"""
     st.subheader("Cooking Knowledge Quiz")
     
+    # Initialize all session state variables properly
     if 'quiz_started' not in st.session_state:
         st.session_state.quiz_started = False
+    if 'quiz_questions' not in st.session_state:
         st.session_state.quiz_questions = []
+    if 'quiz_answers' not in st.session_state:
         st.session_state.quiz_answers = {}
+    if 'quiz_score' not in st.session_state:
         st.session_state.quiz_score = 0
     
     if not st.session_state.quiz_started:
