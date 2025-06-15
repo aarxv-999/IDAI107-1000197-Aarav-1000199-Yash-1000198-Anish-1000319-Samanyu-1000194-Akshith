@@ -1,492 +1,489 @@
 """
-Enhanced Visual Menu Components with improved custom filters UI and accuracy.
+Visual Menu UI Components for the Smart Restaurant Menu Management App.
+Integrated with the main gamification system.
 """
 
 import streamlit as st
-from PIL import Image
-import logging
-from typing import Dict, List, Optional
+import pandas as pd
+from datetime import datetime
 from modules.visual_menu_services import (
-    enhanced_visual_search, enhanced_image_analysis, FilterCriteria,
-    get_smart_filter_suggestions
+    get_visual_menu_firebase_db, configure_vision_api, configure_visual_gemini_ai,
+    fetch_menu_items, fetch_order_history, fetch_challenge_entries,
+    preprocess_image, analyze_image_with_vision, find_matching_dishes,
+    generate_ai_dish_analysis, generate_personalized_recommendations,
+    filter_menu_by_allergies, save_challenge_entry, update_challenge_interaction,
+    save_order, award_visual_menu_xp, calculate_challenge_score, ALLERGY_MAPPING
 )
+from ui.components import show_xp_notification
+import logging
 
 logger = logging.getLogger(__name__)
 
-def render_enhanced_visual_search():
-    """Main enhanced visual search interface"""
-    st.title("🔍 Enhanced Visual Menu Search")
-    st.markdown("Upload a food image and use advanced filters to find similar dishes with improved accuracy!")
+def render_visual_menu_search():
+    """Main function to render Visual Menu Challenge & Recommendation Platform"""
+    st.title("🍽️ Visual Menu Challenge & Recommendation Platform")
     
-    # Check user access
+    # Get current user
     user = st.session_state.get('user', {})
-    if not user:
-        st.warning("Please log in to access Visual Search")
+    user_role = user.get('role', 'user')
+    user_id = user.get('user_id')
+    username = user.get('username', 'Unknown User')
+    
+    # Initialize database connection
+    db = get_visual_menu_firebase_db()
+    if not db:
+        st.error("❌ Database connection failed. Please check your configuration.")
         return
     
-    # Create main layout
-    col1, col2 = st.columns([1, 1])
+    # Initialize AI services
+    vision_client = configure_vision_api()
+    gemini_model = configure_visual_gemini_ai()
     
-    with col1:
-        render_image_upload_section()
+    # Show Vision API status
+    if not vision_client:
+        st.warning("⚠️ Google Cloud Vision API not configured. Image analysis will be limited.")
     
-    with col2:
-        render_enhanced_filters_section()
-    
-    # Search results section
-    if st.session_state.get('visual_search_results'):
-        render_enhanced_results_section()
-
-def render_image_upload_section():
-    """Enhanced image upload section with analysis preview"""
-    st.markdown("### 📸 Upload Food Image")
-    
-    uploaded_file = st.file_uploader(
-        "Choose a food image...",
-        type=['png', 'jpg', 'jpeg'],
-        help="Upload a clear image of food for best results"
+    # Sidebar preferences
+    st.sidebar.header("🎯 Customer Preferences")
+    allergies = st.sidebar.multiselect(
+        "Dietary Restrictions & Allergies", 
+        ["Nut-Free", "Shellfish-Free", "Soy-Free", "Dairy-Free", "Veg", "Non-Veg", "Gluten-Free", "Vegan"], 
+        default=[],
+        help="Select your dietary restrictions and allergies"
     )
     
-    if uploaded_file is not None:
-        try:
-            image = Image.open(uploaded_file)
-            st.image(image, caption="Uploaded Image", use_container_width=True)
+    # Create tabs
+    tabs = st.tabs(["📷 AI Dish Detection", "🎯 Personalized Menu", "⚙️ Custom Filters", "🏅 Visual Menu Challenge", "📊 Leaderboard"])
+    
+    with tabs[0]:
+        render_ai_dish_detection(db, vision_client, gemini_model, allergies, user_id)
+    
+    with tabs[1]:
+        render_personalized_menu(db, gemini_model, allergies, user_id)
+    
+    with tabs[2]:
+        render_custom_filters(db, allergies)
+    
+    with tabs[3]:
+        render_visual_challenge(db, user_role, username, user_id)
+    
+    with tabs[4]:
+        render_leaderboard(db, user_id)
+
+def render_ai_dish_detection(db, vision_client, gemini_model, allergies, user_id):
+    """Render AI dish detection tab"""
+    st.header("📷 Visual Dish Detection (AI + Vision API)")
+    st.markdown("Upload a food image and let AI identify dishes from our menu!")
+    
+    # XP info
+    st.info("💡 **Earn 15 XP** for each dish detection analysis!")
+    
+    uploaded_file = st.file_uploader("Upload Food Image", type=["jpg", "jpeg", "png"])
+    
+    if uploaded_file:
+        # Preprocess image
+        image, content = preprocess_image(uploaded_file)
+        
+        if image and content:
+            st.image(image, caption="Uploaded Image", use_column_width=True)
             
-            # Store image in session state
-            st.session_state.uploaded_image = image
-            
-            # Quick analysis button
-            if st.button("🔍 Analyze Image", type="primary", use_container_width=True):
-                with st.spinner("Analyzing image..."):
-                    analysis = enhanced_image_analysis(image)
-                    
-                    if "error" not in analysis:
-                        st.session_state.image_analysis = analysis
-                        
-                        # Show analysis results
-                        st.success("✅ Image analyzed successfully!")
-                        
-                        with st.expander("🧠 AI Analysis Results", expanded=True):
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                st.write(f"**Dish:** {analysis.get('dish_name', 'Unknown')}")
-                                st.write(f"**Cuisine:** {analysis.get('cuisine_type', 'Unknown')}")
-                                st.write(f"**Spice Level:** {analysis.get('spice_level', 'Unknown')}")
-                                st.write(f"**Cooking Method:** {analysis.get('cooking_method', 'Unknown')}")
-                            
-                            with col2:
-                                st.write(f"**Meal Type:** {analysis.get('meal_type', 'Unknown')}")
-                                st.write(f"**Confidence:** {analysis.get('confidence', 0):.1%}")
-                                
-                                dietary_info = analysis.get('dietary_info', [])
-                                if dietary_info:
-                                    st.write(f"**Dietary:** {', '.join(dietary_info)}")
-                        
-                        # Generate smart filter suggestions
-                        suggestions = get_smart_filter_suggestions(analysis)
-                        st.session_state.filter_suggestions = suggestions
-                        
-                        st.info("💡 Smart filter suggestions have been generated based on your image!")
-                    else:
-                        st.error(f"❌ Analysis failed: {analysis['error']}")
-        
-        except Exception as e:
-            st.error(f"❌ Error processing image: {str(e)}")
-
-def render_enhanced_filters_section():
-    """Enhanced filters section with smart suggestions and better UI"""
-    st.markdown("### 🎛️ Advanced Filters")
-    
-    # Smart suggestions section
-    if st.session_state.get('filter_suggestions'):
-        render_smart_suggestions()
-    
-    # Create filter tabs for better organization
-    tab1, tab2, tab3 = st.tabs(["🍽️ Basic", "🌶️ Advanced", "⚙️ Custom"])
-    
-    with tab1:
-        render_basic_filters()
-    
-    with tab2:
-        render_advanced_filters()
-    
-    with tab3:
-        render_custom_filters()
-    
-    # Search button
-    st.markdown("---")
-    if st.button("🔍 Search with Filters", type="primary", use_container_width=True):
-        perform_enhanced_search()
-
-def render_smart_suggestions():
-    """Render AI-generated smart filter suggestions"""
-    st.markdown("#### 🤖 Smart Suggestions")
-    suggestions = st.session_state.get('filter_suggestions', {})
-    
-    if not any(suggestions.values()):
-        return
-    
-    st.info("💡 Based on your image analysis, here are recommended filters:")
-    
-    cols = st.columns(2)
-    
-    with cols[0]:
-        # Cuisine suggestions
-        if suggestions.get('cuisine_types'):
-            st.write("**Suggested Cuisine:**")
-            for cuisine in suggestions['cuisine_types']:
-                if st.button(f"🌍 {cuisine}", key=f"suggest_cuisine_{cuisine}"):
-                    if 'selected_cuisine_types' not in st.session_state:
-                        st.session_state.selected_cuisine_types = []
-                    if cuisine not in st.session_state.selected_cuisine_types:
-                        st.session_state.selected_cuisine_types.append(cuisine)
-        
-        # Dietary suggestions
-        if suggestions.get('dietary_preferences'):
-            st.write("**Suggested Dietary:**")
-            for diet in suggestions['dietary_preferences'][:2]:
-                if st.button(f"🥗 {diet}", key=f"suggest_diet_{diet}"):
-                    if 'selected_dietary_preferences' not in st.session_state:
-                        st.session_state.selected_dietary_preferences = []
-                    if diet not in st.session_state.selected_dietary_preferences:
-                        st.session_state.selected_dietary_preferences.append(diet)
-    
-    with cols[1]:
-        # Spice level suggestions
-        if suggestions.get('spice_levels'):
-            st.write("**Suggested Spice Level:**")
-            for spice in suggestions['spice_levels']:
-                if st.button(f"🌶️ {spice}", key=f"suggest_spice_{spice}"):
-                    st.session_state.selected_spice_levels = [spice]
-        
-        # Cooking method suggestions
-        if suggestions.get('cooking_methods'):
-            st.write("**Suggested Cooking:**")
-            for method in suggestions['cooking_methods']:
-                if st.button(f"🔥 {method}", key=f"suggest_cooking_{method}"):
-                    if 'selected_cooking_methods' not in st.session_state:
-                        st.session_state.selected_cooking_methods = []
-                    if method not in st.session_state.selected_cooking_methods:
-                        st.session_state.selected_cooking_methods.append(method)
-
-def render_basic_filters():
-    """Render basic filter options"""
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Dietary preferences
-        dietary_options = [
-            "Vegetarian", "Vegan", "Gluten-Free", "Keto", "Halal", "Jain",
-            "Dairy-Free", "Nut-Free", "Low-Sugar", "Pescatarian"
-        ]
-        
-        selected_dietary = st.multiselect(
-            "🥗 Dietary Preferences",
-            options=dietary_options,
-            default=st.session_state.get('selected_dietary_preferences', []),
-            help="Select dietary restrictions or preferences"
-        )
-        st.session_state.selected_dietary_preferences = selected_dietary
-        
-        # Cuisine types
-        cuisine_options = [
-            "Indian", "Chinese", "Italian", "Mexican", "Thai", "Japanese",
-            "Mediterranean", "American", "French", "Korean", "Vietnamese"
-        ]
-        
-        selected_cuisine = st.multiselect(
-            "🌍 Cuisine Types",
-            options=cuisine_options,
-            default=st.session_state.get('selected_cuisine_types', []),
-            help="Select preferred cuisine types"
-        )
-        st.session_state.selected_cuisine_types = selected_cuisine
-    
-    with col2:
-        # Spice levels
-        spice_options = ["Mild", "Medium", "Hot", "Very Hot"]
-        
-        selected_spice = st.multiselect(
-            "🌶️ Spice Level",
-            options=spice_options,
-            default=st.session_state.get('selected_spice_levels', []),
-            help="Select preferred spice levels"
-        )
-        st.session_state.selected_spice_levels = selected_spice
-        
-        # Meal types
-        meal_options = ["Breakfast", "Lunch", "Dinner", "Snack", "Dessert", "Beverage"]
-        
-        selected_meal = st.multiselect(
-            "🍽️ Meal Type",
-            options=meal_options,
-            default=st.session_state.get('selected_meal_types', []),
-            help="Select meal types"
-        )
-        st.session_state.selected_meal_types = selected_meal
-
-def render_advanced_filters():
-    """Render advanced filter options"""
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Cooking methods
-        cooking_options = [
-            "Grilled", "Fried", "Steamed", "Baked", "Sautéed", "Boiled",
-            "Roasted", "Stir-fried", "Deep-fried", "Pan-fried"
-        ]
-        
-        selected_cooking = st.multiselect(
-            "🔥 Cooking Methods",
-            options=cooking_options,
-            default=st.session_state.get('selected_cooking_methods', []),
-            help="Select preferred cooking methods"
-        )
-        st.session_state.selected_cooking_methods = selected_cooking
-        
-        # Price ranges
-        price_options = ["Budget", "Mid-range", "Premium", "Luxury"]
-        
-        selected_price = st.multiselect(
-            "💰 Price Range",
-            options=price_options,
-            default=st.session_state.get('selected_price_ranges', []),
-            help="Select preferred price ranges"
-        )
-        st.session_state.selected_price_ranges = selected_price
-    
-    with col2:
-        # Allergen-free options
-        allergen_options = [
-            "Nuts", "Dairy", "Gluten", "Eggs", "Soy", "Shellfish",
-            "Fish", "Sesame", "Sulfites"
-        ]
-        
-        selected_allergen_free = st.multiselect(
-            "🚫 Allergen-Free",
-            options=allergen_options,
-            default=st.session_state.get('selected_allergen_free', []),
-            help="Select allergens to avoid"
-        )
-        st.session_state.selected_allergen_free = selected_allergen_free
-        
-        # Nutritional focus
-        nutrition_options = [
-            "High-Protein", "Low-Carb", "High-Fiber", "Low-Fat",
-            "Antioxidant-Rich", "Vitamin-Rich", "Mineral-Rich"
-        ]
-        
-        selected_nutrition = st.multiselect(
-            "💪 Nutritional Focus",
-            options=nutrition_options,
-            default=st.session_state.get('selected_nutritional_focus', []),
-            help="Select nutritional priorities"
-        )
-        st.session_state.selected_nutritional_focus = selected_nutrition
-
-def render_custom_filters():
-    """Render custom filter options"""
-    st.markdown("#### 🎨 Custom Preferences")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Custom ingredients
-        ingredient_input = st.text_input(
-            "🥕 Preferred Ingredients",
-            value=", ".join(st.session_state.get('selected_ingredient_preferences', [])),
-            placeholder="e.g., tomato, cheese, chicken",
-            help="Enter ingredients you want to include (comma-separated)"
-        )
-        
-        if ingredient_input:
-            ingredients = [ing.strip() for ing in ingredient_input.split(',') if ing.strip()]
-            st.session_state.selected_ingredient_preferences = ingredients
+            with st.spinner("🔍 Analyzing image with AI..."):
+                # Analyze with Vision API (if available)
+                labels, objects, texts, style_indicators = analyze_image_with_vision(vision_client, content)
+                
+                # Combine detected elements
+                combined_labels = [desc.lower() for desc, score in labels + objects]
+                combined_labels = list(set(combined_labels + texts))
+                
+                if combined_labels:
+                    st.write(f"**Detected Elements:** {', '.join(combined_labels[:10])}")  # Show first 10
+                else:
+                    st.write("**Detected Elements:** Using basic image analysis")
+                
+                if style_indicators:
+                    st.write(f"**Detected Plating Style:** {', '.join(style_indicators)}")
+                
+                # Check if food-related
+                food_related = any(
+                    label.lower() in ["food", "dish", "meal"] or "food" in label.lower() or 
+                    any(food_term in label.lower() for food_term in ["pizza", "burger", "pasta", "salad", "sushi", "chicken", "beef"])
+                    for label in combined_labels
+                ) if combined_labels else True  # Assume food if no labels detected
+                
+                if not food_related and combined_labels:
+                    st.warning("⚠️ The image doesn't appear to contain food. Please upload a food-related image.")
+                    return
+                
+                # Fetch menu and find matches
+                menu_items = fetch_menu_items(db)
+                if not menu_items:
+                    st.error("❌ No menu items found. Please check your menu database.")
+                    return
+                
+                # Find matching dishes
+                matching_dishes = find_matching_dishes(menu_items, combined_labels)
+                
+                # Generate AI analysis
+                menu_text = "\n".join([
+                    f"- {item.get('name', 'Unknown')}: {item.get('description', '')} (Ingredients: {', '.join(item.get('ingredients', []))})"
+                    for item in menu_items[:20]  # Limit to first 20 for prompt size
+                ])
+                
+                ai_analysis = generate_ai_dish_analysis(
+                    gemini_model, labels, objects, texts, style_indicators, allergies, menu_text
+                )
+                
+                # Display results
+                st.success("✅ **AI Dish Analysis:**")
+                st.markdown(ai_analysis)
+                
+                # Display matching dishes table
+                if matching_dishes:
+                    st.subheader("🎯 Related Menu Items")
+                    df = pd.DataFrame([
+                        {
+                            "Dish Name": dish['name'],
+                            "Description": dish['description'][:100] + "..." if len(dish['description']) > 100 else dish['description'],
+                            "Ingredients": ', '.join(dish['ingredients'][:5]) + ("..." if len(dish['ingredients']) > 5 else ""),
+                            "Similarity Score": f"{dish['score']}%"
+                        }
+                        for dish in matching_dishes
+                    ])
+                    st.dataframe(df, use_container_width=True)
+                else:
+                    st.info("ℹ️ No closely related menu items found based on image analysis.")
+                
+                # Award XP for using dish detection
+                if user_id:
+                    xp_earned = award_visual_menu_xp(user_id, 15, "dish_detection")
+                    if xp_earned > 0:
+                        show_xp_notification(15, "AI Dish Detection")
         else:
-            st.session_state.selected_ingredient_preferences = []
-        
-        # Texture preferences
-        texture_options = [
-            "Crispy", "Soft", "Chewy", "Crunchy", "Smooth", "Creamy",
-            "Flaky", "Tender", "Firm", "Juicy"
-        ]
-        
-        selected_texture = st.multiselect(
-            "🤏 Texture Preferences",
-            options=texture_options,
-            default=st.session_state.get('selected_texture_preferences', []),
-            help="Select preferred textures"
-        )
-        st.session_state.selected_texture_preferences = selected_texture
-    
-    with col2:
-        # Search sensitivity
-        search_sensitivity = st.slider(
-            "🎯 Search Sensitivity",
-            min_value=0.1,
-            max_value=1.0,
-            value=st.session_state.get('search_sensitivity', 0.5),
-            step=0.1,
-            help="Higher = more strict matching, Lower = more results"
-        )
-        st.session_state.search_sensitivity = search_sensitivity
-        
-        # Result limit
-        result_limit = st.slider(
-            "📊 Max Results",
-            min_value=5,
-            max_value=50,
-            value=st.session_state.get('result_limit', 15),
-            step=5,
-            help="Maximum number of results to show"
-        )
-        st.session_state.result_limit = result_limit
+            st.error("❌ Failed to process the uploaded image. Please try again.")
 
-def perform_enhanced_search():
-    """Perform enhanced visual search with all filters"""
-    if 'uploaded_image' not in st.session_state:
-        st.error("❌ Please upload an image first!")
-        return
+def render_personalized_menu(db, gemini_model, allergies, user_id):
+    """Render personalized menu recommendations tab"""
+    st.header("🎯 Personalized AI Menu")
+    st.markdown("Get AI-powered menu recommendations based on your preferences and order history!")
     
-    # Create filter criteria
-    filters = FilterCriteria(
-        dietary_preferences=st.session_state.get('selected_dietary_preferences', []),
-        cuisine_types=st.session_state.get('selected_cuisine_types', []),
-        spice_levels=st.session_state.get('selected_spice_levels', []),
-        price_ranges=st.session_state.get('selected_price_ranges', []),
-        cooking_methods=st.session_state.get('selected_cooking_methods', []),
-        meal_types=st.session_state.get('selected_meal_types', []),
-        allergen_free=st.session_state.get('selected_allergen_free', []),
-        nutritional_focus=st.session_state.get('selected_nutritional_focus', []),
-        ingredient_preferences=st.session_state.get('selected_ingredient_preferences', []),
-        texture_preferences=st.session_state.get('selected_texture_preferences', [])
-    )
+    # XP info
+    st.info("💡 **Earn 20 XP** for generating personalized recommendations!")
     
-    limit = st.session_state.get('result_limit', 15)
+    # Fetch user's order history
+    order_history = fetch_order_history(db, user_id) if user_id else []
     
-    with st.spinner("🔍 Searching with enhanced filters..."):
-        results = enhanced_visual_search(st.session_state.uploaded_image, filters, limit)
+    if order_history:
+        st.success(f"✅ Found {len(order_history)} previous orders to personalize recommendations")
         
-        if results:
-            st.session_state.visual_search_results = results
-            st.success(f"✅ Found {len(results)} matching dishes!")
-            st.rerun()
-        else:
-            st.warning("⚠️ No matching dishes found. Try adjusting your filters.")
-
-def render_enhanced_results_section():
-    """Render enhanced search results with detailed scoring"""
-    st.markdown("### 🎯 Search Results")
-    
-    results = st.session_state.get('visual_search_results', [])
-    
-    if not results:
-        return
-    
-    # Results summary
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Total Results", len(results))
-    
-    with col2:
-        avg_score = sum(r.get('match_score', 0) for r in results) / len(results)
-        st.metric("Avg Match Score", f"{avg_score:.1%}")
-    
-    with col3:
-        high_confidence = len([r for r in results if r.get('match_score', 0) > 0.7])
-        st.metric("High Confidence", high_confidence)
-    
-    # Sort options
-    sort_option = st.selectbox(
-        "📊 Sort by:",
-        options=["Match Score", "Name", "Cuisine", "Spice Level"],
-        index=0
-    )
-    
-    if sort_option == "Match Score":
-        results.sort(key=lambda x: x.get('match_score', 0), reverse=True)
-    elif sort_option == "Name":
-        results.sort(key=lambda x: x.get('name', ''))
-    elif sort_option == "Cuisine":
-        results.sort(key=lambda x: x.get('cuisine', ''))
-    elif sort_option == "Spice Level":
-        spice_order = {"Mild": 1, "Medium": 2, "Hot": 3, "Very Hot": 4}
-        results.sort(key=lambda x: spice_order.get(x.get('analysis_match', {}).get('spice_level', 'Mild'), 0))
-    
-    # Display results
-    for i, dish in enumerate(results):
-        render_enhanced_result_card(dish, i)
-
-def render_enhanced_result_card(dish: Dict, index: int):
-    """Render enhanced result card with detailed information"""
-    match_score = dish.get('match_score', 0)
-    score_breakdown = dish.get('score_breakdown', {})
-    
-    # Color coding based on match score
-    if match_score >= 0.8:
-        border_color = "🟢"
-    elif match_score >= 0.6:
-        border_color = "🟡"
+        # Show recent orders
+        with st.expander("📋 Your Recent Orders"):
+            recent_orders = sorted(order_history, key=lambda x: x.get('timestamp', 0), reverse=True)[:5]
+            for order in recent_orders:
+                order_date = datetime.fromtimestamp(order.get('timestamp', 0)).strftime('%Y-%m-%d %H:%M')
+                st.write(f"• **{order.get('dish_name', 'Unknown')}** - {order_date}")
     else:
-        border_color = "🔴"
+        st.info("ℹ️ No order history found. Recommendations will be based on your dietary preferences.")
     
-    with st.container():
-        st.markdown(f"#### {border_color} {dish.get('name', 'Unknown Dish')}")
+    # Generate recommendations button
+    if st.button("🚀 Generate Personalized Recommendations", type="primary"):
+        with st.spinner("🤖 AI is analyzing your preferences and generating recommendations..."):
+            # Fetch menu items
+            menu_items = fetch_menu_items(db)
+            if not menu_items:
+                st.error("❌ No menu items found.")
+                return
+            
+            # Create menu text for AI
+            menu_text = "\n".join([
+                f"- {item.get('name', 'Unknown')}: {item.get('description', '')} (Ingredients: {', '.join(item.get('ingredients', []))})"
+                for item in menu_items
+            ])
+            
+            # Generate recommendations
+            recommendations = generate_personalized_recommendations(
+                gemini_model, allergies, order_history, menu_text
+            )
+            
+            # Display recommendations
+            st.success("✅ **Your Personalized Menu Recommendations:**")
+            st.markdown(recommendations)
+            
+            # Award XP for generating recommendations
+            if user_id:
+                xp_earned = award_visual_menu_xp(user_id, 20, "personalized_recommendations")
+                if xp_earned > 0:
+                    show_xp_notification(20, "Personalized Menu Recommendations")
+
+def render_custom_filters(db, allergies):
+    """Render custom menu filters tab"""
+    st.header("⚙️ Custom Menu Filters")
+    st.markdown("Filter our menu based on your specific dietary needs and preferences!")
+    
+    # Additional filter options
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        portion_size = st.selectbox("Portion Size", ["Regular", "Small", "Large"])
+        price_range = st.slider("Price Range ($)", 0, 50, (0, 50))
+    
+    with col2:
+        ingredient_swap = st.text_input("Ingredient to Avoid", placeholder="e.g., onions, garlic")
+        cuisine_type = st.selectbox("Cuisine Type", ["All", "Italian", "Chinese", "Indian", "Mexican", "American"])
+    
+    # Apply filters button
+    if st.button("🔍 Apply Filters", type="primary"):
+        with st.spinner("Filtering menu items..."):
+            # Fetch menu items
+            menu_items = fetch_menu_items(db)
+            if not menu_items:
+                st.error("❌ No menu items found.")
+                return
+            
+            # Apply allergy filters
+            filtered_menu, debug_info = filter_menu_by_allergies(menu_items, allergies)
+            
+            # Apply additional filters
+            if ingredient_swap:
+                filtered_menu = [
+                    item for item in filtered_menu 
+                    if not any(ingredient_swap.lower() in ing.lower() for ing in item.get('ingredients', []))
+                ]
+            
+            if cuisine_type != "All":
+                filtered_menu = [
+                    item for item in filtered_menu 
+                    if item.get('cuisine', '').lower() == cuisine_type.lower()
+                ]
+            
+            # Display results
+            if filtered_menu:
+                st.success(f"✅ Found {len(filtered_menu)} dishes matching your criteria")
+                
+                # Create display dataframe
+                display_data = []
+                for item in filtered_menu:
+                    display_data.append({
+                        "Dish Name": item.get('name', 'Unknown'),
+                        "Description": item.get('description', '')[:100] + ("..." if len(item.get('description', '')) > 100 else ""),
+                        "Cuisine": item.get('cuisine', 'Unknown'),
+                        "Ingredients": ', '.join(item.get('ingredients', [])[:5]) + ("..." if len(item.get('ingredients', [])) > 5 else ""),
+                        "Dietary Tags": ', '.join(item.get('diet', []) if isinstance(item.get('diet'), list) else [str(item.get('diet', ''))]),
+                        "Portion": portion_size
+                    })
+                
+                df = pd.DataFrame(display_data)
+                st.dataframe(df, use_container_width=True)
+                
+            else:
+                st.warning("⚠️ No menu items match your selected criteria.")
+                
+                # Show debug information
+                with st.expander("🔍 Debug Information"):
+                    st.write("**Selected Filters:**")
+                    st.write(f"- Dietary Restrictions: {allergies}")
+                    st.write(f"- Ingredient to Avoid: {ingredient_swap}")
+                    st.write(f"- Cuisine Type: {cuisine_type}")
+                    
+                    if debug_info:
+                        st.write("**Filter Debug Info:**")
+                        for info in debug_info[:10]:  # Show first 10
+                            st.write(f"- {info}")
+
+def render_visual_challenge(db, user_role, username, user_id):
+    """Render visual menu challenge tab (Staff/Chef/Admin only)"""
+    st.header("🏅 Visual Menu Challenge Submission")
+    
+    # Check access permissions
+    if user_role not in ['staff', 'chef', 'admin']:
+        st.warning("⚠️ This feature is available for Staff, Chefs, and Administrators only.")
+        st.info("💡 Customers can vote on staff submissions in the Leaderboard tab!")
+        return
+    
+    st.markdown("Submit your signature dish photos and compete with other staff members!")
+    
+    # XP info for staff
+    st.info("""
+    💡 **XP Rewards for Staff:**
+    • Submit dish photo: **+30 XP**
+    • Customer likes your dish: **+8 XP per like**
+    • Customer views your dish: **+3 XP per view**
+    • Customer orders your dish: **+15 XP per order**
+    """)
+    
+    # Challenge submission form
+    with st.form("challenge_form"):
+        st.markdown("#### 📸 Submit Your Dish")
         
-        col1, col2, col3 = st.columns([2, 2, 1])
+        col1, col2 = st.columns(2)
         
         with col1:
-            st.write(f"**Description:** {dish.get('description', 'No description available')}")
-            st.write(f"**Cuisine:** {dish.get('cuisine', 'Unknown')}")
-            
-            ingredients = dish.get('ingredients', [])
-            if isinstance(ingredients, list):
-                ingredients_str = ', '.join(str(ing) for ing in ingredients[:5])
-                if len(ingredients) > 5:
-                    ingredients_str += f" (+{len(ingredients) - 5} more)"
-            else:
-                ingredients_str = str(ingredients)
-            
-            st.write(f"**Ingredients:** {ingredients_str}")
+            dish_name = st.text_input("Dish Name", placeholder="e.g., Truffle Pasta Supreme")
+            plating_style = st.text_input("Plating Style", placeholder="e.g., Modern, Classic, Rustic")
         
         with col2:
-            analysis = dish.get('analysis_match', {})
+            ingredients = st.text_area("Ingredients (comma separated)", placeholder="pasta, truffle oil, parmesan, garlic")
             
-            st.write(f"**Spice Level:** {analysis.get('spice_level', 'Unknown')}")
-            st.write(f"**Cooking Method:** {analysis.get('cooking_method', 'Unknown')}")
-            st.write(f"**Meal Type:** {analysis.get('meal_type', 'Unknown')}")
-            
-            dietary_info = analysis.get('dietary_info', [])
-            if dietary_info:
-                st.write(f"**Dietary:** {', '.join(dietary_info)}")
-        
+        # Challenge options
+        col3, col4 = st.columns(2)
         with col3:
-            # Match score display
-            st.metric("Match Score", f"{match_score:.1%}")
-            
-            # Score breakdown in expander
-            if score_breakdown:
-                with st.expander("📊 Score Details"):
-                    for category, score in score_breakdown.items():
-                        st.write(f"**{category.title()}:** {score:.1%}")
+            trendy = st.checkbox("Matches current food trends", help="Is this dish following current culinary trends?")
+        with col4:
+            diet_match = st.checkbox("Matches dietary preferences", help="Does this dish cater to popular dietary preferences?")
         
-        st.markdown("---")
+        # Image upload
+        challenge_image = st.file_uploader("Dish Photo", type=["jpg", "png", "jpeg"], help="Upload a high-quality photo of your dish")
+        
+        submitted = st.form_submit_button("🚀 Submit Dish Challenge", type="primary")
+        
+        if submitted:
+            if not dish_name or not ingredients:
+                st.error("❌ Please fill in Dish Name and Ingredients.")
+            elif not challenge_image:
+                st.error("❌ Please upload a dish photo.")
+            else:
+                # Save challenge entry
+                success, message = save_challenge_entry(
+                    db, username, dish_name, ingredients, plating_style, trendy, diet_match
+                )
+                
+                if success:
+                    st.success(f"✅ {message}")
+                    
+                    # Award XP for submission
+                    if user_id:
+                        xp_earned = award_visual_menu_xp(user_id, 30, "challenge_submission")
+                        if xp_earned > 0:
+                            show_xp_notification(30, "Visual Challenge Submission")
+                    
+                    # Clear form by rerunning
+                    st.rerun()
+                else:
+                    st.error(f"❌ {message}")
 
-# Clear filters function
-def clear_all_filters():
-    """Clear all selected filters"""
-    filter_keys = [
-        'selected_dietary_preferences', 'selected_cuisine_types', 'selected_spice_levels',
-        'selected_price_ranges', 'selected_cooking_methods', 'selected_meal_types',
-        'selected_allergen_free', 'selected_nutritional_focus', 'selected_ingredient_preferences',
-        'selected_texture_preferences', 'search_sensitivity', 'result_limit'
-    ]
+def render_leaderboard(db, user_id):
+    """Render leaderboard and voting tab"""
+    st.header("📊 Leaderboard & Customer Voting")
+    st.markdown("Vote on staff-submitted dishes and see who's leading the competition!")
     
-    for key in filter_keys:
-        if key in st.session_state:
-            del st.session_state[key]
+    # XP info for customers
+    st.info("💡 **Earn 5 XP** for each vote you cast!")
     
-    st.success("✅ All filters cleared!")
-    st.rerun()
+    # Fetch challenge entries
+    entries = fetch_challenge_entries(db)
+    
+    if not entries:
+        st.info("📝 No challenge entries yet. Staff members can submit dishes in the Visual Menu Challenge tab!")
+        return
+    
+    # Display challenge entries for voting
+    st.subheader("🗳️ Vote on Staff Dishes")
+    
+    for entry in entries:
+        with st.container():
+            st.markdown("---")
+            
+            # Dish header
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.subheader(f"🍽️ {entry.get('dish', 'Unknown Dish')}")
+                st.write(f"**Chef:** {entry.get('staff', 'Unknown')}")
+                st.write(f"**Style:** {entry.get('style', 'Not specified')}")
+                st.write(f"**Ingredients:** {', '.join(entry.get('ingredients', []))}")
+            
+            with col2:
+                # Display current stats
+                st.metric("Score", calculate_challenge_score(entry))
+            
+            # Voting buttons
+            col3, col4, col5 = st.columns(3)
+            
+            with col3:
+                if st.button(f"❤️ Like ({entry.get('likes', 0)})", key=f"like_{entry['id']}"):
+                    if update_challenge_interaction(db, entry['id'], 'likes'):
+                        # Award XP to customer for voting
+                        if user_id:
+                            award_visual_menu_xp(user_id, 5, "customer_vote")
+                            show_xp_notification(5, "Voting on Dish")
+                        
+                        # Award XP to staff member for receiving like
+                        staff_user_id = entry.get('staff_user_id')  # Would need to store this
+                        if staff_user_id:
+                            award_visual_menu_xp(staff_user_id, 8, "received_like")
+                        
+                        st.rerun()
+            
+            with col4:
+                if st.button(f"👀 View ({entry.get('views', 0)})", key=f"view_{entry['id']}"):
+                    if update_challenge_interaction(db, entry['id'], 'views'):
+                        # Award XP to customer for engagement
+                        if user_id:
+                            award_visual_menu_xp(user_id, 5, "customer_engagement")
+                            show_xp_notification(5, "Viewing Dish")
+                        
+                        # Award XP to staff member for receiving view
+                        staff_user_id = entry.get('staff_user_id')
+                        if staff_user_id:
+                            award_visual_menu_xp(staff_user_id, 3, "received_view")
+                        
+                        st.rerun()
+            
+            with col5:
+                if st.button(f"🛒 Order ({entry.get('orders', 0)})", key=f"order_{entry['id']}"):
+                    if update_challenge_interaction(db, entry['id'], 'orders'):
+                        # Save order to database
+                        if user_id:
+                            save_order(db, user_id, entry.get('dish', 'Unknown Dish'))
+                            award_visual_menu_xp(user_id, 5, "placed_order")
+                            show_xp_notification(5, "Placing Order")
+                        
+                        # Award XP to staff member for receiving order
+                        staff_user_id = entry.get('staff_user_id')
+                        if staff_user_id:
+                            award_visual_menu_xp(staff_user_id, 15, "received_order")
+                        
+                        st.rerun()
+            
+            # Show special badges
+            badges = []
+            if entry.get('trendy'):
+                badges.append("🔥 Trendy")
+            if entry.get('diet_match'):
+                badges.append("🥗 Diet-Friendly")
+            
+            if badges:
+                st.write(f"**Badges:** {' '.join(badges)}")
+    
+    # Live Leaderboard
+    st.subheader("🏆 Live Leaderboard")
+    
+    # Calculate and sort leaderboard
+    leaderboard = sorted(entries, key=lambda e: calculate_challenge_score(e), reverse=True)
+    
+    # Display top 10
+    leaderboard_data = []
+    for i, entry in enumerate(leaderboard[:10]):
+        leaderboard_data.append({
+            "Rank": f"#{i+1}",
+            "Dish": entry.get('dish', 'Unknown'),
+            "Chef": entry.get('staff', 'Unknown'),
+            "Score": calculate_challenge_score(entry),
+            "Likes": entry.get('likes', 0),
+            "Views": entry.get('views', 0),
+            "Orders": entry.get('orders', 0)
+        })
+    
+    if leaderboard_data:
+        df = pd.DataFrame(leaderboard_data)
+        st.dataframe(df, use_container_width=True)
+        
+        # Show top 3 with special styling
+        st.markdown("#### 🥇 Top 3 Champions")
+        for i, entry in enumerate(leaderboard[:3]):
+            medals = ["🥇", "🥈", "🥉"]
+            st.success(f"{medals[i]} **{entry.get('dish', 'Unknown')}** by {entry.get('staff', 'Unknown')} - {calculate_challenge_score(entry)} points")
+    else:
+        st.info("No entries to display in leaderboard yet.")
+    
+    # Weekly reset info
+    st.markdown("---")
+    st.info("🔄 **Leaderboard resets weekly** to give everyone a fresh chance to compete!")
