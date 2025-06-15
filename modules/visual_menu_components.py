@@ -6,7 +6,7 @@ import streamlit as st
 from PIL import Image
 import logging
 from typing import Dict, List, Optional
-from modules.enhanced_visual_services import (
+from modules.visual_menu_services import (
     enhanced_visual_search, enhanced_image_analysis, FilterCriteria,
     get_smart_filter_suggestions
 )
