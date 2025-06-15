@@ -1,10 +1,8 @@
 """
-Enhanced Visual Menu Services with improved custom filters and accuracy.
+Enhanced Visual Menu Services - Updated to remove cv2 dependency and add improved filtering.
 """
 
 import streamlit as st
-import cv2
-import numpy as np
 from PIL import Image
 import google.generativeai as genai
 import json
@@ -15,7 +13,6 @@ from datetime import datetime
 import firebase_admin
 from firebase_admin import firestore
 from dataclasses import dataclass
-from collections import defaultdict
 import difflib
 
 logger = logging.getLogger(__name__)
@@ -33,7 +30,7 @@ class FilterCriteria:
     nutritional_focus: List[str]
     ingredient_preferences: List[str]
     texture_preferences: List[str]
-    
+
 class EnhancedVisualSearchEngine:
     """Enhanced visual search engine with improved filtering accuracy"""
     
@@ -74,14 +71,34 @@ class EnhancedVisualSearchEngine:
         }
 
 def get_visual_firebase_db():
-    """Get Firestore client for visual search using event_firebase configuration"""
+    """Get Firestore client for visual search"""
     try:
-        if 'event_app' in [app.name for app in firebase_admin._apps.values()]:
-            return firestore.client(app=firebase_admin.get_app(name='event_app'))
-        else:
-            from modules.event_planner import init_event_firebase
-            init_event_firebase()
-            return firestore.client(app=firebase_admin.get_app(name='event_app'))
+        # Try to get existing app first
+        try:
+            app = firebase_admin.get_app()
+            return firestore.client(app=app)
+        except ValueError:
+            # If no default app exists, try to get event_app
+            try:
+                app = firebase_admin.get_app(name='event_app')
+                return firestore.client(app=app)
+            except ValueError:
+                # Initialize default app if none exists
+                if not firebase_admin._apps:
+                    cred = firebase_admin.credentials.Certificate({
+                        "type": st.secrets["firebase"]["type"],
+                        "project_id": st.secrets["firebase"]["project_id"],
+                        "private_key_id": st.secrets["firebase"]["private_key_id"],
+                        "private_key": st.secrets["firebase"]["private_key"].replace('\\n', '\n'),
+                        "client_email": st.secrets["firebase"]["client_email"],
+                        "client_id": st.secrets["firebase"]["client_id"],
+                        "auth_uri": st.secrets["firebase"]["auth_uri"],
+                        "token_uri": st.secrets["firebase"]["token_uri"],
+                        "auth_provider_x509_cert_url": st.secrets["firebase"]["auth_provider_x509_cert_url"],
+                        "client_x509_cert_url": st.secrets["firebase"]["client_x509_cert_url"]
+                    })
+                    firebase_admin.initialize_app(cred)
+                return firestore.client()
     except Exception as e:
         logger.error(f"Error getting visual Firebase DB: {str(e)}")
         return None
@@ -99,7 +116,7 @@ def configure_visual_gemini():
         logger.error(f"Error configuring Gemini: {str(e)}")
         return None
 
-def enhanced_image_analysis(image: Image.Image) -> Dict[str, Any]:
+def analyze_food_image_with_gemini(image: Image.Image) -> Dict[str, Any]:
     """Enhanced image analysis with detailed food recognition"""
     try:
         model = configure_visual_gemini()
@@ -148,7 +165,7 @@ Be very specific and accurate. If uncertain about any field, use "Unknown" or em
             return {"error": "Failed to parse AI response"}
             
     except Exception as e:
-        logger.error(f"Error in enhanced image analysis: {str(e)}")
+        logger.error(f"Error in image analysis: {str(e)}")
         return {"error": str(e)}
 
 def calculate_filter_match_score(dish: Dict, filters: FilterCriteria, analysis: Dict) -> Tuple[float, Dict[str, float]]:
@@ -455,11 +472,30 @@ def calculate_meal_type_match(dish: Dict, analysis: Dict, meal_types: List[str])
     
     return best_match
 
-def enhanced_visual_search(image: Image.Image, filters: FilterCriteria, limit: int = 10) -> List[Dict]:
+def search_similar_dishes(image: Image.Image, custom_filters=None, limit: int = 10) -> List[Dict]:
     """Enhanced visual search with improved filtering accuracy"""
     try:
+        # Convert custom_filters to FilterCriteria if needed
+        if custom_filters is None:
+            filters = FilterCriteria([], [], [], [], [], [], [], [], [], [])
+        elif isinstance(custom_filters, dict):
+            filters = FilterCriteria(
+                dietary_preferences=custom_filters.get('dietary_preferences', []),
+                cuisine_types=custom_filters.get('cuisine_types', []),
+                spice_levels=custom_filters.get('spice_levels', []),
+                price_ranges=custom_filters.get('price_ranges', []),
+                cooking_methods=custom_filters.get('cooking_methods', []),
+                meal_types=custom_filters.get('meal_types', []),
+                allergen_free=custom_filters.get('allergen_free', []),
+                nutritional_focus=custom_filters.get('nutritional_focus', []),
+                ingredient_preferences=custom_filters.get('ingredient_preferences', []),
+                texture_preferences=custom_filters.get('texture_preferences', [])
+            )
+        else:
+            filters = custom_filters
+        
         # Analyze the uploaded image
-        analysis = enhanced_image_analysis(image)
+        analysis = analyze_food_image_with_gemini(image)
         
         if "error" in analysis:
             logger.error(f"Image analysis failed: {analysis['error']}")
@@ -499,7 +535,7 @@ def enhanced_visual_search(image: Image.Image, filters: FilterCriteria, limit: i
         return scored_dishes[:limit]
         
     except Exception as e:
-        logger.error(f"Error in enhanced visual search: {str(e)}")
+        logger.error(f"Error in visual search: {str(e)}")
         return []
 
 def get_smart_filter_suggestions(analysis: Dict) -> Dict[str, List[str]]:
