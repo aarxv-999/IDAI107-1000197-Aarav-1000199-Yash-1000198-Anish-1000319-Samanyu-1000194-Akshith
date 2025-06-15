@@ -216,7 +216,7 @@ def register_user(email, username, password, full_name, role='user'):
 
 def render_login_form():
     """Render the login form"""
-    st.markdown("### 🔐 Login to Your Account")
+    st.markdown("### Login to Your Account")
     
     with st.form("login_form"):
         login_identifier = st.text_input(
@@ -232,9 +232,9 @@ def render_login_form():
         
         col1, col2 = st.columns(2)
         with col1:
-            login_button = st.form_submit_button("🚀 Login", type="primary", use_container_width=True)
+            login_button = st.form_submit_button("Login", type="primary", use_container_width=True)
         with col2:
-            if st.form_submit_button("📝 Create Account", use_container_width=True):
+            if st.form_submit_button("Create Account", use_container_width=True):
                 st.session_state.show_signup = True
                 st.rerun()
         
@@ -254,7 +254,7 @@ def render_login_form():
 
 def render_signup_form():
     """Render the signup form"""
-    st.markdown("### 📝 Create Your Account")
+    st.markdown("### Create Your Account")
     
     with st.form("signup_form"):
         col1, col2 = st.columns(2)
@@ -304,9 +304,9 @@ def render_signup_form():
         
         col1, col2 = st.columns(2)
         with col1:
-            signup_button = st.form_submit_button("🎉 Create Account", type="primary", use_container_width=True)
+            signup_button = st.form_submit_button("Create Account", type="primary", use_container_width=True)
         with col2:
-            if st.form_submit_button("← Back to Login", use_container_width=True):
+            if st.form_submit_button("Back to Login", use_container_width=True):
                 st.session_state.show_signup = False
                 st.rerun()
         
@@ -343,7 +343,7 @@ def render_auth_ui():
         st.sidebar.write(f"**Role:** {user['role'].title()}")
         st.sidebar.write(f"**Username:** @{user['username']}")
         
-        if st.sidebar.button("🚪 Logout", use_container_width=True):
+        if st.sidebar.button("Logout", use_container_width=True):
             st.session_state.is_authenticated = False
             st.session_state.user = None
             st.session_state.show_signup = False
@@ -351,7 +351,7 @@ def render_auth_ui():
         
         return True
     else:
-        st.sidebar.markdown("### 🔐 Authentication")
+        st.sidebar.markdown("### Authentication")
         
         # Show signup or login form based on state
         if st.session_state.show_signup:
@@ -361,12 +361,12 @@ def render_auth_ui():
         
         # Additional info
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### ℹ️ Account Types")
+        st.sidebar.markdown("### Account Types")
         st.sidebar.markdown("""
-        **👤 User:** Access to basic features, quizzes, and visual menu
-        **👨‍💼 Staff:** Can create marketing campaigns and access analytics
-        **👨‍🍳 Chef:** Can submit recipes and manage menu items
-        **🔧 Admin:** Full access to all features and management tools
+        **User:** Access to basic features, quizzes, and visual menu
+        **Staff:** Can create marketing campaigns and access analytics
+        **Chef:** Can submit recipes and manage menu items
+        **Admin:** Full access to all features and management tools
         """)
         
         return False
@@ -401,7 +401,7 @@ def display_user_stats_sidebar(user_id):
         user_stats = get_user_stats(user_id)
         
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### 🎮 Your Stats")
+        st.sidebar.markdown("### Your Stats")
         
         # Extract stats with safe defaults
         total_xp = max(0, user_stats.get('total_xp', 0))
@@ -436,9 +436,9 @@ def display_user_stats_sidebar(user_id):
         if recipes_generated > 0 or quizzes_completed > 0:
             st.sidebar.markdown("**Activity:**")
             if recipes_generated > 0:
-                st.sidebar.write(f"🍽️ Recipes: {recipes_generated}")
+                st.sidebar.write(f"Recipes: {recipes_generated}")
             if quizzes_completed > 0:
-                st.sidebar.write(f"🧠 Quizzes: {quizzes_completed}")
+                st.sidebar.write(f"Quizzes: {quizzes_completed}")
         
         logger.info(f"Displayed stats for user {user_id}: Level {level}, XP {total_xp}, Progress {progress:.2f}")
         
@@ -448,11 +448,11 @@ def display_user_stats_sidebar(user_id):
 
 def show_xp_notification(xp_amount, activity_type):
     """Show XP notification"""
-    st.success(f"🎉 +{xp_amount} XP earned for {activity_type}!")
+    st.success(f"+{xp_amount} XP earned for {activity_type}!")
 
 def display_gamification_dashboard(user_id):
     """Display comprehensive gamification dashboard"""
-    st.title("🎮 Gamification Hub")
+    st.title("Gamification Hub")
     
     try:
         from modules.leftover import get_user_stats, get_leaderboard
@@ -461,7 +461,7 @@ def display_gamification_dashboard(user_id):
         user_stats = get_user_stats(user_id)
         
         # Overview metrics
-        st.subheader("📊 Your Progress")
+        st.subheader("Your Progress")
         
         col1, col2, col3, col4 = st.columns(4)
         
@@ -486,25 +486,25 @@ def display_gamification_dashboard(user_id):
         current_level_xp = total_xp - xp_for_current_level
         progress = min(current_level_xp / 100.0, 1.0)
         
-        st.subheader("📈 Level Progress")
+        st.subheader("Level Progress")
         st.progress(progress, text=f"Level {level} - {current_level_xp}/100 XP")
         
         # Achievements section
-        st.subheader("🏆 Achievements")
+        st.subheader("Achievements")
         
         achievements = []
         if user_stats.get('recipes_generated', 0) >= 1:
-            achievements.append("🍽️ Recipe Novice - Generated your first recipe")
+            achievements.append("Recipe Novice - Generated your first recipe")
         if user_stats.get('recipes_generated', 0) >= 10:
-            achievements.append("🍽️ Recipe Expert - Generated 10+ recipes")
+            achievements.append("Recipe Expert - Generated 10+ recipes")
         if user_stats.get('quizzes_completed', 0) >= 1:
-            achievements.append("🧠 Quiz Starter - Completed your first quiz")
+            achievements.append("Quiz Starter - Completed your first quiz")
         if user_stats.get('quizzes_completed', 0) >= 5:
-            achievements.append("🧠 Quiz Master - Completed 5+ quizzes")
+            achievements.append("Quiz Master - Completed 5+ quizzes")
         if user_stats.get('level', 1) >= 5:
-            achievements.append("⭐ Rising Star - Reached Level 5")
+            achievements.append("Rising Star - Reached Level 5")
         if user_stats.get('level', 1) >= 10:
-            achievements.append("🌟 Culinary Expert - Reached Level 10")
+            achievements.append("Culinary Expert - Reached Level 10")
         
         if achievements:
             for achievement in achievements:
@@ -513,7 +513,7 @@ def display_gamification_dashboard(user_id):
             st.info("Complete activities to unlock achievements!")
         
         # Leaderboard
-        st.subheader("🏅 Leaderboard")
+        st.subheader("Leaderboard")
         
         try:
             leaderboard = get_leaderboard()
@@ -528,7 +528,7 @@ def display_gamification_dashboard(user_id):
             st.error("Error loading leaderboard")
         
         # Activity suggestions
-        st.subheader("💡 Earn More XP")
+        st.subheader("Earn More XP")
         
         col1, col2 = st.columns(2)
         
@@ -551,104 +551,99 @@ def display_gamification_dashboard(user_id):
         st.error("Error loading gamification dashboard")
 
 def render_cooking_quiz(ingredients, user_id):
-    """Render cooking quiz component"""
-    st.subheader("🧠 Cooking Knowledge Quiz")
-    
-    # Quiz questions (sample)
-    quiz_questions = [
-        {
-            "question": "What is the ideal internal temperature for cooked chicken?",
-            "options": ["145°F", "160°F", "165°F", "180°F"],
-            "correct": 2,
-            "explanation": "165°F (74°C) is the safe internal temperature for chicken."
-        },
-        {
-            "question": "Which cooking method uses dry heat?",
-            "options": ["Boiling", "Steaming", "Roasting", "Poaching"],
-            "correct": 2,
-            "explanation": "Roasting uses dry heat in an oven."
-        },
-        {
-            "question": "What does 'mise en place' mean?",
-            "options": ["Cooking technique", "Everything in place", "French sauce", "Knife skill"],
-            "correct": 1,
-            "explanation": "'Mise en place' means having all ingredients prepared and organized before cooking."
-        }
-    ]
+    """Render cooking quiz component - AI generated questions only"""
+    st.subheader("Cooking Knowledge Quiz")
     
     if 'quiz_started' not in st.session_state:
         st.session_state.quiz_started = False
+        st.session_state.quiz_questions = []
         st.session_state.quiz_answers = {}
         st.session_state.quiz_score = 0
     
     if not st.session_state.quiz_started:
         st.info("Test your culinary knowledge and earn XP!")
         if st.button("Start Quiz", type="primary"):
-            st.session_state.quiz_started = True
-            st.session_state.quiz_answers = {}
-            st.rerun()
-    else:
-        # Display quiz questions
-        with st.form("cooking_quiz"):
-            for i, q in enumerate(quiz_questions):
-                st.write(f"**Question {i+1}:** {q['question']}")
-                answer = st.radio(
-                    f"Select your answer for question {i+1}:",
-                    options=q['options'],
-                    key=f"q_{i}"
-                )
-                st.session_state.quiz_answers[i] = q['options'].index(answer)
-            
-            submitted = st.form_submit_button("Submit Quiz", type="primary")
-            
-            if submitted:
-                # Calculate score
-                correct_answers = 0
-                total_questions = len(quiz_questions)
+            # Generate AI questions
+            with st.spinner("Generating quiz questions..."):
+                from modules.leftover import generate_dynamic_quiz_questions
+                questions = generate_dynamic_quiz_questions(ingredients, 5)
                 
-                for i, q in enumerate(quiz_questions):
-                    if st.session_state.quiz_answers.get(i) == q['correct']:
-                        correct_answers += 1
-                
-                score_percentage = (correct_answers / total_questions) * 100
-                st.session_state.quiz_score = score_percentage
-                
-                # Display results
-                st.subheader("📊 Quiz Results")
-                st.write(f"Score: {correct_answers}/{total_questions} ({score_percentage:.0f}%)")
-                
-                # Award XP
-                base_xp = 15
-                bonus_xp = 10 if score_percentage == 100 else 0
-                total_xp = base_xp + bonus_xp
-                
-                try:
-                    from modules.leftover import award_recipe_xp
-                    award_recipe_xp(user_id, total_xp, "quiz")
-                    show_xp_notification(total_xp, "completing cooking quiz")
-                except Exception as e:
-                    logger.error(f"Error awarding quiz XP: {str(e)}")
-                
-                # Show explanations
-                st.subheader("📚 Explanations")
-                for i, q in enumerate(quiz_questions):
-                    user_answer = st.session_state.quiz_answers.get(i)
-                    correct_answer = q['correct']
-                    
-                    if user_answer == correct_answer:
-                        st.success(f"Q{i+1}: ✅ Correct! {q['explanation']}")
-                    else:
-                        st.error(f"Q{i+1}: ❌ Incorrect. {q['explanation']}")
-                
-                # Reset quiz
-                if st.button("Take Quiz Again"):
-                    st.session_state.quiz_started = False
+                if questions:
+                    st.session_state.quiz_questions = questions
+                    st.session_state.quiz_started = True
                     st.session_state.quiz_answers = {}
                     st.rerun()
+                else:
+                    st.error("Unable to generate quiz questions. Please try again later.")
+    else:
+        # Display quiz questions
+        if st.session_state.quiz_questions:
+            with st.form("cooking_quiz"):
+                for i, q in enumerate(st.session_state.quiz_questions):
+                    st.write(f"**Question {i+1}:** {q['question']}")
+                    answer = st.radio(
+                        f"Select your answer for question {i+1}:",
+                        options=q['options'],
+                        key=f"q_{i}"
+                    )
+                    st.session_state.quiz_answers[i] = q['options'].index(answer)
+                
+                submitted = st.form_submit_button("Submit Quiz", type="primary")
+                
+                if submitted:
+                    # Calculate score
+                    correct_answers = 0
+                    total_questions = len(st.session_state.quiz_questions)
+                    
+                    for i, q in enumerate(st.session_state.quiz_questions):
+                        if st.session_state.quiz_answers.get(i) == q['correct']:
+                            correct_answers += 1
+                    
+                    score_percentage = (correct_answers / total_questions) * 100
+                    st.session_state.quiz_score = score_percentage
+                    
+                    # Display results
+                    st.subheader("Quiz Results")
+                    st.write(f"Score: {correct_answers}/{total_questions} ({score_percentage:.0f}%)")
+                    
+                    # Award XP
+                    base_xp = 15
+                    bonus_xp = 10 if score_percentage == 100 else 0
+                    total_xp = base_xp + bonus_xp
+                    
+                    try:
+                        from modules.leftover import update_user_stats
+                        update_user_stats(user_id, total_xp, correct_answers, total_questions)
+                        show_xp_notification(total_xp, "completing cooking quiz")
+                    except Exception as e:
+                        logger.error(f"Error awarding quiz XP: {str(e)}")
+                    
+                    # Show explanations
+                    st.subheader("Explanations")
+                    for i, q in enumerate(st.session_state.quiz_questions):
+                        user_answer = st.session_state.quiz_answers.get(i)
+                        correct_answer = q['correct']
+                        
+                        if user_answer == correct_answer:
+                            st.success(f"Q{i+1}: Correct! {q.get('explanation', 'No explanation available.')}")
+                        else:
+                            st.error(f"Q{i+1}: Incorrect. {q.get('explanation', 'No explanation available.')}")
+                    
+                    # Reset quiz
+                    if st.button("Take Quiz Again"):
+                        st.session_state.quiz_started = False
+                        st.session_state.quiz_questions = []
+                        st.session_state.quiz_answers = {}
+                        st.rerun()
+        else:
+            st.error("No quiz questions available. Please try starting the quiz again.")
+            if st.button("Restart Quiz"):
+                st.session_state.quiz_started = False
+                st.rerun()
 
 def display_daily_challenge(user_id):
     """Display daily cooking challenge"""
-    st.subheader("🎯 Daily Challenge")
+    st.subheader("Daily Challenge")
     
     # Generate a daily challenge based on date
     today = datetime.now().date()
@@ -670,7 +665,7 @@ def display_daily_challenge(user_id):
 # Leftover Management Components
 def leftover_input_csv():
     """Handle CSV file upload for leftovers"""
-    st.sidebar.subheader("📁 Upload CSV")
+    st.sidebar.subheader("Upload CSV")
     uploaded_file = st.sidebar.file_uploader("Choose a CSV file", type="csv")
     
     if uploaded_file is not None:
@@ -689,7 +684,7 @@ def leftover_input_csv():
 
 def leftover_input_manual():
     """Handle manual input for leftovers"""
-    st.sidebar.subheader("✏️ Manual Input")
+    st.sidebar.subheader("Manual Input")
     manual_input = st.sidebar.text_area(
         "Enter ingredients (one per line)",
         placeholder="tomatoes\nonions\ngarlic\nrice"
@@ -705,7 +700,7 @@ def leftover_input_manual():
 
 def leftover_input_firebase():
     """Handle Firebase integration for leftovers"""
-    st.sidebar.subheader("🔥 Firebase Integration")
+    st.sidebar.subheader("Firebase Integration")
     
     use_firebase = st.sidebar.checkbox("Use current inventory from Firebase")
     
@@ -718,13 +713,14 @@ def leftover_input_firebase():
             help="Limit the number of ingredients to prioritize those expiring soon"
         )
         
-        if st.sidebar.button("📥 Fetch Priority Ingredients"):
+        if st.sidebar.button("Fetch Priority Ingredients"):
             try:
-                from modules.leftover import get_priority_ingredients
-                ingredients, detailed_info = get_priority_ingredients(max_ingredients)
+                from modules.leftover import get_ingredients_by_expiry_priority, fetch_ingredients_from_firebase
+                firebase_ingredients = fetch_ingredients_from_firebase()
+                ingredients, detailed_info = get_ingredients_by_expiry_priority(firebase_ingredients, max_ingredients)
                 
                 if ingredients:
-                    st.sidebar.success(f"✅ Fetched {len(ingredients)} priority ingredients")
+                    st.sidebar.success(f"Fetched {len(ingredients)} priority ingredients")
                     return ingredients, detailed_info
                 else:
                     st.sidebar.warning("No ingredients found in Firebase inventory")
@@ -740,7 +736,7 @@ def award_recipe_generation_xp(user_id, num_recipes):
         from modules.leftover import award_recipe_xp
         
         base_xp = 10 * num_recipes  # 10 XP per recipe
-        award_recipe_xp(user_id, base_xp, "recipe_generation")
+        award_recipe_xp(user_id, base_xp)
         
         show_xp_notification(base_xp, f"generating {num_recipes} recipes")
         
