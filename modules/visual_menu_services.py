@@ -92,36 +92,36 @@ ALLERGY_MAPPING = {
 }
 
 @st.cache_data(ttl=300)
-def fetch_menu_items(db):
+def fetch_menu_items(_db):
     """Fetch menu items from Firebase"""
     try:
-        if not db:
+        if not _db:
             return []
-        menu_docs = db.collection("menu").stream()
+        menu_docs = _db.collection("menu").stream()
         return [doc.to_dict() | {"id": doc.id} for doc in menu_docs]
     except Exception as e:
         logger.error(f"Error fetching menu items: {str(e)}")
         return []
 
 @st.cache_data(ttl=300)
-def fetch_order_history(db, user_id):
+def fetch_order_history(_db, user_id):
     """Fetch user's order history"""
     try:
-        if not db or not user_id:
+        if not _db or not user_id:
             return []
-        orders = db.collection("orders").where("user_id", "==", user_id).stream()
+        orders = _db.collection("orders").where("user_id", "==", user_id).stream()
         return [order.to_dict() | {"id": order.id} for order in orders]
     except Exception as e:
         logger.error(f"Error fetching order history: {str(e)}")
         return []
 
 @st.cache_data(ttl=60)
-def fetch_challenge_entries(db):
+def fetch_challenge_entries(_db):
     """Fetch visual challenge entries"""
     try:
-        if not db:
+        if not _db:
             return []
-        challenges = db.collection("visual_challenges").stream()
+        challenges = _db.collection("visual_challenges").stream()
         return [doc.to_dict() | {"id": doc.id} for doc in challenges]
     except Exception as e:
         logger.error(f"Error fetching challenge entries: {str(e)}")
