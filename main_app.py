@@ -118,12 +118,12 @@ def leftover_management():
         
         # Display priority information if Firebase ingredients are used
         if firebase_detailed_info:
-            st.info("🎯 Ingredients are prioritized by expiry date - closest to expire first!")
+            st.info("Ingredients are prioritized by expiry date, closest to expiry first")
             
             # Show urgency summary
             urgent_count = len([item for item in firebase_detailed_info if item['days_until_expiry'] <= 3])
             if urgent_count > 0:
-                st.warning(f"⚠️ {urgent_count} ingredients expire within 3 days - recipes will prioritize these!")
+                st.warning(f"{urgent_count} ingredients expire within 3 days - recipes will prioritize these!!!")
         
         # Create a dropdown for ingredients with expiry info
         with st.expander("Available Ingredients", expanded=False):
@@ -134,13 +134,13 @@ def leftover_management():
                     
                     # Color code based on urgency
                     if days_left <= 1:
-                        st.error(f"🔴 **{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
+                        st.error(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
                     elif days_left <= 3:
-                        st.warning(f"🟡 **{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
+                        st.warning(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
                     elif days_left <= 7:
-                        st.success(f"🟢 **{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
+                        st.success(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
                     else:
-                        st.info(f"⚪ **{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
+                        st.info(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
             else:
                 # Display other ingredients in a compact format
                 cols = st.columns(3)
@@ -171,10 +171,10 @@ def leftover_management():
         # Auto-generate recipes for Firebase ingredients or manual generation
         if firebase_leftovers and firebase_detailed_info:
             # Automatic generation for Firebase ingredients
-            st.info("🤖 Ready to generate recipes using your inventory ingredients!")
+            st.info("Ready to generate recipes using your inventory ingredients!")
             
             # Show auto-generate button
-            if st.button("🚀 Generate Smart Recipes", type="primary", use_container_width=True):
+            if st.button("Generate Smart Recipes", type="primary", use_container_width=True):
                 try:
                     with st.spinner("Generating recipes based on expiry priority..."):
                         # Call the suggest_recipes function with priority information
@@ -222,7 +222,7 @@ def leftover_management():
             st.success(f"Generated {len(st.session_state.recipes)} recipe suggestions!")
             
             # Display recipes
-            st.subheader("🍽️ Recipe Suggestions")
+            st.subheader("Recipe Suggestions")
             for i, recipe in enumerate(st.session_state.recipes):
                 st.write(f"{i+1}. **{recipe}**")
             
@@ -251,11 +251,11 @@ def leftover_management():
         # Example ingredients
         st.markdown("### Example Workflow")
         st.markdown("""
-        1. ✅ Check "Use current inventory from Firebase"
-        2. 🎯 Select max ingredients to use (prioritized by expiry)
-        3. 📥 Click "Fetch Priority Ingredients"
-        4. 🚀 Click "Generate Smart Recipes"
-        5. 🍽️ Get recipes that use ingredients expiring soonest!
+        1. Check "Use current inventory from Firebase"
+        2. Select max ingredients to use (prioritized by expiry)
+        3. Click "Fetch Priority Ingredients"
+        4. Click "Generate Smart Recipes"
+        5. Get recipes that use ingredients expiring soonest!
         """)
 
 @auth_required
@@ -278,7 +278,7 @@ def gamification_hub():
 @auth_required
 def cooking_quiz():
     """Cooking quiz feature"""
-    st.title("🧠 Cooking Knowledge Quiz")
+    st.title("Cooking Knowledge Quiz")
 
     user = get_current_user()
     if not user or not user.get('user_id'):
@@ -341,34 +341,29 @@ def main():
     check_event_firebase_config()
 
     # Render authentication UI in sidebar
-    st.sidebar.title("🔐 Authentication")
+    st.sidebar.title("Authentication")
     auth_status = render_auth_ui()
 
     # Main content
     if not st.session_state.is_authenticated:
-        st.title("🍽️ Smart Restaurant Menu Management System")
+        st.title("Smart Restaurant Menu Management System")
         st.markdown('''
-        Welcome to the AI-powered smart restaurant system! 🍽️
+        Welcome to the AI-powered smart restaurant system! 
         
-        **Features include:**
-        - 🧠 **Smart Recipe Generation** from leftover ingredients
-        - 🎯 **Expiry-Based Prioritization** to reduce food waste
-        - 🥬 **Complete Ingredient Management** with CRUD operations
-        - 🎮 **Gamification System** with quizzes and achievements  
-        - 🏆 **Leaderboards** to compete with other chefs
-        - 📊 **Progress Tracking** and skill development
-        - 🎉 **Event Planning** for special occasions
-        - 👨‍🍳 **Chef Recipe Management** with AI-powered menu generation
-        - 📣 **Marketing Campaign Generator** for promotions
-        - 📷 **Visual Menu Search** with AI dish detection
-        
+        **The current features are:**
+        1. Leftover management: Generates recipes from the ingredients about to expire soon to minimize waste
+        2. Menu generator: Menu generator with lots of customization options, to generate the menu for a whole week
+        3. Event Planning: An AI powered chatbot assisting users plan their events and staff members execute them. 
+        4. AI driven promotions generator: Generate high quality marketing campaigns with the help of AI
+        5. Visual menu search & Personalized recipe recommender
+        6. Full ingredient management & direct connection to Firestore 
         Please log in or register to access all features.
         ''')
         return
 
     # Feature selection in sidebar
     st.sidebar.divider()
-    st.sidebar.header("🚀 Features")
+    st.sidebar.header("Features")
 
     # List of all available features
     features = [
@@ -410,7 +405,7 @@ def main():
     # Display the selected feature
     if selected_feature == "Dashboard":
         dashboard()
-    elif selected_feature == "Ingredients Management":  # Added the route
+    elif selected_feature == "Ingredients Management":
         ingredients_management()
     elif selected_feature == "Leftover Management":
         leftover_management()
