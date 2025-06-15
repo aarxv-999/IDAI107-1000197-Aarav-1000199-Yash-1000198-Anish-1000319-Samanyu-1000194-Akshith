@@ -162,57 +162,202 @@ def render_ai_dish_detection(db, vision_client, gemini_model, allergies, user_id
             st.error("❌ Failed to process the uploaded image. Please try again.")
 
 def render_personalized_menu(db, gemini_model, allergies, user_id):
-    """Render personalized menu recommendations tab"""
+    """Render personalized menu recommendations tab - AI-powered without order history"""
     st.header("🎯 Personalized AI Menu")
-    st.markdown("Get AI-powered menu recommendations based on your preferences and order history!")
+    st.markdown("Get AI-powered menu recommendations based on your preferences and our smart analysis!")
     
     # XP info
     st.info("💡 **Earn 20 XP** for generating personalized recommendations!")
     
-    # Fetch user's order history
-    order_history = fetch_order_history(db, user_id) if user_id else []
+    # User preferences section
+    st.subheader("👤 Your Preferences (Optional)")
     
-    if order_history:
-        st.success(f"✅ Found {len(order_history)} previous orders to personalize recommendations")
+    # Load existing preferences if available
+    user_prefs = {}
+    if user_id and db:
+        try:
+            prefs_doc = db.collection("user_preferences").document(user_id).get()
+            if prefs_doc.exists:
+                user_prefs = prefs_doc.to_dict()
+                st.success("✅ Loaded your saved preferences!")
+        except:
+            pass
+    
+    # Preference input
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Get available cuisines from menu
+        menu_items = fetch_menu_items(db)
+        available_cuisines = list(set([item.get('cuisine', 'Unknown') for item in menu_items if item.get('cuisine')]))
         
-        # Show recent orders
-        with st.expander("📋 Your Recent Orders"):
-            recent_orders = sorted(order_history, key=lambda x: x.get('timestamp', 0), reverse=True)[:5]
-            for order in recent_orders:
-                order_date = datetime.fromtimestamp(order.get('timestamp', 0)).strftime('%Y-%m-%d %H:%M')
-                st.write(f"• **{order.get('dish_name', 'Unknown')}** - {order_date}")
-    else:
-        st.info("ℹ️ No order history found. Recommendations will be based on your dietary preferences.")
+        favorite_cuisines = st.multiselect(
+            "Favorite Cuisines",
+            available_cuisines,
+            default=user_prefs.get('favorite_cuisines', []),
+            help="Select cuisines you enjoy most"
+        )
+    
+    with col2:
+        available_categories = list(set([item.get('category', 'Unknown') for item in menu_items if item.get('category')]))
+        
+        preferred_categories = st.multiselect(
+            "Preferred Categories",
+            available_categories,
+            default=user_prefs.get('preferred_categories', []),
+            help="Select meal categories you prefer"
+        )
+    
+    # Save preferences option
+    if st.button("💾 Save My Preferences"):
+        if user_id and db:
+            try:
+                prefs_data = {
+                    'user_id': user_id,
+                    'favorite_cuisines': favorite_cuisines,
+                    'preferred_categories': preferred_categories,
+                    'last_updated': datetime.now().isoformat()
+                }
+                db.collection("user_preferences").document(user_id).set(prefs_data)
+                st.success("✅ Preferences saved!")
+            except Exception as e:
+                st.error(f"❌ Error saving preferences: {str(e)}")
+        else:
+            st.warning("⚠️ Please log in to save preferences")
+    
+    # Recommendation options
+    st.subheader("🤖 AI Recommendation Options")
+    
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        recommendation_type = st.selectbox(
+            "Recommendation Style",
+            ["Balanced Variety", "Cuisine Focus", "Dietary Optimized", "Chef's Special", "Quick & Easy"]
+        )
+        
+    with col4:
+        meal_context = st.selectbox(
+            "Meal Context",
+            ["Any Time", "Breakfast", "Lunch", "Dinner", "Snack", "Special Occasion"]
+        )
+    
+    # Advanced options
+    with st.expander("🔧 Advanced Options"):
+        include_description = st.checkbox("Include detailed descriptions", value=True)
+        include_ingredients = st.checkbox("Show key ingredients", value=True)
+        num_recommendations = st.slider("Number of recommendations", 3, 10, 5)
     
     # Generate recommendations button
-    if st.button("🚀 Generate Personalized Recommendations", type="primary"):
-        with st.spinner("🤖 AI is analyzing your preferences and generating recommendations..."):
-            # Fetch menu items
-            menu_items = fetch_menu_items(db)
+    if st.button("🚀 Generate AI Personalized Recommendations", type="primary"):
+        if not gemini_model:
+            st.error("❌ Gemini AI not configured. Please check your API key.")
+            return
+            
+        with st.spinner("🤖 AI is analyzing your preferences and our menu..."):
+            
             if not menu_items:
                 st.error("❌ No menu items found.")
                 return
             
-            # Create menu text for AI
-            menu_text = "\n".join([
-                f"- {item.get('name', 'Unknown')}: {item.get('description', '')} (Ingredients: {', '.join(item.get('ingredients', []))})"
-                for item in menu_items
-            ])
+            # Create comprehensive menu context for AI
+            menu_context = []
+            for item in menu_items:
+                menu_context.append({
+                    'name': item.get('name', 'Unknown'),
+                    'category': item.get('category', 'Unknown'),
+                    'cuisine': item.get('cuisine', 'Unknown'),
+                    'description': item.get('description', ''),
+                    'ingredients': item.get('ingredients', []),
+                    'diet': item.get('diet', []),
+                    'cook_time': item.get('cook_time', 'Unknown'),
+                    'types': item.get('types', [])
+                })
             
-            # Generate recommendations
-            recommendations = generate_personalized_recommendations(
-                gemini_model, allergies, order_history, menu_text
-            )
+            # Build AI prompt
+            user_profile = {
+                'dietary_restrictions': allergies,
+                'favorite_cuisines': favorite_cuisines,
+                'preferred_categories': preferred_categories,
+                'recommendation_type': recommendation_type,
+                'meal_context': meal_context
+            }
             
-            # Display recommendations
-            st.success("✅ **Your Personalized Menu Recommendations:**")
-            st.markdown(recommendations)
-            
-            # Award XP for generating recommendations
-            if user_id:
-                xp_earned = award_visual_menu_xp(user_id, 20, "personalized_recommendations")
-                if xp_earned > 0:
-                    show_xp_notification(20, "Personalized Menu Recommendations")
+            try:
+                recommendations = generate_smart_personalized_recommendations(
+                    gemini_model, menu_context, user_profile, num_recommendations, 
+                    include_description, include_ingredients
+                )
+                
+                # Display recommendations
+                st.success("✅ **Your AI-Powered Personalized Recommendations:**")
+                st.markdown(recommendations)
+                
+                # Award XP for generating recommendations
+                if user_id:
+                    xp_earned = award_visual_menu_xp(user_id, 20, "personalized_recommendations")
+                    if xp_earned > 0:
+                        show_xp_notification(20, "Personalized Menu Recommendations")
+                        
+            except Exception as e:
+                st.error(f"❌ Error generating recommendations: {str(e)}")
+
+def generate_smart_personalized_recommendations(gemini_model, menu_context, user_profile, num_recommendations, include_description, include_ingredients):
+    """Generate smart personalized recommendations using Gemini AI"""
+    
+    # Convert menu context to text
+    menu_text = "\n".join([
+        f"- {item['name']} ({item['category']}, {item['cuisine']}): {item['description']} "
+        f"[Ingredients: {', '.join(item['ingredients'][:5])}] "
+        f"[Diet: {', '.join(item['diet']) if isinstance(item['diet'], list) else item['diet']}] "
+        f"[Cook Time: {item['cook_time']}]"
+        for item in menu_context
+    ])
+    
+    # Build comprehensive prompt
+    prompt = f"""
+    You are a professional restaurant AI sommelier and menu curator. Analyze the following menu and user profile to provide {num_recommendations} personalized dish recommendations.
+
+    **User Profile:**
+    - Dietary Restrictions: {', '.join(user_profile['dietary_restrictions']) if user_profile['dietary_restrictions'] else 'None'}
+    - Favorite Cuisines: {', '.join(user_profile['favorite_cuisines']) if user_profile['favorite_cuisines'] else 'No preference'}
+    - Preferred Categories: {', '.join(user_profile['preferred_categories']) if user_profile['preferred_categories'] else 'No preference'}
+    - Recommendation Style: {user_profile['recommendation_type']}
+    - Meal Context: {user_profile['meal_context']}
+
+    **Available Menu:**
+    {menu_text}
+
+    **Instructions:**
+    1. Select {num_recommendations} dishes that best match the user's profile
+    2. Ensure variety in cuisines and categories unless user specifically prefers certain ones
+    3. Respect all dietary restrictions strictly
+    4. Consider the meal context and recommendation style
+    5. For "Balanced Variety": Mix different cuisines and categories
+    6. For "Cuisine Focus": Prioritize user's favorite cuisines
+    7. For "Dietary Optimized": Focus on dishes that perfectly match dietary needs
+    8. For "Chef's Special": Recommend unique or special items
+    9. For "Quick & Easy": Prioritize dishes with shorter cook times
+
+    **Output Format:**
+    For each recommendation, provide:
+    
+    ## 🍽️ [Dish Name]
+    **Why recommended:** [Brief explanation of why this matches the user]
+    **Cuisine:** [Cuisine type] | **Category:** [Category] | **Cook Time:** [Time]
+    {"**Description:** [Description]" if include_description else ""}
+    {"**Key Ingredients:** [List 3-4 main ingredients]" if include_ingredients else ""}
+    
+    ---
+
+    Make recommendations feel personal and explain the reasoning clearly. Focus on dishes that truly match the user's preferences and dietary needs.
+    """
+    
+    try:
+        response = gemini_model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        return f"Error generating recommendations: {str(e)}"
 
 def render_custom_filters(db, allergies):
     """Render custom menu filters tab - realistic implementation based on actual Firebase structure"""
