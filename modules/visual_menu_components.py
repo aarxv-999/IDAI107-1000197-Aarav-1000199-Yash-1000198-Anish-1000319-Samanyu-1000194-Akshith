@@ -219,30 +219,133 @@ def render_custom_filters(db, allergies):
     st.header("⚙️ Custom Menu Filters")
     st.markdown("Filter our menu based on your specific dietary needs and preferences!")
     
-    # Additional filter options
+    # Enhanced filter layout with organized sections
+    st.subheader("🍽️ Meal Preferences")
     col1, col2 = st.columns(2)
     
     with col1:
-        portion_size = st.selectbox("Portion Size", ["Regular", "Small", "Large"])
-        price_range = st.slider("Price Range ($)", 0, 50, (0, 50))
-    
+        meal_type = st.selectbox("Meal Type", ["All", "Breakfast", "Lunch", "Dinner", "Snacks", "Dessert"])
+        portion_size = st.selectbox("Portion Size", ["All", "Small", "Regular", "Large", "Family"])
+        
     with col2:
-        ingredient_swap = st.text_input("Ingredient to Avoid", placeholder="e.g., onions, garlic")
-        cuisine_type = st.selectbox("Cuisine Type", ["All", "Italian", "Chinese", "Indian", "Mexican", "American"])
+        prep_time = st.selectbox("Preparation Time", ["All", "Quick (< 15 min)", "Medium (15-30 min)", "Long (> 30 min)"])
+        difficulty = st.selectbox("Difficulty Level", ["All", "Easy", "Medium", "Hard", "Expert"])
+
+    st.subheader("🌶️ Taste & Style Preferences")
+    col3, col4 = st.columns(2)
     
+    with col3:
+        spice_level = st.selectbox("Spice Level", ["All", "Mild", "Medium", "Hot", "Extra Hot"])
+        cooking_method = st.selectbox("Cooking Method", ["All", "Grilled", "Fried", "Baked", "Steamed", "Raw", "Roasted"])
+        
+    with col4:
+        temperature = st.selectbox("Serving Temperature", ["All", "Hot", "Cold", "Room Temperature"])
+        texture = st.selectbox("Texture Preference", ["All", "Crispy", "Soft", "Chewy", "Crunchy", "Smooth", "Creamy"])
+
+    # Advanced filters in expandable section
+    with st.expander("🔧 Advanced Filters"):
+        col5, col6 = st.columns(2)
+        
+        with col5:
+            ingredient_swap = st.text_input("Ingredient to Avoid", placeholder="e.g., onions, garlic, nuts")
+            cuisine_type = st.selectbox("Cuisine Type", ["All", "Italian", "Chinese", "Indian", "Mexican", "American", "Thai", "Japanese", "Mediterranean", "French", "Korean"])
+            
+        with col6:
+            calorie_range = st.selectbox("Calorie Range", ["All", "Light (< 300 cal)", "Moderate (300-600 cal)", "Heavy (> 600 cal)"])
+            protein_level = st.selectbox("Protein Content", ["All", "Low Protein", "Medium Protein", "High Protein"])
+
     # Apply filters button
-    if st.button("🔍 Apply Filters", type="primary"):
-        with st.spinner("Filtering menu items..."):
+    if st.button("🔍 Apply Advanced Filters", type="primary"):
+        with st.spinner("Filtering menu items with advanced criteria..."):
             # Fetch menu items
             menu_items = fetch_menu_items(db)
             if not menu_items:
                 st.error("❌ No menu items found.")
                 return
             
-            # Apply allergy filters
+            # Apply allergy filters first
             filtered_menu, debug_info = filter_menu_by_allergies(menu_items, allergies)
             
-            # Apply additional filters
+            # Apply meal type filter
+            if meal_type != "All":
+                filtered_menu = [
+                    item for item in filtered_menu 
+                    if item.get('meal_type', '').lower() == meal_type.lower() or
+                       meal_type.lower() in item.get('description', '').lower()
+                ]
+            
+            # Apply spice level filter
+            if spice_level != "All":
+                spice_keywords = {
+                    "Mild": ["mild", "gentle", "light", "subtle"],
+                    "Medium": ["medium", "moderate", "balanced"],
+                    "Hot": ["hot", "spicy", "chili", "pepper", "jalapeño"],
+                    "Extra Hot": ["extra hot", "very spicy", "fiery", "ghost pepper", "habanero", "carolina reaper"]
+                }
+                if spice_level in spice_keywords:
+                    filtered_menu = [
+                        item for item in filtered_menu 
+                        if any(keyword in item.get('description', '').lower() or 
+                              keyword in ' '.join(item.get('ingredients', [])).lower() 
+                              for keyword in spice_keywords[spice_level])
+                    ]
+            
+            # Apply cooking method filter
+            if cooking_method != "All":
+                filtered_menu = [
+                    item for item in filtered_menu 
+                    if cooking_method.lower() in item.get('description', '').lower() or 
+                       cooking_method.lower() in ' '.join(item.get('ingredients', [])).lower() or
+                       cooking_method.lower() in item.get('name', '').lower()
+                ]
+            
+            # Apply temperature filter
+            if temperature != "All":
+                temp_keywords = {
+                    "Hot": ["hot", "warm", "heated", "grilled", "fried", "baked", "roasted", "steamed"],
+                    "Cold": ["cold", "chilled", "frozen", "ice", "gazpacho", "salad", "smoothie"],
+                    "Room Temperature": ["room temperature", "ambient", "cheese", "bread"]
+                }
+                if temperature in temp_keywords:
+                    filtered_menu = [
+                        item for item in filtered_menu 
+                        if any(keyword in item.get('description', '').lower() or
+                              keyword in item.get('name', '').lower()
+                              for keyword in temp_keywords[temperature])
+                    ]
+            
+            # Apply texture filter
+            if texture != "All":
+                texture_keywords = {
+                    "Crispy": ["crispy", "crunchy", "fried", "toasted", "baked"],
+                    "Soft": ["soft", "tender", "moist", "fluffy"],
+                    "Chewy": ["chewy", "al dente", "pasta", "bread"],
+                    "Crunchy": ["crunchy", "crispy", "nuts", "seeds", "crackers"],
+                    "Smooth": ["smooth", "pureed", "soup", "sauce"],
+                    "Creamy": ["creamy", "cream", "butter", "cheese", "yogurt"]
+                }
+                if texture in texture_keywords:
+                    filtered_menu = [
+                        item for item in filtered_menu 
+                        if any(keyword in item.get('description', '').lower() or
+                              keyword in ' '.join(item.get('ingredients', [])).lower()
+                              for keyword in texture_keywords[texture])
+                    ]
+            
+            # Apply prep time filter
+            if prep_time != "All":
+                # This would require prep_time data in menu items
+                # For now, we'll filter based on cooking method complexity
+                if prep_time == "Quick (< 15 min)":
+                    quick_methods = ["raw", "salad", "smoothie", "sandwich"]
+                    filtered_menu = [
+                        item for item in filtered_menu 
+                        if any(method in item.get('description', '').lower() or
+                              method in item.get('name', '').lower()
+                              for method in quick_methods)
+                    ]
+            
+            # Apply existing filters (ingredient_swap and cuisine_type)
             if ingredient_swap:
                 filtered_menu = [
                     item for item in filtered_menu 
@@ -255,37 +358,67 @@ def render_custom_filters(db, allergies):
                     if item.get('cuisine', '').lower() == cuisine_type.lower()
                 ]
             
+            # Apply calorie filter (if calorie info is available)
+            if calorie_range != "All":
+                # Since most menu items might not have calorie data, we'll use dish type as proxy
+                calorie_proxies = {
+                    "Light (< 300 cal)": ["salad", "soup", "smoothie", "fruit", "vegetable"],
+                    "Moderate (300-600 cal)": ["pasta", "rice", "chicken", "fish"],
+                    "Heavy (> 600 cal)": ["burger", "pizza", "steak", "fried", "cheese", "cream"]
+                }
+                if calorie_range in calorie_proxies:
+                    filtered_menu = [
+                        item for item in filtered_menu 
+                        if any(proxy in item.get('name', '').lower() or
+                              proxy in item.get('description', '').lower() or
+                              proxy in ' '.join(item.get('ingredients', [])).lower()
+                              for proxy in calorie_proxies[calorie_range])
+                    ]
+            
             # Display results
             if filtered_menu:
-                st.success(f"✅ Found {len(filtered_menu)} dishes matching your criteria")
+                st.success(f"✅ Found {len(filtered_menu)} dishes matching your advanced criteria")
                 
-                # Create display dataframe
+                # Create enhanced display dataframe
                 display_data = []
                 for item in filtered_menu:
                     display_data.append({
                         "Dish Name": item.get('name', 'Unknown'),
-                        "Description": item.get('description', '')[:100] + ("..." if len(item.get('description', '')) > 100 else ""),
+                        "Description": item.get('description', '')[:80] + ("..." if len(item.get('description', '')) > 80 else ""),
                         "Cuisine": item.get('cuisine', 'Unknown'),
-                        "Ingredients": ', '.join(item.get('ingredients', [])[:5]) + ("..." if len(item.get('ingredients', [])) > 5 else ""),
+                        "Ingredients": ', '.join(item.get('ingredients', [])[:4]) + ("..." if len(item.get('ingredients', [])) > 4 else ""),
                         "Dietary Tags": ', '.join(item.get('diet', []) if isinstance(item.get('diet'), list) else [str(item.get('diet', ''))]),
-                        "Portion": portion_size
+                        "Portion": portion_size if portion_size != "All" else "Regular"
                     })
                 
                 df = pd.DataFrame(display_data)
                 st.dataframe(df, use_container_width=True)
                 
+                # Show filter summary
+                st.info(f"🎯 **Active Filters:** {meal_type}, {spice_level} spice, {cooking_method} cooking, {temperature} temperature, {texture} texture")
+                
             else:
-                st.warning("⚠️ No menu items match your selected criteria.")
+                st.warning("⚠️ No menu items match your selected criteria. Try adjusting your filters.")
                 
                 # Show debug information
-                with st.expander("🔍 Debug Information"):
-                    st.write("**Selected Filters:**")
+                with st.expander("🔍 Filter Debug Information"):
+                    st.write("**Selected Advanced Filters:**")
                     st.write(f"- Dietary Restrictions: {allergies}")
+                    st.write(f"- Meal Type: {meal_type}")
+                    st.write(f"- Portion Size: {portion_size}")
+                    st.write(f"- Spice Level: {spice_level}")
+                    st.write(f"- Cooking Method: {cooking_method}")
+                    st.write(f"- Temperature: {temperature}")
+                    st.write(f"- Texture: {texture}")
+                    st.write(f"- Prep Time: {prep_time}")
+                    st.write(f"- Difficulty: {difficulty}")
                     st.write(f"- Ingredient to Avoid: {ingredient_swap}")
                     st.write(f"- Cuisine Type: {cuisine_type}")
+                    st.write(f"- Calorie Range: {calorie_range}")
+                    st.write(f"- Protein Level: {protein_level}")
                     
                     if debug_info:
-                        st.write("**Filter Debug Info:**")
+                        st.write("**Allergy Filter Debug Info:**")
                         for info in debug_info[:10]:  # Show first 10
                             st.write(f"- {info}")
 
