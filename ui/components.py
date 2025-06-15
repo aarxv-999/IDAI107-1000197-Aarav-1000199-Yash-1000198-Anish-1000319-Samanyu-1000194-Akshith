@@ -25,21 +25,43 @@ def initialize_session_state():
         st.session_state.auth_error = None
 
 def get_firestore_client():
-    """Get Firestore client"""
+    """Get Firestore client for authentication - using event Firebase"""
     try:
-        return firestore.client()
+        # Use the event Firebase app for user authentication
+        if 'event_app' in [app.name for app in firebase_admin._apps.values()]:
+            return firestore.client(app=firebase_admin.get_app(name='event_app'))
+        else:
+            # Initialize event Firebase if not already done
+            from modules.event_planner import init_event_firebase
+            init_event_firebase()
+            return firestore.client(app=firebase_admin.get_app(name='event_app'))
     except Exception as e:
-        logger.error(f"Error getting Firestore client: {str(e)}")
+        logger.error(f"Error getting Firestore client for auth: {str(e)}")
+        return None
+
+def get_main_firestore_client():
+    """Get main Firestore client for gamification stats"""
+    try:
+        # Use the main Firebase app (default) for gamification
+        if firebase_admin._DEFAULT_APP_NAME in [app.name for app in firebase_admin._apps.values()]:
+            return firestore.client()
+        else:
+            # Initialize main Firebase if not already done
+            from firebase_init import init_firebase
+            init_firebase()
+            return firestore.client()
+    except Exception as e:
+        logger.error(f"Error getting main Firestore client: {str(e)}")
         return None
 
 def authenticate_user(username, password):
-    """Authenticate user against Firestore"""
+    """Authenticate user against event Firebase"""
     try:
-        db = get_firestore_client()
+        db = get_firestore_client()  # This now uses event Firebase
         if not db:
             return None, "Database connection failed"
         
-        # Query users collection
+        # Query users collection in event Firebase
         users_ref = db.collection('users')
         query = users_ref.where('username', '==', username).where('password', '==', password)
         docs = query.stream()
@@ -52,8 +74,10 @@ def authenticate_user(username, password):
         if user_doc:
             user_data = user_doc.to_dict()
             user_data['user_id'] = doc.id  # Add document ID as user_id
+            logger.info(f"User authenticated successfully: {username}")
             return user_data, None
         else:
+            logger.warning(f"Authentication failed for user: {username}")
             return None, "Invalid username or password"
             
     except Exception as e:
@@ -61,9 +85,9 @@ def authenticate_user(username, password):
         return None, f"Authentication error: {str(e)}"
 
 def register_user(username, password, role='user'):
-    """Register a new user"""
+    """Register a new user in event Firebase"""
     try:
-        db = get_firestore_client()
+        db = get_firestore_client()  # This now uses event Firebase
         if not db:
             return False, "Database connection failed"
         
@@ -86,6 +110,7 @@ def register_user(username, password, role='user'):
         doc_ref = users_ref.add(user_data)
         user_data['user_id'] = doc_ref[1].id
         
+        logger.info(f"User registered successfully: {username}")
         return True, "User registered successfully"
         
     except Exception as e:
@@ -173,7 +198,7 @@ def display_user_stats_sidebar(user_id):
     try:
         from modules.leftover import get_user_stats
         
-        # Get user stats
+        # Get user stats from main Firebase (gamification uses main Firebase)
         user_stats = get_user_stats(user_id)
         
         st.sidebar.markdown("---")
@@ -233,7 +258,7 @@ def display_gamification_dashboard(user_id):
     try:
         from modules.leftover import get_user_stats, get_leaderboard
         
-        # Get user stats
+        # Get user stats from main Firebase
         user_stats = get_user_stats(user_id)
         
         # Overview metrics
