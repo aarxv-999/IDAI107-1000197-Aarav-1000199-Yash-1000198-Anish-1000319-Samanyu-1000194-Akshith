@@ -236,8 +236,8 @@ def update_ingredient(doc_id: str, ingredient_name: str, quantity: float, ingred
         if not validate_date_format(expiry_date):
             return False, "Invalid date format. Use dd/mm/yyyy"
         
-        if not is_future_date(expiry_date):
-            return False, "Expiry date must be in the future"
+        # For updates, allow past dates (in case ingredient is already expired)
+        # Just validate the format, not the future date requirement
         
         # Update ingredient document
         update_data = {
@@ -550,19 +550,23 @@ def render_add_ingredient():
                 alternatives = st.text_input("🔄 Alternatives", placeholder="Optional alternatives...")
             with col2b:
                 st.write("")  # Spacing
-                if st.form_submit_button("🤖 AI Suggest", use_container_width=True):
-                    if ingredient_name:
-                        with st.spinner("Getting AI suggestions..."):
-                            ai_alternatives = suggest_alternatives_with_ai(ingredient_name)
-                            st.session_state.suggested_alternatives = ", ".join(ai_alternatives)
-                    else:
-                        st.warning("Enter ingredient name first")
+                ai_suggest_button = st.form_submit_button("🤖 AI Suggest", use_container_width=True)
         
         # Show AI suggestions if available
         if 'suggested_alternatives' in st.session_state:
             st.info(f"🤖 AI Suggestions: {st.session_state.suggested_alternatives}")
             if st.checkbox("Use AI suggestions"):
                 alternatives = st.session_state.suggested_alternatives
+        
+        # Handle AI suggestion button
+        if ai_suggest_button:
+            if ingredient_name:
+                with st.spinner("Getting AI suggestions..."):
+                    ai_alternatives = suggest_alternatives_with_ai(ingredient_name)
+                    st.session_state.suggested_alternatives = ", ".join(ai_alternatives)
+                    st.rerun()
+            else:
+                st.warning("Enter ingredient name first")
         
         submitted = st.form_submit_button("➕ Add Ingredient", type="primary", use_container_width=True)
         
@@ -633,16 +637,28 @@ def render_edit_ingredient():
             else:
                 ingredient_type = st.text_input("🏷️ Type*", value=current_type)
             
-            # Parse current expiry date
+            # Parse current expiry date with better error handling
             current_expiry = current_ingredient.get('Expiry Date', '')
             try:
                 current_expiry_date = datetime.strptime(current_expiry, "%d/%m/%Y").date()
             except:
                 current_expiry_date = date.today() + timedelta(days=7)
             
+            # For editing, allow past dates (ingredients might already be expired)
+            # Set min_value to a reasonable past date instead of future only
+            min_date = date.today() - timedelta(days=365)  # Allow up to 1 year in the past
+            max_date = date.today() + timedelta(days=365*10)  # Allow up to 10 years in the future
+            
+            # Ensure current_expiry_date is within bounds
+            if current_expiry_date < min_date:
+                current_expiry_date = min_date
+            elif current_expiry_date > max_date:
+                current_expiry_date = max_date
+            
             expiry_date_input = st.date_input("📅 Expiry Date*", 
                                             value=current_expiry_date,
-                                            min_value=date.today() + timedelta(days=1))
+                                            min_value=min_date,
+                                            max_value=max_date)
             expiry_date = expiry_date_input.strftime("%d/%m/%Y")
         
         # Alternatives with AI suggestion
@@ -652,13 +668,7 @@ def render_edit_ingredient():
                                        value=current_ingredient.get('Alternatives', ''))
         with col2b:
             st.write("")  # Spacing
-            if st.form_submit_button("🤖 AI Suggest"):
-                if ingredient_name:
-                    with st.spinner("Getting AI suggestions..."):
-                        ai_alternatives = suggest_alternatives_with_ai(ingredient_name)
-                        st.session_state.edit_suggested_alternatives = ", ".join(ai_alternatives)
-                else:
-                    st.warning("Enter ingredient name first")
+            ai_suggest_edit_button = st.form_submit_button("🤖 AI Suggest")
         
         # Show AI suggestions if available
         if 'edit_suggested_alternatives' in st.session_state:
@@ -666,21 +676,26 @@ def render_edit_ingredient():
             if st.checkbox("Use AI suggestions"):
                 alternatives = st.session_state.edit_suggested_alternatives
         
+        # Handle AI suggestion button
+        if ai_suggest_edit_button:
+            if ingredient_name:
+                with st.spinner("Getting AI suggestions..."):
+                    ai_alternatives = suggest_alternatives_with_ai(ingredient_name)
+                    st.session_state.edit_suggested_alternatives = ", ".join(ai_alternatives)
+                    st.rerun()
+            else:
+                st.warning("Enter ingredient name first")
+        
         col1, col2, col3 = st.columns(3)
         
         with col1:
             update_submitted = st.form_submit_button("💾 Update Ingredient", type="primary", use_container_width=True)
         
         with col2:
-            if st.form_submit_button("🗑️ Delete Ingredient", use_container_width=True):
-                st.session_state.confirm_delete = edit_id
+            delete_submitted = st.form_submit_button("🗑️ Delete Ingredient", use_container_width=True)
         
         with col3:
-            if st.form_submit_button("← Back to View", use_container_width=True):
-                del st.session_state.edit_ingredient_id
-                if 'edit_suggested_alternatives' in st.session_state:
-                    del st.session_state.edit_suggested_alternatives
-                st.rerun()
+            back_submitted = st.form_submit_button("← Back to View", use_container_width=True)
         
         if update_submitted:
             # Validate quantity
@@ -699,6 +714,16 @@ def render_edit_ingredient():
                     st.rerun()
                 else:
                     st.error(f"❌ {message}")
+        
+        if delete_submitted:
+            st.session_state.confirm_delete = edit_id
+            st.rerun()
+        
+        if back_submitted:
+            del st.session_state.edit_ingredient_id
+            if 'edit_suggested_alternatives' in st.session_state:
+                del st.session_state.edit_suggested_alternatives
+            st.rerun()
     
     # Handle delete confirmation
     if st.session_state.get('confirm_delete') == edit_id:
