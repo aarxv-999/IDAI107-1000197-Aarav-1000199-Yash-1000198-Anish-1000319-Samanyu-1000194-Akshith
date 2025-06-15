@@ -31,7 +31,7 @@ from modules.promotion_components import render_promotion_generator
 from modules.visual_menu_components import render_visual_menu_search
 
 # Import the ingredients management module
-from ingredients_management import render_ingredient_management
+from modules.ingredients_management import render_ingredient_management
 
 init_firebase()
 
