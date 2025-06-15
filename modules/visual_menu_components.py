@@ -309,13 +309,23 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
                 st.session_state['current_recommendations'] = recommendations_data['dishes']
                 st.session_state['recommendation_context'] = f"{recommendation_type}_{meal_context}"
                 
-                # Display recommendations
+                # Display recommendations with integrated like buttons
                 st.success("✅ **Your AI-Powered Personalized Recommendations:**")
-                st.markdown(recommendations_data['explanation'])
-                
-                # Display each recommendation with like button
-                st.subheader("💖 Like dishes to help AI learn your preferences!")
-                
+
+                # Show strategy explanation only
+                strategy_lines = recommendations_data['explanation'].split('\n')
+                strategy_text = ""
+                for line in strategy_lines:
+                    if line.strip().startswith('**Recommendation Strategy:**'):
+                        strategy_text = line.strip()
+                        break
+
+                if strategy_text:
+                    st.info(strategy_text)
+
+                # Display each recommendation with integrated like button (ONLY ONCE)
+                st.subheader("💖 Your Personalized Dishes - Like to help AI learn!")
+
                 for i, dish in enumerate(recommendations_data['dishes']):
                     with st.container():
                         st.markdown("---")
@@ -394,7 +404,7 @@ def save_dish_like(db, user_id, dish, recommendation_context):
         return False
 
 def generate_smart_personalized_recommendations_with_learning(gemini_model, menu_context, user_profile, num_recommendations, include_description, include_ingredients):
-    """Generate smart personalized recommendations using Gemini AI with learning from likes"""
+    """Generate smart personalized recommendations using Gemini AI with learning from likes - FIXED CUISINE FILTERING"""
     
     # Convert menu context to text
     menu_text = "\n".join([
@@ -424,9 +434,23 @@ def generate_smart_personalized_recommendations_with_learning(gemini_model, menu
         IMPORTANT: Use this learning data to heavily influence recommendations. Prioritize similar cuisines, categories, and ingredients.
         """
     
-    # Build comprehensive prompt
+    # Build STRICT filtering requirements
+    strict_requirements = []
+    if user_profile['favorite_cuisines']:
+        strict_requirements.append(f"MUST ONLY recommend dishes from these cuisines: {', '.join(user_profile['favorite_cuisines'])}")
+    if user_profile['preferred_categories']:
+        strict_requirements.append(f"MUST ONLY recommend dishes from these categories: {', '.join(user_profile['preferred_categories'])}")
+    if user_profile['dietary_restrictions']:
+        strict_requirements.append(f"MUST NEVER recommend dishes containing: {', '.join(user_profile['dietary_restrictions'])}")
+    
+    strict_requirements_text = "\n".join([f"- {req}" for req in strict_requirements]) if strict_requirements else "- No strict filtering requirements"
+    
+    # Build comprehensive prompt with STRICT FILTERING
     prompt = f"""
-    You are a professional restaurant AI sommelier that learns from user preferences. Analyze the menu and user profile to provide {num_recommendations} personalized dish recommendations.
+    You are a professional restaurant AI sommelier that learns from user preferences. You MUST follow the strict filtering requirements below.
+
+    **STRICT FILTERING REQUIREMENTS (MUST FOLLOW):**
+    {strict_requirements_text}
 
     **User Profile:**
     - Dietary Restrictions: {', '.join(user_profile['dietary_restrictions']) if user_profile['dietary_restrictions'] else 'None'}
@@ -440,27 +464,24 @@ def generate_smart_personalized_recommendations_with_learning(gemini_model, menu
     **Available Menu:**
     {menu_text}
 
-    **Instructions:**
-    1. If learning data exists, HEAVILY prioritize dishes similar to what the user has liked
-    2. Select {num_recommendations} dishes that best match the user's profile and learning data
-    3. Ensure variety unless user specifically prefers certain cuisines/categories
-    4. Respect all dietary restrictions strictly
-    5. Consider the meal context and recommendation style
-    6. For "Based on Likes": Only recommend if learning data exists, otherwise use "Balanced Variety"
+    **CRITICAL INSTRUCTIONS:**
+    1. If user selected specific cuisines, ONLY recommend dishes from those exact cuisines - NO EXCEPTIONS
+    2. If user selected specific categories, ONLY recommend dishes from those exact categories - NO EXCEPTIONS
+    3. NEVER recommend dishes that contain dietary restrictions ingredients
+    4. If learning data exists, prioritize dishes similar to what the user has liked
+    5. Select exactly {num_recommendations} dishes that match ALL requirements
+    6. If not enough dishes match the strict requirements, say "INSUFFICIENT_MATCHES" and explain why
+    7. Double-check each recommendation against the requirements before including it
 
     **Output Format:**
-    Return a JSON-like structure with:
-    1. First, provide a brief explanation of your recommendation strategy
-    2. Then list each dish with: name, cuisine, category, description (if requested), key ingredients (if requested), and reason for recommendation
-
-    Start with: **Recommendation Strategy:** [Your strategy explanation]
+    Start with: **Recommendation Strategy:** [Brief explanation of your filtering strategy]
 
     Then for each dish:
     ## 🍽️ [Dish Name]
-    **Cuisine:** [Cuisine] | **Category:** [Category] | **Cook Time:** [Time]
+    **Cuisine:** [Cuisine] | **Category:** [Category]
     {"**Description:** [Description]" if include_description else ""}
     {"**Key Ingredients:** [List 3-4 main ingredients]" if include_ingredients else ""}
-    **Why recommended:** [Specific reason based on user profile and learning data]
+    **Why recommended:** [Specific reason based on user profile and requirements]
     
     ---
     """
@@ -468,6 +489,13 @@ def generate_smart_personalized_recommendations_with_learning(gemini_model, menu
     try:
         response = gemini_model.generate_content(prompt)
         response_text = response.text.strip()
+        
+        # Check for insufficient matches
+        if "INSUFFICIENT_MATCHES" in response_text:
+            return {
+                'explanation': response_text,
+                'dishes': []
+            }
         
         # Parse the response to extract dish data
         dishes = []
@@ -496,9 +524,32 @@ def generate_smart_personalized_recommendations_with_learning(gemini_model, menu
         if current_dish:
             dishes.append(current_dish)
         
+        # VALIDATION: Double-check that recommendations match user requirements
+        validated_dishes = []
+        for dish in dishes:
+            is_valid = True
+            
+            # Check cuisine requirement
+            if user_profile['favorite_cuisines']:
+                if not any(fav_cuisine.lower() in dish.get('cuisine', '').lower() for fav_cuisine in user_profile['favorite_cuisines']):
+                    logger.warning(f"Dish {dish['name']} has cuisine {dish.get('cuisine')} but user wants {user_profile['favorite_cuisines']}")
+                    is_valid = False
+            
+            # Check category requirement
+            if user_profile['preferred_categories']:
+                if not any(pref_cat.lower() in dish.get('category', '').lower() for pref_cat in user_profile['preferred_categories']):
+                    logger.warning(f"Dish {dish['name']} has category {dish.get('category')} but user wants {user_profile['preferred_categories']}")
+                    is_valid = False
+            
+            if is_valid:
+                validated_dishes.append(dish)
+        
+        if len(validated_dishes) < len(dishes):
+            logger.warning(f"Filtered out {len(dishes) - len(validated_dishes)} dishes that didn't match requirements")
+        
         return {
             'explanation': response_text,
-            'dishes': dishes
+            'dishes': validated_dishes
         }
         
     except Exception as e:
