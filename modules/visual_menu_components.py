@@ -20,68 +20,82 @@ import logging
 logger = logging.getLogger(__name__)
 
 def initialize_collections_if_needed(db):
-    """Initialize required collections if they don't exist - RUNS ONLY ONCE"""
+    """Initialize required collections if they don't exist - FIXED VERSION"""
+    try:
+        if not db:
+            st.error("❌ Database connection failed")
+            return False
+            
+        st.info("🔧 Checking and setting up required collections...")
+        
+        collections_created = []
+        
+        # Force create user_preferences collection
+        try:
+            # Try to create the collection by adding a document
+            dummy_prefs = {
+                'user_id': 'system_init',
+                'favorite_cuisines': [],
+                'preferred_categories': [],
+                'last_updated': datetime.now().isoformat(),
+                'is_system_init': True,
+                'created_at': datetime.now().isoformat()
+            }
+            db.collection("user_preferences").document("system_init").set(dummy_prefs)
+            collections_created.append("user_preferences")
+            logger.info("✅ Created user_preferences collection")
+        except Exception as e:
+            logger.error(f"❌ Error creating user_preferences: {str(e)}")
+            st.error(f"❌ Error creating user_preferences: {str(e)}")
+            
+        # Force create user_dish_likes collection
+        try:
+            dummy_like = {
+                'user_id': 'system_init',
+                'dish_name': 'System Initialization',
+                'dish_cuisine': 'System',
+                'dish_category': 'System',
+                'dish_ingredients': [],
+                'liked_at': datetime.now().isoformat(),
+                'recommendation_context': 'system_init',
+                'is_system_init': True,
+                'created_at': datetime.now().isoformat()
+            }
+            db.collection("user_dish_likes").document("system_init").set(dummy_like)
+            collections_created.append("user_dish_likes")
+            logger.info("✅ Created user_dish_likes collection")
+        except Exception as e:
+            logger.error(f"❌ Error creating user_dish_likes: {str(e)}")
+            st.error(f"❌ Error creating user_dish_likes: {str(e)}")
+        
+        if collections_created:
+            st.success(f"✅ Successfully created collections: {', '.join(collections_created)}")
+            st.info("🎯 Collections are now ready for your data!")
+            return True
+        else:
+            st.warning("⚠️ No new collections were created")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Critical error in collection initialization: {str(e)}")
+        st.error(f"❌ Critical error setting up collections: {str(e)}")
+        return False
+
+def cleanup_system_collections(db):
+    """CLEANUP FUNCTION - Call this to remove system initialization documents"""
     try:
         if not db:
             return False
             
-        # Check if collections already exist by trying to read them
-        collections_to_create = []
+        # Delete system init documents
+        db.collection("user_preferences").document("system_init").delete()
+        db.collection("user_dish_likes").document("system_init").delete()
         
-        # Check user_preferences collection
-        try:
-            prefs_docs = list(db.collection("user_preferences").limit(1).stream())
-            logger.info("user_preferences collection already exists")
-        except:
-            collections_to_create.append("user_preferences")
-            
-        # Check user_dish_likes collection  
-        try:
-            likes_docs = list(db.collection("user_dish_likes").limit(1).stream())
-            logger.info("user_dish_likes collection already exists")
-        except:
-            collections_to_create.append("user_dish_likes")
+        st.success("✅ System initialization documents cleaned up!")
+        return True
         
-        # Create collections only if they don't exist
-        if collections_to_create:
-            st.info(f"🔧 Setting up required collections: {', '.join(collections_to_create)}")
-            
-            if "user_preferences" in collections_to_create:
-                # Create a dummy document to initialize the collection
-                dummy_prefs = {
-                    'user_id': 'system_init',
-                    'favorite_cuisines': [],
-                    'preferred_categories': [],
-                    'last_updated': datetime.now().isoformat(),
-                    'is_system_init': True
-                }
-                db.collection("user_preferences").document("system_init").set(dummy_prefs)
-                logger.info("Created user_preferences collection")
-                
-            if "user_dish_likes" in collections_to_create:
-                # Create a dummy document to initialize the collection
-                dummy_like = {
-                    'user_id': 'system_init',
-                    'dish_name': 'System Initialization',
-                    'dish_cuisine': 'System',
-                    'dish_category': 'System',
-                    'dish_ingredients': [],
-                    'liked_at': datetime.now().isoformat(),
-                    'recommendation_context': 'system_init',
-                    'is_system_init': True
-                }
-                db.collection("user_dish_likes").document("system_init").set(dummy_like)
-                logger.info("Created user_dish_likes collection")
-            
-            st.success("✅ Collections initialized successfully!")
-            return True
-        else:
-            logger.info("All required collections already exist")
-            return True
-            
     except Exception as e:
-        logger.error(f"Error initializing collections: {str(e)}")
-        st.error(f"❌ Error setting up collections: {str(e)}")
+        st.error(f"❌ Error cleaning up: {str(e)}")
         return False
 
 def render_visual_menu_search():
@@ -94,18 +108,42 @@ def render_visual_menu_search():
     user_id = user.get('user_id')
     username = user.get('username', 'Unknown User')
     
-    # Initialize database connection
+    # Initialize database connection - ENSURE IT'S THE EVENT FIREBASE
     db = get_visual_menu_firebase_db()
     if not db:
-        st.error("❌ Database connection failed. Please check your configuration.")
+        st.error("❌ Event Firebase database connection failed. Please check your configuration.")
+        st.info("💡 Make sure you're connected to the EVENT Firebase database, not the main one.")
         return
     
-    # Initialize collections if needed (RUNS ONLY ONCE)
-    if 'collections_initialized' not in st.session_state:
-        if initialize_collections_if_needed(db):
-            st.session_state.collections_initialized = True
-        else:
-            st.warning("⚠️ Some features may not work properly due to collection setup issues.")
+    # Show database info for debugging
+    with st.expander("🔍 Database Debug Info"):
+        st.write("**Current Database Connection:**")
+        st.write(f"- Database object: {type(db)}")
+        st.write(f"- User ID: {user_id}")
+        st.write("- Target Collections: user_preferences, user_dish_likes")
+        
+        # Test database connection
+        try:
+            # Try to read any collection to test connection
+            test_docs = list(db.collection("menu_items").limit(1).stream())
+            st.success("✅ Database connection is working")
+            st.write(f"- Found menu items: {len(test_docs) > 0}")
+        except Exception as e:
+            st.error(f"❌ Database connection test failed: {str(e)}")
+    
+    # Initialize collections - ALWAYS TRY TO CREATE
+    if st.button("🔧 Initialize Collections (Click if first time)"):
+        with st.spinner("Setting up collections in Event Firebase..."):
+            if initialize_collections_if_needed(db):
+                st.session_state.collections_initialized = True
+                st.balloons()
+            else:
+                st.error("❌ Failed to initialize collections")
+    
+    # Cleanup button (for when you want to remove system docs)
+    if st.button("🧹 Cleanup System Documents"):
+        if cleanup_system_collections(db):
+            st.balloons()
     
     # Initialize AI services
     vision_client = configure_vision_api()
@@ -238,6 +276,11 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
     st.header("🎯 Personalized AI Menu")
     st.markdown("Get AI-powered menu recommendations that learn from your preferences!")
     
+    # Check if collections are ready
+    if not user_id:
+        st.warning("⚠️ Please log in to use personalized features")
+        return
+        
     # XP info
     st.info("💡 **Earn 20 XP** for generating recommendations • **Earn 5 XP** for each like!")
     
@@ -246,26 +289,26 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
     
     # Load existing preferences if available
     user_prefs = {}
-    if user_id and db:
-        try:
-            prefs_doc = db.collection("user_preferences").document(user_id).get()
-            if prefs_doc.exists:
-                user_prefs = prefs_doc.to_dict()
-                if not user_prefs.get('is_system_init', False):  # Don't show system init as success
-                    st.success("✅ Loaded your saved preferences!")
-        except:
-            pass
+    try:
+        prefs_doc = db.collection("user_preferences").document(user_id).get()
+        if prefs_doc.exists:
+            user_prefs = prefs_doc.to_dict()
+            if not user_prefs.get('is_system_init', False):  # Don't show system init as success
+                st.success("✅ Loaded your saved preferences!")
+    except Exception as e:
+        st.info("ℹ️ No saved preferences found (this is normal for first-time users)")
+        logger.info(f"No preferences found for user {user_id}: {str(e)}")
     
     # Load user's liked dishes for AI learning
     user_likes = []
-    if user_id and db:
-        try:
-            likes_docs = db.collection("user_dish_likes").where("user_id", "==", user_id).stream()
-            user_likes = [doc.to_dict() for doc in likes_docs if not doc.to_dict().get('is_system_init', False)]
-            if user_likes:
-                st.info(f"🧠 AI has learned from {len(user_likes)} dishes you've liked!")
-        except:
-            pass
+    try:
+        likes_docs = db.collection("user_dish_likes").where("user_id", "==", user_id).stream()
+        user_likes = [doc.to_dict() for doc in likes_docs if not doc.to_dict().get('is_system_init', False)]
+        if user_likes:
+            st.info(f"🧠 AI has learned from {len(user_likes)} dishes you've liked!")
+    except Exception as e:
+        st.info("ℹ️ No liked dishes found yet")
+        logger.info(f"No likes found for user {user_id}: {str(e)}")
     
     # Preference input
     col1, col2 = st.columns(2)
@@ -294,21 +337,19 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
     
     # Save preferences option
     if st.button("💾 Save My Preferences"):
-        if user_id and db:
-            try:
-                prefs_data = {
-                    'user_id': user_id,
-                    'favorite_cuisines': favorite_cuisines,
-                    'preferred_categories': preferred_categories,
-                    'last_updated': datetime.now().isoformat(),
-                    'is_system_init': False
-                }
-                db.collection("user_preferences").document(user_id).set(prefs_data)
-                st.success("✅ Preferences saved!")
-            except Exception as e:
-                st.error(f"❌ Error saving preferences: {str(e)}")
-        else:
-            st.warning("⚠️ Please log in to save preferences")
+        try:
+            prefs_data = {
+                'user_id': user_id,
+                'favorite_cuisines': favorite_cuisines,
+                'preferred_categories': preferred_categories,
+                'last_updated': datetime.now().isoformat(),
+                'is_system_init': False
+            }
+            db.collection("user_preferences").document(user_id).set(prefs_data)
+            st.success("✅ Preferences saved to Event Firebase!")
+        except Exception as e:
+            st.error(f"❌ Error saving preferences: {str(e)}")
+            st.info("💡 Make sure collections are initialized first")
     
     # Recommendation options
     st.subheader("🤖 AI Recommendation Options")
@@ -435,10 +476,13 @@ def save_dish_like(db, user_id, dish, recommendation_context):
             return False
             
         # Check if already liked to prevent duplicates
-        existing_likes = db.collection("user_dish_likes").where("user_id", "==", user_id).where("dish_name", "==", dish['name']).stream()
-        if any(doc.to_dict() for doc in existing_likes):
-            logger.info(f"Dish {dish['name']} already liked by user {user_id}")
-            return True  # Already liked, but return success
+        try:
+            existing_likes = list(db.collection("user_dish_likes").where("user_id", "==", user_id).where("dish_name", "==", dish['name']).stream())
+            if existing_likes:
+                logger.info(f"Dish {dish['name']} already liked by user {user_id}")
+                return True  # Already liked, but return success
+        except:
+            pass  # Continue if check fails
             
         like_data = {
             'user_id': user_id,
@@ -457,6 +501,7 @@ def save_dish_like(db, user_id, dish, recommendation_context):
         
     except Exception as e:
         logger.error(f"Error saving dish like: {str(e)}")
+        st.error(f"❌ Error saving like: {str(e)}")
         return False
 
 def generate_smart_personalized_recommendations_with_learning(gemini_model, menu_context, user_profile, num_recommendations, include_description, include_ingredients):
