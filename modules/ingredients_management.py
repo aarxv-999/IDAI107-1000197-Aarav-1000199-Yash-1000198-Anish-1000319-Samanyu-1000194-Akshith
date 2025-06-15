@@ -768,7 +768,7 @@ def render_bulk_operations():
         col1, col2, col3, col4 = st.columns([1, 3, 2, 2])
         
         with col1:
-            is_selected = st.checkbox("", key=f"bulk_select_{ingredient['doc_id']}", value=select_all)
+            is_selected = st.checkbox("Select", key=f"bulk_select_{ingredient['doc_id']}", value=select_all, label_visibility="hidden")
             if is_selected:
                 selected_ingredients.append(ingredient)
         
