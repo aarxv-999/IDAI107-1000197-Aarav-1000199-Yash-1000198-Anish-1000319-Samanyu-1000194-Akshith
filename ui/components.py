@@ -563,19 +563,39 @@ def render_cooking_quiz(ingredients, user_id):
         st.session_state.quiz_answers = {}
     if 'quiz_score' not in st.session_state:
         st.session_state.quiz_score = 0
+    if 'quiz_num_questions' not in st.session_state:
+        st.session_state.quiz_num_questions = 5
+    
+    # Add slider for number of questions
+    num_questions = st.slider(
+        "Number of questions",
+        min_value=3,
+        max_value=15,
+        value=5,
+        help="Select how many questions you want in your quiz"
+    )
     
     if not st.session_state.quiz_started:
         st.info("Test your culinary knowledge and earn XP!")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Questions", num_questions)
+        with col2:
+            estimated_time = num_questions * 1.5  # Estimate 1.5 minutes per question
+            st.metric("Estimated Time", f"{estimated_time:.0f} min")
+        
         if st.button("Start Quiz", type="primary"):
-            # Generate AI questions
-            with st.spinner("Generating quiz questions..."):
+            # Generate AI questions with selected number
+            with st.spinner(f"Generating {num_questions} quiz questions..."):
                 from modules.leftover import generate_dynamic_quiz_questions
-                questions = generate_dynamic_quiz_questions(ingredients, 5)
+                questions = generate_dynamic_quiz_questions(ingredients, num_questions)
                 
                 if questions:
                     st.session_state.quiz_questions = questions
                     st.session_state.quiz_started = True
                     st.session_state.quiz_answers = {}
+                    st.session_state.quiz_num_questions = num_questions
                     st.rerun()
                 else:
                     st.error("Unable to generate quiz questions. Please try again later.")
@@ -610,8 +630,9 @@ def render_cooking_quiz(ingredients, user_id):
                     st.subheader("Quiz Results")
                     st.write(f"Score: {correct_answers}/{total_questions} ({score_percentage:.0f}%)")
                     
-                    # Award XP
-                    base_xp = 15
+                    # Award XP - scale with number of questions
+                    base_xp_per_question = 3
+                    base_xp = base_xp_per_question * len(st.session_state.quiz_questions)
                     bonus_xp = 10 if score_percentage == 100 else 0
                     total_xp = base_xp + bonus_xp
                     
