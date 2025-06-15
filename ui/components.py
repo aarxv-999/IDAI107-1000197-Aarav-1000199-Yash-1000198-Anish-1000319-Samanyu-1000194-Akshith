@@ -565,18 +565,21 @@ def render_cooking_quiz(ingredients, user_id):
         st.session_state.quiz_score = 0
     if 'quiz_num_questions' not in st.session_state:
         st.session_state.quiz_num_questions = 5
+    if 'quiz_completed' not in st.session_state:
+        st.session_state.quiz_completed = False
     
-    # Add slider for number of questions
-    num_questions = st.slider(
-        "Number of questions",
-        min_value=3,
-        max_value=15,
-        value=5,
-        help="Select how many questions you want in your quiz"
-    )
-    
-    if not st.session_state.quiz_started:
-        st.info("Test your culinary knowledge and earn XP!")
+    # Quiz setup section
+    if not st.session_state.quiz_started or st.session_state.quiz_completed:
+        st.markdown("### Quiz Setup")
+        
+        # Add slider for number of questions
+        num_questions = st.slider(
+            "Number of questions",
+            min_value=3,
+            max_value=15,
+            value=st.session_state.quiz_num_questions,
+            help="Select how many questions you want in your quiz"
+        )
         
         col1, col2 = st.columns(2)
         with col1:
@@ -585,7 +588,9 @@ def render_cooking_quiz(ingredients, user_id):
             estimated_time = num_questions * 1.5  # Estimate 1.5 minutes per question
             st.metric("Estimated Time", f"{estimated_time:.0f} min")
         
-        if st.button("Start Quiz", type="primary"):
+        # Generate Quiz button
+        button_text = "Generate New Quiz" if st.session_state.quiz_completed else "Generate Quiz"
+        if st.button(button_text, type="primary", use_container_width=True):
             # Generate AI questions with selected number
             with st.spinner(f"Generating {num_questions} quiz questions..."):
                 from modules.leftover import generate_dynamic_quiz_questions
@@ -594,14 +599,45 @@ def render_cooking_quiz(ingredients, user_id):
                 if questions:
                     st.session_state.quiz_questions = questions
                     st.session_state.quiz_started = True
+                    st.session_state.quiz_completed = False
                     st.session_state.quiz_answers = {}
                     st.session_state.quiz_num_questions = num_questions
                     st.rerun()
                 else:
                     st.error("Unable to generate quiz questions. Please try again later.")
-    else:
-        # Display quiz questions
+        
+        # Show previous quiz results if completed
+        if st.session_state.quiz_completed and st.session_state.quiz_questions:
+            st.markdown("---")
+            st.markdown("### Previous Quiz Results")
+            
+            # Calculate and display previous score
+            correct_answers = 0
+            total_questions = len(st.session_state.quiz_questions)
+            
+            for i, q in enumerate(st.session_state.quiz_questions):
+                if st.session_state.quiz_answers.get(i) == q['correct']:
+                    correct_answers += 1
+            
+            score_percentage = (correct_answers / total_questions) * 100
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Score", f"{correct_answers}/{total_questions}")
+            with col2:
+                st.metric("Percentage", f"{score_percentage:.0f}%")
+            with col3:
+                base_xp_per_question = 3
+                base_xp = base_xp_per_question * total_questions
+                bonus_xp = 10 if score_percentage == 100 else 0
+                total_xp = base_xp + bonus_xp
+                st.metric("XP Earned", total_xp)
+    
+    # Quiz taking section
+    elif st.session_state.quiz_started and not st.session_state.quiz_completed:
         if st.session_state.quiz_questions:
+            st.markdown(f"### Quiz in Progress ({len(st.session_state.quiz_questions)} questions)")
+            
             with st.form("cooking_quiz"):
                 for i, q in enumerate(st.session_state.quiz_questions):
                     st.write(f"**Question {i+1}:** {q['question']}")
@@ -625,6 +661,7 @@ def render_cooking_quiz(ingredients, user_id):
                     
                     score_percentage = (correct_answers / total_questions) * 100
                     st.session_state.quiz_score = score_percentage
+                    st.session_state.quiz_completed = True
                     
                     # Display results
                     st.subheader("Quiz Results")
@@ -654,17 +691,19 @@ def render_cooking_quiz(ingredients, user_id):
                         else:
                             st.error(f"Q{i+1}: Incorrect. {q.get('explanation', 'No explanation available.')}")
                     
-                    # Reset quiz
-                    if st.button("Take Quiz Again"):
-                        st.session_state.quiz_started = False
-                        st.session_state.quiz_questions = []
-                        st.session_state.quiz_answers = {}
-                        st.rerun()
+                    st.rerun()
         else:
-            st.error("No quiz questions available. Please try starting the quiz again.")
-            if st.button("Restart Quiz"):
-                st.session_state.quiz_started = False
-                st.rerun()
+            st.error("No quiz questions available. Please try generating the quiz again.")
+    
+    # Reset quiz button (outside of form)
+    if st.session_state.quiz_started and not st.session_state.quiz_completed:
+        st.markdown("---")
+        if st.button("Cancel Quiz", help="Cancel current quiz and return to setup"):
+            st.session_state.quiz_started = False
+            st.session_state.quiz_completed = False
+            st.session_state.quiz_questions = []
+            st.session_state.quiz_answers = {}
+            st.rerun()
 
 def display_daily_challenge(user_id):
     """Display daily cooking challenge"""
