@@ -1,6 +1,7 @@
 """
 UI Components for the Smart Restaurant Menu Management App.
 Contains authentication, gamification, and other UI elements.
+Updated with simplified password requirements.
 """
 
 import streamlit as st
@@ -68,15 +69,11 @@ def validate_email(email):
     return re.match(pattern, email) is not None
 
 def validate_password(password):
-    """Validate password strength"""
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters long"
+    """Validate password strength - UPDATED: simplified requirements"""
+    if len(password) < 5:
+        return False, "Password must be at least 5 characters long"
     if not re.search(r'[A-Z]', password):
         return False, "Password must contain at least one uppercase letter"
-    if not re.search(r'[a-z]', password):
-        return False, "Password must contain at least one lowercase letter"
-    if not re.search(r'\d', password):
-        return False, "Password must contain at least one number"
     return True, "Password is valid"
 
 def authenticate_user(login_identifier, password):
@@ -346,7 +343,7 @@ def render_signup_form():
             "Password *",
             type="password",
             placeholder="Create a strong password",
-            help="Must be at least 8 characters with uppercase, lowercase, and numbers"
+            help="Must be at least 5 characters with one uppercase letter"
         )
         
         confirm_password = st.text_input(
