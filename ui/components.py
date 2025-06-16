@@ -503,7 +503,7 @@ def render_auth_ui():
                     st.session_state.confirm_clear_data = False
                     st.rerun()
         
-        # Features section with dropdown
+        # Features section with dropdown - ONLY ONE
         st.sidebar.markdown("---")
         st.sidebar.markdown("### Features")
         
@@ -587,7 +587,7 @@ def display_user_stats_sidebar(user_id):
         
         st.sidebar.markdown("---")
         
-        # Create an expandable section for user stats
+        # Create an expandable section for user stats - REMOVE duplicate feature selector
         with st.sidebar.expander("Your Stats & Progress", expanded=False):
             # Extract stats with safe defaults
             total_xp = max(0, user_stats.get('total_xp', 0))
@@ -625,7 +625,7 @@ def display_user_stats_sidebar(user_id):
                 if quizzes_completed > 0:
                     st.write(f"Quizzes: {quizzes_completed}")
             
-            # Gamification Hub button
+            # Gamification Hub button - ONLY THIS BUTTON, NO FEATURE SELECTOR
             st.markdown("---")
             if st.button("Open Gamification Hub", use_container_width=True, type="primary", key="gamification_hub_btn"):
                 st.session_state.selected_feature = "Gamification Hub"
