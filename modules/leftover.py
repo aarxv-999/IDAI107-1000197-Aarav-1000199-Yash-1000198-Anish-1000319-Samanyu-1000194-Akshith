@@ -499,7 +499,7 @@ def get_user_stats(user_id: str) -> Dict:
 def update_user_stats(user_id, xp_gained, recipes_generated=0, quizzes_completed=0):
     """Update user stats with XP and calculate new level using progressive system"""
     try:
-        db = get_firestore_client()
+        db = get_firestore_db()
         if not db:
             return False
         
