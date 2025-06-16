@@ -110,7 +110,7 @@ def render_menu_generator(db):
     # Menu Generation
     st.markdown("#### 🚀 Generate Menu")
     
-    # Check existing menu status
+    # Check existing menu status - FIXED logic
     today = datetime.now()
     logger.info(f"Current date: {today}")
     
@@ -120,44 +120,44 @@ def render_menu_generator(db):
     
     st.info(f"📅 Current week: {start_of_week.strftime('%Y-%m-%d')} to {end_of_week.strftime('%Y-%m-%d')}")
     
-    # Check for existing menu items
+    # Check for existing menu items - FIXED query
     try:
-        # Query for any menu items from this week
-        existing_query = db.collection("menu").where("created_at", ">=", start_of_week.isoformat()).limit(10)
+        # Query for any menu items (remove date filter that was causing issues)
+        existing_query = db.collection("menu").limit(50)
         existing_docs = list(existing_query.stream())
         
-        logger.info(f"Found {len(existing_docs)} existing menu items for current week")
+        logger.info(f"Found {len(existing_docs)} existing menu items")
         
         if existing_docs:
             # Show existing menu info
-            st.warning(f"⚠️ Found {len(existing_docs)} menu items for this week")
+            st.warning(f"⚠️ Found {len(existing_docs)} menu items in current menu")
             
             # Show some sample existing items for debugging
-            with st.expander("View Existing Menu Items (Debug Info)"):
-                for i, doc in enumerate(existing_docs[:3]):  # Show first 3
+            with st.expander("View Current Menu Items"):
+                for i, doc in enumerate(existing_docs[:5]):  # Show first 5
                     data = doc.to_dict()
                     st.write(f"**{i+1}. {data.get('name', 'Unknown')}**")
                     st.write(f"   - Created: {data.get('created_at', 'Unknown')}")
                     st.write(f"   - Source: {data.get('source', 'Unknown')}")
                     st.write(f"   - Category: {data.get('category', 'Unknown')}")
-                if len(existing_docs) > 3:
-                    st.write(f"... and {len(existing_docs) - 3} more items")
+                if len(existing_docs) > 5:
+                    st.write(f"... and {len(existing_docs) - 5} more items")
             
-            # Regeneration section
+            # Archive and regenerate section
             st.markdown("#### 🔄 Menu Regeneration")
-            st.error("⚠️ **WARNING**: This will delete ALL current menu items and generate a completely new menu.")
+            st.info("**NEW BEHAVIOR**: Current menu items will be moved to archive, duplicates will be filtered out.")
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("🗑️ Delete Current Menu & Generate New", type="primary", key="regenerate_menu"):
-                    delete_and_regenerate_menu(db, sorted_ingredients, priority_ingredients)
+                if st.button("🗃️ Archive Current & Generate New", type="primary", key="archive_and_generate"):
+                    archive_and_generate_menu(db, sorted_ingredients, priority_ingredients)
             
             with col2:
                 if st.button("❌ Keep Current Menu", key="keep_menu"):
                     st.info("✅ Current menu preserved")
         else:
             # No existing menu - show generate button
-            st.success("✅ No existing menu found for this week")
+            st.success("✅ No existing menu found")
             
             col1, col2 = st.columns([3, 1])
             with col1:
@@ -165,7 +165,7 @@ def render_menu_generator(db):
 
             with col2:
                 if st.button("🚀 Generate New Menu", type="primary", use_container_width=True):
-                    generate_new_menu(db, sorted_ingredients, priority_ingredients)
+                    generate_new_menu_with_archive(db, sorted_ingredients, priority_ingredients)
                     
     except Exception as e:
         logger.error(f"Error checking existing menu: {str(e)}")
@@ -173,49 +173,68 @@ def render_menu_generator(db):
         
         # Fallback - allow generation anyway
         if st.button("🚀 Generate Menu (Fallback)", type="secondary"):
-            generate_new_menu(db, sorted_ingredients, priority_ingredients)
+            generate_new_menu_with_archive(db, sorted_ingredients, priority_ingredients)
 
     # Display generated menu if exists
     if "generated_menu" in st.session_state:
-        display_generated_menu(db)
+        display_generated_menu_with_archive(db)
 
-def delete_and_regenerate_menu(db, sorted_ingredients, priority_ingredients):
-    """Delete existing menu and generate new one"""
+def archive_and_generate_menu(db, sorted_ingredients, priority_ingredients):
+    """Archive existing menu and generate new one with duplicate prevention"""
     try:
-        with st.spinner("🗑️ Deleting existing menu items..."):
-            # Get ALL menu items (not just this week) to be thorough
-            all_menu_docs = db.collection("menu").stream()
-            deleted_count = 0
+        with st.spinner("🗃️ Moving current menu to archive..."):
+            # Get current menu items
+            current_menu_docs = list(db.collection("menu").stream())
+            current_menu_data = []
             
-            for doc in all_menu_docs:
-                try:
-                    doc_data = doc.to_dict()
-                    logger.info(f"Deleting menu item: {doc_data.get('name', 'Unknown')} (ID: {doc.id})")
-                    doc.reference.delete()
-                    deleted_count += 1
-                except Exception as e:
-                    logger.error(f"Error deleting document {doc.id}: {str(e)}")
-            
-            logger.info(f"Successfully deleted {deleted_count} menu items")
-            st.success(f"✅ Deleted {deleted_count} existing menu items")
+            if current_menu_docs:
+                # Move to archive instead of deleting
+                batch = db.batch()
+                archived_count = 0
+                
+                for doc in current_menu_docs:
+                    try:
+                        doc_data = doc.to_dict()
+                        current_menu_data.append(doc_data)
+                        
+                        # Add to recipe_archive with archive timestamp
+                        archive_ref = db.collection("recipe_archive").document()
+                        archive_data = doc_data.copy()
+                        archive_data['archived_at'] = datetime.now().isoformat()
+                        archive_data['original_menu_id'] = doc.id
+                        batch.set(archive_ref, archive_data)
+                        
+                        # Delete from current menu
+                        batch.delete(doc.reference)
+                        archived_count += 1
+                        
+                        logger.info(f"Archiving menu item: {doc_data.get('name', 'Unknown')} (ID: {doc.id})")
+                    except Exception as e:
+                        logger.error(f"Error archiving document {doc.id}: {str(e)}")
+                
+                batch.commit()
+                logger.info(f"Successfully archived {archived_count} menu items")
+                st.success(f"✅ Archived {archived_count} menu items to recipe_archive")
+            else:
+                st.info("No current menu items to archive")
             
         # Clear any cached menu data
         if "generated_menu" in st.session_state:
             del st.session_state.generated_menu
             
-        # Generate new menu
-        st.info("🚀 Generating new menu...")
-        generate_new_menu(db, sorted_ingredients, priority_ingredients)
+        # Generate new menu with duplicate checking
+        st.info("🚀 Generating new menu with duplicate prevention...")
+        generate_new_menu_with_archive(db, sorted_ingredients, priority_ingredients, current_menu_data)
         
     except Exception as e:
-        logger.error(f"Error during menu deletion and regeneration: {str(e)}")
-        st.error(f"❌ Error during menu regeneration: {str(e)}")
+        logger.error(f"Error during menu archiving and regeneration: {str(e)}")
+        st.error(f"❌ Error during menu archiving: {str(e)}")
 
-def generate_new_menu(db, sorted_ingredients, priority_ingredients):
-    """Generate new menu using AI"""
-    logger.info("Starting menu generation...")
+def generate_new_menu_with_archive(db, sorted_ingredients, priority_ingredients, archived_menu_data=None):
+    """Generate new menu with duplicate prevention against archive"""
+    logger.info("Starting menu generation with archive checking...")
     
-    with st.spinner("Generating menu with AI..."):
+    with st.spinner("Generating menu with AI and checking for duplicates..."):
         progress_bar = st.progress(0)
 
         ingredient_names = [i['name'] for i in sorted_ingredients[:50]]
@@ -249,11 +268,11 @@ Use this EXACT structure for each dish (do NOT include rating or rating_comment)
 
 Return ONLY a JSON array of dishes. No explanation or additional text.
 """
-        progress_bar.progress(50)
+        progress_bar.progress(25)
         logger.info("Sending request to Gemini AI...")
         
         response = generate_dish(prompt)
-        progress_bar.progress(100)
+        progress_bar.progress(50)
 
         if not isinstance(response, list):
             logger.error(f"Invalid response type: {type(response)}")
@@ -262,15 +281,85 @@ Return ONLY a JSON array of dishes. No explanation or additional text.
                 st.json(response)
             return
 
-        logger.info(f"Successfully generated {len(response)} dishes")
-        st.session_state.generated_menu = response
-        st.success(f"✅ Generated {len(response)} dishes successfully!")
+        logger.info(f"Generated {len(response)} dishes from AI")
+        
+        # Check for duplicates against archive
+        progress_bar.progress(75)
+        st.info("🔍 Checking for duplicates against recipe archive...")
+        
+        try:
+            # Get all archived recipes for duplicate checking
+            archive_docs = list(db.collection("recipe_archive").stream())
+            archived_recipes = [doc.to_dict() for doc in archive_docs]
+            
+            # Include recently archived menu data if provided
+            if archived_menu_data:
+                archived_recipes.extend(archived_menu_data)
+            
+            # Create set of existing recipe names (case-insensitive)
+            existing_names = set()
+            for recipe in archived_recipes:
+                name = recipe.get('name', '').strip().lower()
+                if name:
+                    existing_names.add(name)
+            
+            logger.info(f"Found {len(existing_names)} existing recipe names in archive")
+            
+            # Filter out duplicates
+            unique_recipes = []
+            duplicates_found = []
+            
+            for recipe in response:
+                recipe_name = recipe.get('name', '').strip().lower()
+                if recipe_name in existing_names:
+                    duplicates_found.append(recipe.get('name', 'Unknown'))
+                    logger.info(f"Filtered duplicate: {recipe.get('name')}")
+                else:
+                    unique_recipes.append(recipe)
+                    # Add to existing names to prevent duplicates within the new batch
+                    existing_names.add(recipe_name)
+            
+            logger.info(f"Filtered out {len(duplicates_found)} duplicates")
+            logger.info(f"Keeping {len(unique_recipes)} unique recipes")
+            
+            if duplicates_found:
+                st.warning(f"⚠️ Filtered out {len(duplicates_found)} duplicate recipes: {', '.join(duplicates_found[:5])}")
+            
+            progress_bar.progress(100)
+            
+            st.session_state.generated_menu = unique_recipes
+            st.session_state.duplicates_filtered = len(duplicates_found)
+            st.session_state.total_generated = len(response)
+            
+            st.success(f"✅ Generated {len(unique_recipes)} unique dishes! (Filtered {len(duplicates_found)} duplicates)")
+            
+        except Exception as e:
+            logger.error(f"Error during duplicate checking: {str(e)}")
+            st.warning(f"⚠️ Could not check for duplicates: {str(e)}. Proceeding with all generated recipes.")
+            st.session_state.generated_menu = response
+            st.session_state.duplicates_filtered = 0
+            st.session_state.total_generated = len(response)
 
-def display_generated_menu(db):
-    """Display and save generated menu"""
+def display_generated_menu_with_archive(db):
+    """Display and save generated menu with archive info"""
     st.markdown("#### 📋 Generated Menu")
 
     menu_stats = st.session_state.generated_menu
+    duplicates_filtered = st.session_state.get('duplicates_filtered', 0)
+    total_generated = st.session_state.get('total_generated', len(menu_stats))
+    
+    # Show generation stats
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("AI Generated", total_generated)
+    with col2:
+        st.metric("Unique Recipes", len(menu_stats))
+    with col3:
+        st.metric("Duplicates Filtered", duplicates_filtered)
+    
+    if duplicates_filtered > 0:
+        st.info(f"ℹ️ {duplicates_filtered} duplicate recipes were automatically filtered out to prevent menu conflicts.")
+
     categories = {}
     for dish in menu_stats:
         cat = dish.get('category', 'Other')
@@ -291,17 +380,17 @@ def display_generated_menu(db):
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        st.write("Save all generated dishes to Firebase and create backups.")
+        st.write("Save all unique generated dishes to Firebase menu collection.")
 
     with col2:
-        if st.button("💾 Save to Database", type="primary", use_container_width=True):
-            save_menu_to_database(db)
+        if st.button("💾 Save to Menu", type="primary", use_container_width=True):
+            save_menu_to_database_with_archive(db)
 
-def save_menu_to_database(db):
-    """Save generated menu to database"""
-    logger.info("Starting menu save to database...")
+def save_menu_to_database_with_archive(db):
+    """Save generated menu to database with archive backup"""
+    logger.info("Starting menu save to database with archive backup...")
     
-    with st.spinner("Saving menu..."):
+    with st.spinner("Saving unique menu items..."):
         progress = st.progress(0)
         created_count = 0
         error_count = 0
@@ -327,9 +416,12 @@ def save_menu_to_database(db):
                 menu_ref = db.collection("menu").add(fixed_dish)
                 logger.info(f"Added dish '{fixed_dish.get('name')}' to menu collection with ID: {menu_ref[1].id}")
                 
-                # Add to recipe archive for backup
-                archive_ref = db.collection("recipe_archive").add(fixed_dish)
-                logger.info(f"Added dish '{fixed_dish.get('name')}' to recipe archive with ID: {archive_ref[1].id}")
+                # Also add to recipe archive as backup (with different timestamp)
+                archive_dish = fixed_dish.copy()
+                archive_dish['archived_at'] = datetime.now().isoformat()
+                archive_dish['archive_reason'] = 'backup_on_creation'
+                archive_ref = db.collection("recipe_archive").add(archive_dish)
+                logger.info(f"Added dish '{fixed_dish.get('name')}' to recipe archive as backup with ID: {archive_ref[1].id}")
                 
                 created_count += 1
             except Exception as e:
@@ -339,12 +431,21 @@ def save_menu_to_database(db):
         logger.info(f"Menu save completed: {created_count} saved, {error_count} errors")
 
         if created_count:
-            st.success(f"✅ Menu saved successfully! {created_count} dishes added to restaurant menu.")
+            duplicates_filtered = st.session_state.get('duplicates_filtered', 0)
+            success_msg = f"✅ Menu saved successfully! {created_count} unique dishes added to restaurant menu."
+            if duplicates_filtered > 0:
+                success_msg += f" ({duplicates_filtered} duplicates were filtered out)"
+            st.success(success_msg)
+            
             if error_count > 0:
                 st.warning(f"⚠️ {error_count} dishes had errors and were not saved.")
             
             # Clear the generated menu from session state
             del st.session_state.generated_menu
+            if 'duplicates_filtered' in st.session_state:
+                del st.session_state.duplicates_filtered
+            if 'total_generated' in st.session_state:
+                del st.session_state.total_generated
             
             # Force a rerun to refresh the menu status
             st.rerun()
