@@ -376,15 +376,10 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         pdf.multi_cell(0, 6, invitation_text)
         
         # Generate PDF bytes with proper encoding
-        pdf_output = pdf.output(dest="S")
+        pdf_output = pdf.output(dest="S").encode('latin-1')
         
-        # Handle the output based on FPDF version
-        if isinstance(pdf_output, str):
-            # Older FPDF versions return string
-            return pdf_output.encode("latin-1")
-        else:
-            # Newer FPDF versions return bytes
-            return pdf_output
+
+        return pdf_output
             
     except Exception as e:
         logger.error(f"Error creating PDF: {str(e)}")
