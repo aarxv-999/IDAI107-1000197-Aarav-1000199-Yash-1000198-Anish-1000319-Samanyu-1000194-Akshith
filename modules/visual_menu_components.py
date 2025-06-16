@@ -207,20 +207,28 @@ def render_personalized_menu(db, gemini_model, allergies, user_id):
         menu_items = fetch_menu_items(db)
         available_cuisines = list(set([item.get('cuisine', 'Unknown') for item in menu_items if item.get('cuisine')]))
         
+        # FIXED: Filter user preferences to only include available cuisines
+        saved_favorite_cuisines = user_prefs.get('favorite_cuisines', [])
+        valid_favorite_cuisines = [cuisine for cuisine in saved_favorite_cuisines if cuisine in available_cuisines]
+        
         favorite_cuisines = st.multiselect(
             "Favorite Cuisines",
             available_cuisines,
-            default=user_prefs.get('favorite_cuisines', []),
+            default=valid_favorite_cuisines,  # Use filtered defaults
             help="Select cuisines you enjoy most"
         )
     
     with col2:
         available_categories = list(set([item.get('category', 'Unknown') for item in menu_items if item.get('category')]))
         
+        # FIXED: Filter user preferences to only include available categories
+        saved_preferred_categories = user_prefs.get('preferred_categories', [])
+        valid_preferred_categories = [category for category in saved_preferred_categories if category in available_categories]
+        
         preferred_categories = st.multiselect(
             "Preferred Categories",
             available_categories,
-            default=user_prefs.get('preferred_categories', []),
+            default=valid_preferred_categories,  # Use filtered defaults
             help="Select meal categories you prefer"
         )
     
