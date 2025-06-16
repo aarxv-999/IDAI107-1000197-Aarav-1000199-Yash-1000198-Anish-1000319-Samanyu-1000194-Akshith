@@ -65,7 +65,7 @@ def render_visual_menu_search():
         render_custom_filters(db, allergies)
     
     with tabs[3]:
-        render_visual_challenge(db, user_role, username, user_id)
+        render_visual_challenge(db, vision_client, gemini_model, user_role, username, user_id)
     
     with tabs[4]:
         render_leaderboard(db, user_id)
@@ -850,9 +850,145 @@ def render_custom_filters(db, allergies):
                     st.write(f"- Must Exclude: {must_exclude}")
                     st.write(f"- Allergies: {allergies}")
 
-def render_visual_challenge(db, user_role, username, user_id):
-    """Render visual menu challenge tab (Staff/Chef/Admin only)"""
-    st.header("🏅 Visual Menu Challenge Submission")
+def analyze_challenge_image_with_ai(vision_client, gemini_model, image_content, dish_name, ingredients, plating_style):
+    """Analyze challenge image with Vision API and Gemini AI to determine XP reward"""
+    try:
+        # Initialize scores
+        vision_score = 0
+        gemini_score = 0
+        
+        # Vision API Analysis (if available)
+        if vision_client:
+            try:
+                vision_image = vision.Image(content=image_content)
+                
+                # Get labels and objects
+                label_response = vision_client.label_detection(image=vision_image)
+                labels = [(label.description, label.score) for label in label_response.label_annotations]
+                
+                # Object localization
+                obj_response = vision_client.object_localization(image=vision_image)
+                objects = [(obj.name, obj.score) for obj in obj_response.localized_object_annotations]
+                
+                # Image properties for color analysis
+                properties_response = vision_client.image_properties(image=vision_image)
+                dominant_colors = properties_response.image_properties_annotation.dominant_colors.colors
+                
+                # Calculate Vision API score based on food-related detection
+                food_labels = [label for label, score in labels if 'food' in label.lower() or 'dish' in label.lower()]
+                food_objects = [obj for obj, score in objects if 'food' in obj.lower()]
+                
+                # Base score for food detection
+                if food_labels or food_objects:
+                    vision_score += 20
+                
+                # Bonus for high confidence food detection
+                high_confidence_food = [label for label, score in labels if score > 0.8 and any(food_term in label.lower() for food_term in ['food', 'dish', 'meal', 'cuisine'])]
+                vision_score += len(high_confidence_food) * 5
+                
+                # Bonus for color variety (good plating)
+                if len(dominant_colors) >= 3:
+                    vision_score += 10
+                
+                # Cap vision score
+                vision_score = min(vision_score, 50)
+                
+            except Exception as e:
+                logger.warning(f"Vision API analysis failed: {str(e)}")
+                vision_score = 25  # Default score if Vision API fails
+        else:
+            vision_score = 25  # Default score if Vision API not available
+        
+        # Gemini AI Analysis
+        if gemini_model:
+            try:
+                prompt = f"""
+                Analyze this dish submission for a restaurant staff challenge:
+                
+                Dish Name: {dish_name}
+                Ingredients: {ingredients}
+                Plating Style: {plating_style}
+                
+                Rate this dish submission on a scale of 1-100 based on:
+                1. Creativity and uniqueness (25%)
+                2. Ingredient quality and combination (25%)
+                3. Plating and presentation style (25%)
+                4. Overall appeal and professionalism (25%)
+                
+                Consider:
+                - Is this a creative and interesting dish?
+                - Do the ingredients work well together?
+                - Does the plating style sound appealing?
+                - Would customers be interested in ordering this?
+                
+                Return ONLY a number between 1-100, no other text.
+                """
+                
+                response = gemini_model.generate_content(prompt)
+                try:
+                    gemini_score = int(response.text.strip())
+                    # Ensure score is within bounds
+                    gemini_score = max(1, min(100, gemini_score))
+                except:
+                    gemini_score = 50  # Default if parsing fails
+                    
+            except Exception as e:
+                logger.warning(f"Gemini AI analysis failed: {str(e)}")
+                gemini_score = 50  # Default score if Gemini fails
+        else:
+            gemini_score = 50  # Default score if Gemini not available
+        
+        # Calculate final XP reward
+        # Base XP: 30-100 based on AI analysis
+        base_xp = max(30, min(100, (vision_score + gemini_score) // 2))
+        
+        # Provide feedback
+        feedback = f"Vision API Score: {vision_score}/50, Gemini AI Score: {gemini_score}/100"
+        
+        return base_xp, feedback, {
+            'vision_score': vision_score,
+            'gemini_score': gemini_score,
+            'total_score': base_xp
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in AI image analysis: {str(e)}")
+        return 40, f"AI analysis error: {str(e)}", {'vision_score': 0, 'gemini_score': 0, 'total_score': 40}
+
+def save_enhanced_challenge_entry(db, staff_name, staff_user_id, dish_name, ingredients, plating_style, trendy, diet_match, ai_analysis_result):
+    """Save enhanced challenge entry with AI analysis results"""
+    try:
+        if not db:
+            return False, "Database connection failed"
+            
+        challenge_data = {
+            "staff": staff_name,
+            "staff_user_id": staff_user_id,  # Store user ID for XP tracking
+            "dish": dish_name,
+            "ingredients": [i.strip() for i in ingredients.split(",") if i.strip()],
+            "style": plating_style,
+            "trendy": trendy,
+            "diet_match": diet_match,
+            "timestamp": datetime.now().timestamp(),
+            "created_at": datetime.now().isoformat(),
+            "views": 0,
+            "likes": 0,
+            "orders": 0,
+            "ai_analysis": ai_analysis_result,  # Store AI analysis results
+            "initial_xp_awarded": ai_analysis_result['total_score']
+        }
+        
+        db.collection("visual_challenges").add(challenge_data)
+        logger.info(f"Saved enhanced challenge entry for {staff_name}: {dish_name}")
+        return True, "Challenge entry saved successfully"
+        
+    except Exception as e:
+        logger.error(f"Error saving enhanced challenge entry: {str(e)}")
+        return False, f"Error saving challenge: {str(e)}"
+
+def render_visual_challenge(db, vision_client, gemini_model, user_role, username, user_id):
+    """Render enhanced visual menu challenge tab with AI analysis"""
+    st.header("🏅 AI-Powered Visual Menu Challenge")
     
     # Check access permissions
     if user_role not in ['staff', 'chef', 'admin']:
@@ -860,29 +996,35 @@ def render_visual_challenge(db, user_role, username, user_id):
         st.info("💡 Customers can vote on staff submissions in the Leaderboard tab!")
         return
     
-    st.markdown("Submit your signature dish photos and compete with other staff members!")
+    st.markdown("Submit your signature dish photos and get AI-powered XP rewards based on creativity and presentation!")
     
-    # XP info for staff
+    # Enhanced XP info for staff
     st.info("""
-    💡 **XP Rewards for Staff:**
-    • Submit dish photo: **+30 XP**
-    • Customer likes your dish: **+8 XP per like**
-    • Customer views your dish: **+3 XP per view**
-    • Customer orders your dish: **+15 XP per order**
+    💡 **AI-Powered XP Rewards:**
+    • **Initial AI Analysis:** 30-100 XP based on Vision API + Gemini AI evaluation
+    • **Customer likes:** +8 XP per like (awarded to you)
+    • **Customer views:** +3 XP per view (awarded to you)  
+    • **Customer orders:** +15 XP per order (awarded to you)
+    
+    🤖 **AI evaluates your dish on:**
+    - Creativity and uniqueness (25%)
+    - Ingredient quality and combination (25%)
+    - Plating and presentation style (25%)
+    - Overall appeal and professionalism (25%)
     """)
     
     # Challenge submission form
     with st.form("challenge_form"):
-        st.markdown("#### 📸 Submit Your Dish")
+        st.markdown("#### 📸 Submit Your Dish for AI Analysis")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            dish_name = st.text_input("Dish Name", placeholder="e.g., Truffle Pasta Supreme")
-            plating_style = st.text_input("Plating Style", placeholder="e.g., Modern, Classic, Rustic")
+            dish_name = st.text_input("Dish Name *", placeholder="e.g., Truffle Pasta Supreme")
+            plating_style = st.text_input("Plating Style *", placeholder="e.g., Modern, Classic, Rustic, Minimalist")
         
         with col2:
-            ingredients = st.text_area("Ingredients (comma separated)", placeholder="pasta, truffle oil, parmesan, garlic")
+            ingredients = st.text_area("Ingredients (comma separated) *", placeholder="pasta, truffle oil, parmesan, garlic, herbs")
             
         # Challenge options
         col3, col4 = st.columns(2)
@@ -892,37 +1034,68 @@ def render_visual_challenge(db, user_role, username, user_id):
             diet_match = st.checkbox("Matches dietary preferences", help="Does this dish cater to popular dietary preferences?")
         
         # Image upload
-        challenge_image = st.file_uploader("Dish Photo", type=["jpg", "png", "jpeg"], help="Upload a high-quality photo of your dish")
+        challenge_image = st.file_uploader("Dish Photo *", type=["jpg", "png", "jpeg"], help="Upload a high-quality photo of your dish for AI analysis")
         
-        submitted = st.form_submit_button("🚀 Submit Dish Challenge", type="primary")
+        submitted = st.form_submit_button("🚀 Submit for AI Analysis & Challenge", type="primary")
         
         if submitted:
-            if not dish_name or not ingredients:
-                st.error("❌ Please fill in Dish Name and Ingredients.")
+            if not dish_name or not ingredients or not plating_style:
+                st.error("❌ Please fill in all required fields (Dish Name, Ingredients, Plating Style).")
             elif not challenge_image:
-                st.error("❌ Please upload a dish photo.")
+                st.error("❌ Please upload a dish photo for AI analysis.")
             else:
-                # Save challenge entry
-                success, message = save_challenge_entry(
-                    db, username, dish_name, ingredients, plating_style, trendy, diet_match
-                )
-                
-                if success:
-                    st.success(f"✅ {message}")
+                with st.spinner("🤖 Analyzing your dish with AI (Vision API + Gemini)..."):
+                    # Preprocess image
+                    image, content = preprocess_image(challenge_image)
                     
-                    # Award XP for submission
-                    if user_id:
-                        xp_earned = award_visual_menu_xp(user_id, 30, "challenge_submission")
-                        if xp_earned > 0:
-                            show_xp_notification(30, "Visual Challenge Submission")
-                    
-                    # Clear form by rerunning
-                    st.rerun()
-                else:
-                    st.error(f"❌ {message}")
+                    if image and content:
+                        # Perform AI analysis
+                        ai_xp, ai_feedback, ai_analysis = analyze_challenge_image_with_ai(
+                            vision_client, gemini_model, content, dish_name, ingredients, plating_style
+                        )
+                        
+                        # Save enhanced challenge entry
+                        success, message = save_enhanced_challenge_entry(
+                            db, username, user_id, dish_name, ingredients, plating_style, trendy, diet_match, ai_analysis
+                        )
+                        
+                        if success:
+                            st.success(f"✅ {message}")
+                            
+                            # Display AI analysis results
+                            st.markdown("### 🤖 AI Analysis Results")
+                            
+                            col_results1, col_results2, col_results3 = st.columns(3)
+                            with col_results1:
+                                st.metric("Vision API Score", f"{ai_analysis['vision_score']}/50")
+                            with col_results2:
+                                st.metric("Gemini AI Score", f"{ai_analysis['gemini_score']}/100")
+                            with col_results3:
+                                st.metric("Total XP Earned", f"{ai_xp} XP")
+                            
+                            # Show detailed feedback
+                            st.info(f"📊 **AI Feedback:** {ai_feedback}")
+                            
+                            # Award initial XP for submission
+                            if user_id:
+                                xp_earned = award_visual_menu_xp(user_id, ai_xp, "ai_challenge_submission")
+                                if xp_earned > 0:
+                                    show_xp_notification(ai_xp, f"AI Challenge Analysis ({ai_analysis['gemini_score']}/100 score)")
+                            
+                            # Show image preview
+                            st.image(image, caption=f"Your submitted dish: {dish_name}", use_column_width=True)
+                            
+                            st.success("🎉 Your dish is now live in the leaderboard for customer voting!")
+                            
+                            # Clear form by rerunning
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {message}")
+                    else:
+                        st.error("❌ Failed to process the uploaded image. Please try again with a different image.")
 
 def render_leaderboard(db, user_id):
-    """Render leaderboard and voting tab"""
+    """Render enhanced leaderboard with proper XP tracking"""
     st.header("📊 Leaderboard & Customer Voting")
     st.markdown("Vote on staff-submitted dishes and see who's leading the competition!")
     
@@ -943,17 +1116,25 @@ def render_leaderboard(db, user_id):
         with st.container():
             st.markdown("---")
             
-            # Dish header
+            # Dish header with AI analysis info
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.subheader(f"🍽️ {entry.get('dish', 'Unknown Dish')}")
                 st.write(f"**Chef:** {entry.get('staff', 'Unknown')}")
                 st.write(f"**Style:** {entry.get('style', 'Not specified')}")
                 st.write(f"**Ingredients:** {', '.join(entry.get('ingredients', []))}")
+                
+                # Show AI analysis if available
+                ai_analysis = entry.get('ai_analysis', {})
+                if ai_analysis:
+                    st.write(f"**AI Score:** {ai_analysis.get('total_score', 'N/A')}/100 (Vision: {ai_analysis.get('vision_score', 'N/A')}/50, Gemini: {ai_analysis.get('gemini_score', 'N/A')}/100)")
             
             with col2:
                 # Display current stats
-                st.metric("Score", calculate_challenge_score(entry))
+                st.metric("Total Score", calculate_challenge_score(entry))
+                initial_xp = entry.get('initial_xp_awarded', 0)
+                if initial_xp:
+                    st.metric("Initial AI XP", f"{initial_xp} XP")
             
             # Voting buttons
             col3, col4, col5 = st.columns(3)
@@ -967,7 +1148,7 @@ def render_leaderboard(db, user_id):
                             show_xp_notification(5, "Voting on Dish")
                         
                         # Award XP to staff member for receiving like
-                        staff_user_id = entry.get('staff_user_id')  # Would need to store this
+                        staff_user_id = entry.get('staff_user_id')
                         if staff_user_id:
                             award_visual_menu_xp(staff_user_id, 8, "received_like")
                         
@@ -1011,10 +1192,17 @@ def render_leaderboard(db, user_id):
             if entry.get('diet_match'):
                 badges.append("🥗 Diet-Friendly")
             
+            # AI quality badges
+            ai_analysis = entry.get('ai_analysis', {})
+            if ai_analysis.get('total_score', 0) >= 80:
+                badges.append("🤖 AI Excellent")
+            elif ai_analysis.get('total_score', 0) >= 60:
+                badges.append("🤖 AI Good")
+            
             if badges:
                 st.write(f"**Badges:** {' '.join(badges)}")
     
-    # Live Leaderboard
+    # Enhanced Leaderboard
     st.subheader("🏆 Live Leaderboard")
     
     # Calculate and sort leaderboard
@@ -1023,11 +1211,16 @@ def render_leaderboard(db, user_id):
     # Display top 10
     leaderboard_data = []
     for i, entry in enumerate(leaderboard[:10]):
+        ai_score = entry.get('ai_analysis', {}).get('total_score', 'N/A')
+        initial_xp = entry.get('initial_xp_awarded', 0)
+        
         leaderboard_data.append({
             "Rank": f"#{i+1}",
             "Dish": entry.get('dish', 'Unknown'),
             "Chef": entry.get('staff', 'Unknown'),
-            "Score": calculate_challenge_score(entry),
+            "Total Score": calculate_challenge_score(entry),
+            "AI Score": f"{ai_score}/100" if ai_score != 'N/A' else 'N/A',
+            "Initial XP": f"{initial_xp} XP" if initial_xp else 'N/A',
             "Likes": entry.get('likes', 0),
             "Views": entry.get('views', 0),
             "Orders": entry.get('orders', 0)
@@ -1041,7 +1234,9 @@ def render_leaderboard(db, user_id):
         st.markdown("#### 🥇 Top 3 Champions")
         for i, entry in enumerate(leaderboard[:3]):
             medals = ["🥇", "🥈", "🥉"]
-            st.success(f"{medals[i]} **{entry.get('dish', 'Unknown')}** by {entry.get('staff', 'Unknown')} - {calculate_challenge_score(entry)} points")
+            ai_score = entry.get('ai_analysis', {}).get('total_score', 'N/A')
+            ai_text = f" (AI: {ai_score}/100)" if ai_score != 'N/A' else ""
+            st.success(f"{medals[i]} **{entry.get('dish', 'Unknown')}** by {entry.get('staff', 'Unknown')} - {calculate_challenge_score(entry)} points{ai_text}")
     else:
         st.info("No entries to display in leaderboard yet.")
     
