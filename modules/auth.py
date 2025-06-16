@@ -1,7 +1,6 @@
 """
 Authentication module for the Smart Restaurant Menu Management App.
 Handles user registration, authentication, and related functions using Firebase.
-Enhanced with gamification initialization.
 """
 
 import hashlib
@@ -11,9 +10,6 @@ from typing import Dict, Optional, Tuple
 import datetime
 from firebase_admin import firestore
 from firebase_init import init_firebase
-
-# Import gamification system
-from modules.gamification_core import initialize_user_gamification, award_xp
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +63,7 @@ def username_exists(username: str) -> bool:
         return False
 
 def register_user(username: str, email: str, password: str, role: str = "user") -> Tuple[bool, str]:
-    """Register a new user in the Firebase database with gamification initialization."""
+    """Register a new user in the Firebase database."""
     try:
         is_valid, error_msg = validate_email(email)
         if not is_valid:
@@ -90,7 +86,6 @@ def register_user(username: str, email: str, password: str, role: str = "user") 
         db = get_firestore_db()
         users_ref = db.collection('users')
         
-        # Create user document
         users_ref.document(user_id).set({
             'user_id': user_id,
             'username': username,
@@ -100,13 +95,6 @@ def register_user(username: str, email: str, password: str, role: str = "user") 
             'time_created': time_created
         })
         
-        # Initialize gamification system for new user
-        gamification_success = initialize_user_gamification(user_id, username, role)
-        if gamification_success:
-            logger.info(f"Gamification initialized for new user: {username}")
-        else:
-            logger.warning(f"Failed to initialize gamification for user: {username}")
-        
         logger.info(f"{username} has been registered")
         return True, "User registration successful"
         
@@ -115,7 +103,7 @@ def register_user(username: str, email: str, password: str, role: str = "user") 
         return False, f"User registration unsuccessful: {str(e)}"
 
 def authenticate_user(username_or_email: str, password: str) -> Tuple[bool, Optional[Dict], str]:
-    """Authenticate a user with username/email and password. Awards daily login XP."""
+    """Authenticate a user with username/email and password."""
     try:
         db = get_firestore_db()
         users_ref = db.collection('users')
@@ -134,20 +122,6 @@ def authenticate_user(username_or_email: str, password: str) -> Tuple[bool, Opti
         
         if stored_hash == provided_hash:
             user_data.pop('password_hash', None)
-            
-            # Award daily login XP
-            user_id = user_data['user_id']
-            try:
-                xp_awarded, level_up, achievements = award_xp(
-                    user_id, 
-                    'daily_login', 
-                    context={'feature': 'authentication'}
-                )
-                if xp_awarded > 0:
-                    logger.info(f"Awarded {xp_awarded} XP for daily login to user {user_id}")
-            except Exception as e:
-                logger.error(f"Error awarding login XP: {str(e)}")
-            
             logger.info(f"User has been authenticated: {username_or_email}")
             return True, user_data, "Authentication was successful!"
         else:
