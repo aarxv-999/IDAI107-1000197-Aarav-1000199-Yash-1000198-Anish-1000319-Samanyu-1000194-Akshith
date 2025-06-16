@@ -214,6 +214,41 @@ def register_user(email, username, password, full_name, role='user'):
         logger.error(f"Registration error: {str(e)}")
         return False, f"Registration error: {str(e)}"
 
+def clear_user_data(user_id):
+    """Clear user's gamification data while keeping the account"""
+    try:
+        db = get_firestore_client()
+        if not db:
+            return False, "Database connection failed"
+        
+        # Reset user stats to initial values
+        initial_stats = {
+            'user_id': user_id,
+            'total_xp': 0,
+            'level': 1,
+            'recipes_generated': 0,
+            'quizzes_completed': 0,
+            'quizzes_taken': 0,
+            'correct_answers': 0,
+            'total_questions': 0,
+            'perfect_scores': 0,
+            'achievements': [],
+            'last_quiz_date': None,
+            'last_activity': firestore.SERVER_TIMESTAMP,
+            'data_cleared_at': firestore.SERVER_TIMESTAMP
+        }
+        
+        # Update user stats document
+        user_stats_ref = db.collection('user_stats').document(user_id)
+        user_stats_ref.set(initial_stats, merge=False)  # Overwrite completely
+        
+        logger.info(f"Cleared user data for user: {user_id}")
+        return True, "User data cleared successfully! Your account remains active."
+        
+    except Exception as e:
+        logger.error(f"Error clearing user data: {str(e)}")
+        return False, f"Error clearing user data: {str(e)}"
+
 def render_login_form():
     """Render the login form"""
     st.markdown("### Login to Your Account")
@@ -343,11 +378,54 @@ def render_auth_ui():
         st.sidebar.write(f"**Role:** {user['role'].title()}")
         st.sidebar.write(f"**Username:** @{user['username']}")
         
-        if st.sidebar.button("Logout", use_container_width=True):
-            st.session_state.is_authenticated = False
-            st.session_state.user = None
-            st.session_state.show_signup = False
-            st.rerun()
+        # Account management buttons
+        col1, col2 = st.sidebar.columns(2)
+        
+        with col1:
+            if st.button("Logout", use_container_width=True):
+                st.session_state.is_authenticated = False
+                st.session_state.user = None
+                st.session_state.show_signup = False
+                st.rerun()
+        
+        with col2:
+            if st.button("Clear Data", use_container_width=True, type="secondary", help="Reset your XP, achievements, and progress"):
+                # Show confirmation dialog
+                if 'confirm_clear_data' not in st.session_state:
+                    st.session_state.confirm_clear_data = False
+                
+                if not st.session_state.confirm_clear_data:
+                    st.session_state.confirm_clear_data = True
+                    st.rerun()
+        
+        # Handle clear data confirmation
+        if st.session_state.get('confirm_clear_data', False):
+            st.sidebar.markdown("---")
+            st.sidebar.warning("⚠️ **Confirm Data Clearing**")
+            st.sidebar.write("This will reset:")
+            st.sidebar.write("• All XP and levels")
+            st.sidebar.write("• Achievements")
+            st.sidebar.write("• Quiz history")
+            st.sidebar.write("• Recipe generation stats")
+            st.sidebar.write("")
+            st.sidebar.write("Your account will remain active.")
+            
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                if st.button("✅ Confirm", type="primary", use_container_width=True):
+                    success, message = clear_user_data(user['user_id'])
+                    if success:
+                        st.sidebar.success(message)
+                        st.session_state.confirm_clear_data = False
+                        # Force refresh of user stats
+                        st.rerun()
+                    else:
+                        st.sidebar.error(message)
+            
+            with col2:
+                if st.button("❌ Cancel", use_container_width=True):
+                    st.session_state.confirm_clear_data = False
+                    st.rerun()
         
         return True
     else:
