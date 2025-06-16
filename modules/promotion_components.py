@@ -1,6 +1,7 @@
 """
 Promotion Campaign UI Components for the Smart Restaurant Menu Management App.
 Integrated with the main gamification system - minimalistic design.
+Updated with All Campaigns page and likes/dislikes functionality.
 """
 
 import streamlit as st
@@ -10,7 +11,8 @@ from datetime import datetime
 from modules.promotion_services import (
     get_promotion_firebase_db, filter_valid_ingredients, find_possible_dishes,
     generate_campaign, save_campaign, get_existing_campaign, get_campaigns_for_month,
-    award_promotion_xp, delete_campaign, get_user_stats_promotion
+    award_promotion_xp, delete_campaign, get_user_stats_promotion, get_all_campaigns,
+    like_campaign, dislike_campaign, get_user_by_id
 )
 from ui.components import show_xp_notification
 import logging
@@ -42,13 +44,15 @@ def render_promotion_generator():
     if user_id:
         render_clean_gamification_header(user_id)
     
-    # Create tabs
-    tabs = st.tabs(["📝 Create Campaign", "📊 Campaign History"])
+    # Create tabs - UPDATED with All Campaigns tab
+    tabs = st.tabs(["📝 Create Campaign", "📊 Campaign History", "🌟 All Campaigns"])
     
     with tabs[0]:
         render_campaign_creation(db, staff_name, user_id)
     with tabs[1]:
         render_campaign_history(db, staff_name)
+    with tabs[2]:
+        render_all_campaigns(db, user_id)
 
 def render_clean_gamification_header(user_id):
     """Render clean, minimal gamification stats"""
@@ -86,7 +90,7 @@ def render_campaign_creation(db, staff_name, user_id):
     month_name = datetime.now().strftime("%B %Y")
     
     # Simple XP info
-    st.info("💡 **XP Rewards:** Basic (20 XP) • Good (30 XP) • Excellent (50 XP)")
+    st.info("💡 **XP Rewards:** Basic (20 XP) • Good (30 XP) • Excellent (50 XP) • Likes (+10 XP) • Dislikes (+2 XP)")
     
     # Check if user already submitted this month
     existing_campaign = get_existing_campaign(db, staff_name)
@@ -100,7 +104,7 @@ def render_campaign_creation(db, staff_name, user_id):
             st.write("**Campaign Content:**")
             st.write(campaign_text)
             
-            # Show XP earned (simple)
+            # Show XP earned and engagement stats
             campaign_length = len(campaign_text)
             if campaign_length >= 300:
                 xp_earned = "50 XP (Excellent)"
@@ -109,15 +113,18 @@ def render_campaign_creation(db, staff_name, user_id):
             else:
                 xp_earned = "20 XP (Basic)"
             
-            st.caption(f"XP Earned: {xp_earned}")
+            # Show engagement stats
+            likes = existing_campaign.get('likes', 0)
+            dislikes = existing_campaign.get('dislikes', 0)
+            engagement_xp = (likes * 10) + (dislikes * 2)
             
             col1, col2 = st.columns(2)
             with col1:
+                st.caption(f"Creation XP: {xp_earned}")
+                st.caption(f"Engagement XP: +{engagement_xp} XP ({likes} likes, {dislikes} dislikes)")
+            with col2:
                 st.write(f"**Type:** {existing_campaign.get('promotion_type', 'N/A')}")
                 st.write(f"**Goal:** {existing_campaign.get('goal', 'N/A')}")
-            with col2:
-                st.write(f"**Target:** {existing_campaign.get('target_audience', 'N/A')}")
-                st.write(f"**Duration:** {existing_campaign.get('campaign_duration', 'N/A')}")
         
         # Campaign management
         st.markdown("#### 🔄 Campaign Management")
@@ -231,7 +238,7 @@ def create_campaign_with_xp(db, staff_name, user_id, promotion_type, promotion_g
                 st.error("❌ Failed to generate campaign. Please try again.")
                 return
             
-            # Save campaign data
+            # Save campaign data with user_id
             campaign_data = {
                 "name": staff_name,
                 "campaign": campaign,
@@ -241,7 +248,7 @@ def create_campaign_with_xp(db, staff_name, user_id, promotion_type, promotion_g
                 "campaign_duration": campaign_duration
             }
             
-            success = save_campaign(db, staff_name, campaign_data)
+            success = save_campaign(db, staff_name, campaign_data, user_id)
             
             if success:
                 # Calculate XP based on campaign quality
@@ -346,6 +353,13 @@ def render_campaign_history(db, staff_name):
                 total_estimated_xp += 20
                 campaign['estimated_xp'] = 20
                 campaign['quality'] = 'Basic'
+            
+            # Add engagement XP
+            likes = campaign.get('likes', 0)
+            dislikes = campaign.get('dislikes', 0)
+            engagement_xp = (likes * 10) + (dislikes * 2)
+            campaign['engagement_xp'] = engagement_xp
+            total_estimated_xp += engagement_xp
         
         # Display simple statistics
         col1, col2, col3 = st.columns(3)
@@ -367,10 +381,14 @@ def render_campaign_history(db, staff_name):
         for i, campaign in enumerate(reversed(all_user_campaigns[-5:])):  # Show last 5
             month = campaign.get('month', 'Unknown')
             month_name = datetime.strptime(month + "-01", "%Y-%m-%d").strftime("%B %Y") if month != 'Unknown' else 'Unknown'
-            xp = campaign.get('estimated_xp', 0)
+            creation_xp = campaign.get('estimated_xp', 0)
+            engagement_xp = campaign.get('engagement_xp', 0)
+            total_xp = creation_xp + engagement_xp
             quality = campaign.get('quality', 'Unknown')
+            likes = campaign.get('likes', 0)
+            dislikes = campaign.get('dislikes', 0)
             
-            with st.expander(f"{month_name} - {campaign.get('promotion_type', 'Unknown')} (+{xp} XP)", expanded=False):
+            with st.expander(f"{month_name} - {campaign.get('promotion_type', 'Unknown')} (+{total_xp} XP)", expanded=False):
                 col1, col2 = st.columns([3, 1])
                 
                 with col1:
@@ -379,16 +397,176 @@ def render_campaign_history(db, staff_name):
                     st.write(f"**Duration:** {campaign.get('campaign_duration', 'N/A')}")
                 
                 with col2:
-                    st.metric("XP", f"{xp}")
+                    st.metric("Creation XP", f"{creation_xp}")
+                    st.metric("Engagement XP", f"{engagement_xp}")
                     st.caption(f"Quality: {quality}")
+                    st.caption(f"👍 {likes} | 👎 {dislikes}")
                 
                 st.markdown("**Campaign:**")
                 st.write(campaign.get('campaign', 'No content available'))
         
         # Simple tips
         st.markdown("#### 💡 Tips")
-        st.info("Create longer, more detailed campaigns to earn more XP (up to 50 XP for excellent campaigns)")
+        st.info("Create longer, more detailed campaigns to earn more XP (up to 50 XP for excellent campaigns). Get likes from colleagues to earn bonus XP!")
         
     except Exception as e:
         logger.error(f"Error loading campaign history: {str(e)}")
         st.error("❌ Failed to load campaign history.")
+
+def render_all_campaigns(db, current_user_id):
+    """NEW: Render all campaigns page with likes/dislikes functionality"""
+    st.markdown("### 🌟 All Campaigns")
+    st.markdown("*Discover and interact with campaigns from all team members*")
+    
+    try:
+        # Get all campaigns
+        all_campaigns = get_all_campaigns(db, limit=50)
+        
+        if not all_campaigns:
+            st.info("📝 No campaigns found. Be the first to create one!")
+            return
+        
+        # Filter and search options
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Filter by promotion type
+            promotion_types = list(set([c.get('promotion_type', 'Unknown') for c in all_campaigns]))
+            selected_type = st.selectbox("Filter by Type", ["All"] + promotion_types)
+        
+        with col2:
+            # Filter by month
+            months = list(set([c.get('month', 'Unknown') for c in all_campaigns]))
+            months.sort(reverse=True)
+            selected_month = st.selectbox("Filter by Month", ["All"] + months)
+        
+        with col3:
+            # Sort options
+            sort_option = st.selectbox("Sort by", ["Newest First", "Most Liked", "Most Engaged"])
+        
+        # Apply filters
+        filtered_campaigns = all_campaigns.copy()
+        
+        if selected_type != "All":
+            filtered_campaigns = [c for c in filtered_campaigns if c.get('promotion_type') == selected_type]
+        
+        if selected_month != "All":
+            filtered_campaigns = [c for c in filtered_campaigns if c.get('month') == selected_month]
+        
+        # Apply sorting
+        if sort_option == "Most Liked":
+            filtered_campaigns.sort(key=lambda x: x.get('likes', 0), reverse=True)
+        elif sort_option == "Most Engaged":
+            filtered_campaigns.sort(key=lambda x: x.get('likes', 0) + x.get('dislikes', 0), reverse=True)
+        # Default is newest first (already sorted by timestamp)
+        
+        st.markdown(f"#### 📊 Showing {len(filtered_campaigns)} campaigns")
+        
+        # Display campaigns
+        for i, campaign in enumerate(filtered_campaigns):
+            render_campaign_card(db, campaign, current_user_id, i)
+        
+    except Exception as e:
+        logger.error(f"Error loading all campaigns: {str(e)}")
+        st.error("❌ Failed to load campaigns.")
+
+def render_campaign_card(db, campaign, current_user_id, index):
+    """Render individual campaign card with like/dislike functionality"""
+    try:
+        # Get campaign details
+        campaign_name = campaign.get('name', 'Unknown')
+        campaign_text = campaign.get('campaign', 'No content')
+        promotion_type = campaign.get('promotion_type', 'Unknown')
+        goal = campaign.get('goal', 'N/A')
+        month = campaign.get('month', 'Unknown')
+        likes = campaign.get('likes', 0)
+        dislikes = campaign.get('dislikes', 0)
+        liked_by = campaign.get('liked_by', [])
+        disliked_by = campaign.get('disliked_by', [])
+        doc_id = campaign.get('doc_id', '')
+        campaign_user_id = campaign.get('user_id')
+        
+        # Format month
+        try:
+            month_name = datetime.strptime(month + "-01", "%Y-%m-%d").strftime("%B %Y") if month != 'Unknown' else 'Unknown'
+        except:
+            month_name = month
+        
+        # Check user interaction status
+        user_liked = current_user_id in liked_by
+        user_disliked = current_user_id in disliked_by
+        is_own_campaign = current_user_id == campaign_user_id
+        
+        # Campaign card
+        with st.container():
+            # Header
+            col1, col2, col3 = st.columns([3, 1, 1])
+            
+            with col1:
+                st.markdown(f"**👤 {campaign_name}** • {month_name}")
+                st.markdown(f"🎯 {promotion_type} • 🎪 {goal}")
+            
+            with col2:
+                # Engagement stats
+                st.metric("👍 Likes", likes)
+            
+            with col3:
+                st.metric("👎 Dislikes", dislikes)
+            
+            # Campaign content
+            with st.expander("📖 Read Campaign", expanded=False):
+                st.write(campaign_text)
+            
+            # Interaction buttons
+            if not is_own_campaign:
+                col1, col2, col3 = st.columns([1, 1, 4])
+                
+                with col1:
+                    like_button_type = "primary" if user_liked else "secondary"
+                    like_disabled = user_liked
+                    
+                    if st.button(
+                        f"👍 Like", 
+                        key=f"like_{doc_id}_{index}",
+                        type=like_button_type,
+                        disabled=like_disabled,
+                        use_container_width=True
+                    ):
+                        success, message = like_campaign(db, doc_id, current_user_id)
+                        if success:
+                            st.success("👍 Liked!")
+                            st.rerun()
+                        else:
+                            st.error(message)
+                
+                with col2:
+                    dislike_button_type = "primary" if user_disliked else "secondary"
+                    dislike_disabled = user_disliked
+                    
+                    if st.button(
+                        f"👎 Dislike", 
+                        key=f"dislike_{doc_id}_{index}",
+                        type=dislike_button_type,
+                        disabled=dislike_disabled,
+                        use_container_width=True
+                    ):
+                        success, message = dislike_campaign(db, doc_id, current_user_id)
+                        if success:
+                            st.success("👎 Disliked")
+                            st.rerun()
+                        else:
+                            st.error(message)
+                
+                with col3:
+                    if user_liked:
+                        st.success("✅ You liked this campaign")
+                    elif user_disliked:
+                        st.info("ℹ️ You disliked this campaign")
+            else:
+                st.info("📝 This is your campaign")
+            
+            st.divider()
+    
+    except Exception as e:
+        logger.error(f"Error rendering campaign card: {str(e)}")
+        st.error(f"❌ Error displaying campaign")
