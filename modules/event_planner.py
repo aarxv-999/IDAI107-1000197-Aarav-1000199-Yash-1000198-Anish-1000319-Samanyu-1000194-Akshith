@@ -247,7 +247,7 @@ IMPORTANT:
         response = model.generate_content(prompt)
         response_text = response.text.strip()
         
-        response_text = response_text.replace('\`\`\`json', '').replace('\`\`\`', '').strip()
+        response_text = response_text.replace('```json', '').replace('```', '').strip()
         
         start_idx = response_text.find('{')
         end_idx = response_text.rfind('}')
@@ -375,11 +375,19 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         invitation_text = clean_text_for_pdf(event_plan.get('invitation', 'No invitation text available'))
         pdf.multi_cell(0, 6, invitation_text)
         
-        # Generate PDF bytes with proper encoding
-        pdf_output = pdf.output(dest="S").encode('latin-1')
+        # Generate PDF bytes with proper encoding - FIXED SECTION
+        pdf_output = pdf.output(dest="S")
         
-
-        return pdf_output
+        # Handle the output based on FPDF version
+        if isinstance(pdf_output, str):
+            # Older FPDF versions return string
+            return pdf_output.encode("latin-1")
+        elif isinstance(pdf_output, bytearray):
+            # Handle bytearray output
+            return bytes(pdf_output)
+        else:
+            # Newer FPDF versions return bytes
+            return pdf_output
             
     except Exception as e:
         logger.error(f"Error creating PDF: {str(e)}")
