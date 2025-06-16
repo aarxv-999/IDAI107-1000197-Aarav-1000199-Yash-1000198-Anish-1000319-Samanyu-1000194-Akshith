@@ -91,7 +91,7 @@ def render_ai_dish_detection(db, vision_client, gemini_model, allergies, user_id
         image, content = preprocess_image(uploaded_file)
         
         if image and content:
-            st.image(image, caption="Uploaded Image", use_column_width=True)
+            st.image(image, caption="Uploaded Image", use_container_width=True)
             
             with st.spinner("🔍 Analyzing image with AI..."):
                 # Analyze with Vision API (if available)
@@ -995,7 +995,7 @@ def save_enhanced_challenge_entry(db, staff_name, staff_user_id, dish_name, ingr
         return False, f"Error saving challenge: {str(e)}"
 
 def render_visual_challenge(db, vision_client, gemini_model, user_role, username, user_id):
-    """Render enhanced visual menu challenge tab with AI analysis"""
+    """Render enhanced visual menu challenge tab with AI analysis - FIXED VERSION"""
     st.header("🏅 AI-Powered Visual Menu Challenge")
     
     # Check access permissions
@@ -1021,86 +1021,116 @@ def render_visual_challenge(db, vision_client, gemini_model, user_role, username
     - Overall appeal and professionalism (25%)
     """)
     
-    # Challenge submission form
-    with st.form("challenge_form"):
-        st.markdown("#### 📸 Submit Your Dish for AI Analysis")
+    # Initialize session state for form persistence
+    if 'challenge_submitted' not in st.session_state:
+        st.session_state.challenge_submitted = False
+    if 'challenge_results' not in st.session_state:
+        st.session_state.challenge_results = None
+    
+    # Show results if they exist
+    if st.session_state.challenge_submitted and st.session_state.challenge_results:
+        st.markdown("### 🎉 Latest Submission Results")
+        results = st.session_state.challenge_results
         
-        col1, col2 = st.columns(2)
+        # Display AI analysis results
+        st.markdown("### 🤖 AI Analysis Results")
         
-        with col1:
-            dish_name = st.text_input("Dish Name *", placeholder="e.g., Truffle Pasta Supreme")
-            plating_style = st.text_input("Plating Style *", placeholder="e.g., Modern, Classic, Rustic, Minimalist")
+        col_results1, col_results2, col_results3 = st.columns(3)
+        with col_results1:
+            st.metric("Vision API Score", f"{results['ai_analysis']['vision_score']}/50")
+        with col_results2:
+            st.metric("Gemini AI Score", f"{results['ai_analysis']['gemini_score']}/100")
+        with col_results3:
+            st.metric("Total XP Earned", f"{results['ai_xp']} XP")
         
-        with col2:
-            ingredients = st.text_area("Ingredients (comma separated) *", placeholder="pasta, truffle oil, parmesan, garlic, herbs")
+        # Show detailed feedback
+        st.info(f"📊 **AI Feedback:** {results['ai_feedback']}")
+        
+        # Show image preview if available
+        if results.get('image'):
+            st.image(results['image'], caption=f"Your submitted dish: {results['dish_name']}", use_container_width=True)
+        
+        st.success("🎉 Your dish is now live in the leaderboard for customer voting!")
+        
+        # Clear results button
+        if st.button("🆕 Submit Another Dish"):
+            st.session_state.challenge_submitted = False
+            st.session_state.challenge_results = None
+            st.rerun()
+        
+        st.markdown("---")
+    
+    # Challenge submission form (only show if no recent submission)
+    if not st.session_state.challenge_submitted:
+        with st.form("challenge_form"):
+            st.markdown("#### 📸 Submit Your Dish for AI Analysis")
             
-        # Challenge options
-        col3, col4 = st.columns(2)
-        with col3:
-            trendy = st.checkbox("Matches current food trends", help="Is this dish following current culinary trends?")
-        with col4:
-            diet_match = st.checkbox("Matches dietary preferences", help="Does this dish cater to popular dietary preferences?")
-        
-        # Image upload
-        challenge_image = st.file_uploader("Dish Photo *", type=["jpg", "png", "jpeg"], help="Upload a high-quality photo of your dish for AI analysis")
-        
-        submitted = st.form_submit_button("🚀 Submit for AI Analysis & Challenge", type="primary")
-        
-        if submitted:
-            if not dish_name or not ingredients or not plating_style:
-                st.error("❌ Please fill in all required fields (Dish Name, Ingredients, Plating Style).")
-            elif not challenge_image:
-                st.error("❌ Please upload a dish photo for AI analysis.")
-            else:
-                with st.spinner("🤖 Analyzing your dish with AI (Vision API + Gemini)..."):
-                    # Preprocess image
-                    image, content = preprocess_image(challenge_image)
-                    
-                    if image and content:
-                        # Perform AI analysis
-                        ai_xp, ai_feedback, ai_analysis = analyze_challenge_image_with_ai(
-                            vision_client, gemini_model, content, dish_name, ingredients, plating_style
-                        )
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                dish_name = st.text_input("Dish Name *", placeholder="e.g., Truffle Pasta Supreme")
+                plating_style = st.text_input("Plating Style *", placeholder="e.g., Modern, Classic, Rustic, Minimalist")
+            
+            with col2:
+                ingredients = st.text_area("Ingredients (comma separated) *", placeholder="pasta, truffle oil, parmesan, garlic, herbs")
+                
+            # Challenge options
+            col3, col4 = st.columns(2)
+            with col3:
+                trendy = st.checkbox("Matches current food trends", help="Is this dish following current culinary trends?")
+            with col4:
+                diet_match = st.checkbox("Matches dietary preferences", help="Does this dish cater to popular dietary preferences?")
+            
+            # Image upload
+            challenge_image = st.file_uploader("Dish Photo *", type=["jpg", "png", "jpeg"], help="Upload a high-quality photo of your dish for AI analysis")
+            
+            submitted = st.form_submit_button("🚀 Submit for AI Analysis & Challenge", type="primary")
+            
+            if submitted:
+                if not dish_name or not ingredients or not plating_style:
+                    st.error("❌ Please fill in all required fields (Dish Name, Ingredients, Plating Style).")
+                elif not challenge_image:
+                    st.error("❌ Please upload a dish photo for AI analysis.")
+                else:
+                    with st.spinner("🤖 Analyzing your dish with AI (Vision API + Gemini)..."):
+                        # Preprocess image
+                        image, content = preprocess_image(challenge_image)
                         
-                        # Save enhanced challenge entry
-                        success, message = save_enhanced_challenge_entry(
-                            db, username, user_id, dish_name, ingredients, plating_style, trendy, diet_match, ai_analysis
-                        )
-                        
-                        if success:
-                            st.success(f"✅ {message}")
+                        if image and content:
+                            # Perform AI analysis
+                            ai_xp, ai_feedback, ai_analysis = analyze_challenge_image_with_ai(
+                                vision_client, gemini_model, content, dish_name, ingredients, plating_style
+                            )
                             
-                            # Display AI analysis results
-                            st.markdown("### 🤖 AI Analysis Results")
+                            # Save enhanced challenge entry
+                            success, message = save_enhanced_challenge_entry(
+                                db, username, user_id, dish_name, ingredients, plating_style, trendy, diet_match, ai_analysis
+                            )
                             
-                            col_results1, col_results2, col_results3 = st.columns(3)
-                            with col_results1:
-                                st.metric("Vision API Score", f"{ai_analysis['vision_score']}/50")
-                            with col_results2:
-                                st.metric("Gemini AI Score", f"{ai_analysis['gemini_score']}/100")
-                            with col_results3:
-                                st.metric("Total XP Earned", f"{ai_xp} XP")
-                            
-                            # Show detailed feedback
-                            st.info(f"📊 **AI Feedback:** {ai_feedback}")
-                            
-                            # Award initial XP for submission
-                            if user_id:
-                                xp_earned = award_visual_menu_xp(user_id, ai_xp, "ai_challenge_submission")
-                                if xp_earned > 0:
-                                    show_xp_notification(ai_xp, f"AI Challenge Analysis ({ai_analysis['gemini_score']}/100 score)")
-                            
-                            # Show image preview
-                            st.image(image, caption=f"Your submitted dish: {dish_name}", use_column_width=True)
-                            
-                            st.success("🎉 Your dish is now live in the leaderboard for customer voting!")
-                            
-                            # Clear form by rerunning
-                            st.rerun()
+                            if success:
+                                # Store results in session state
+                                st.session_state.challenge_results = {
+                                    'dish_name': dish_name,
+                                    'ai_xp': ai_xp,
+                                    'ai_feedback': ai_feedback,
+                                    'ai_analysis': ai_analysis,
+                                    'image': image,
+                                    'message': message
+                                }
+                                st.session_state.challenge_submitted = True
+                                
+                                # Award initial XP for submission
+                                if user_id:
+                                    xp_earned = award_visual_menu_xp(user_id, ai_xp, "ai_challenge_submission")
+                                    if xp_earned > 0:
+                                        show_xp_notification(ai_xp, f"AI Challenge Analysis ({ai_analysis['gemini_score']}/100 score)")
+                                
+                                # Rerun to show results
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {message}")
                         else:
-                            st.error(f"❌ {message}")
-                    else:
-                        st.error("❌ Failed to process the uploaded image. Please try again with a different image.")
+                            st.error("❌ Failed to process the uploaded image. Please try again with a different image.")
 
 def render_leaderboard(db, user_id):
     """Render enhanced leaderboard with proper XP tracking"""
