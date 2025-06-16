@@ -319,98 +319,98 @@ def render_signup_form():
     """Render the signup form with staff code verification"""
     st.markdown("### Create Your Account")
     
-    with st.form("signup_form"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            full_name = st.text_input(
-                "Full Name *",
-                placeholder="Enter your full name",
-                help="Your display name in the system"
-            )
-            email = st.text_input(
-                "Email Address *",
-                placeholder="Enter your email address",
-                help="Used for login and notifications"
-            )
-        
-        with col2:
-            username = st.text_input(
-                "Username *",
-                placeholder="Choose a unique username",
-                help="Used for login and leaderboards"
-            )
-        
-        # Staff verification section
-        st.markdown("---")
-        st.markdown("#### Account Type")
-
-        is_staff = st.checkbox(
-            "Restaurant staff?",
-            help="Check this if you are a restaurant staff member (requires verification code)"
+    # Initialize session state for staff verification
+    if 'staff_code_entered' not in st.session_state:
+        st.session_state.staff_code_entered = ""
+    if 'staff_code_valid' not in st.session_state:
+        st.session_state.staff_code_valid = False
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        full_name = st.text_input(
+            "Full Name *",
+            placeholder="Enter your full name",
+            help="Your display name in the system"
         )
+        email = st.text_input(
+            "Email Address *",
+            placeholder="Enter your email address",
+            help="Used for login and notifications"
+        )
+    
+    with col2:
+        username = st.text_input(
+            "Username *",
+            placeholder="Choose a unique username",
+            help="Used for login and leaderboards"
+        )
+    
+    # Staff verification section
+    st.markdown("---")
+    st.markdown("#### Account Type")
 
-        selected_role = "user"  # Default role
-        staff_code_valid = False
+    is_staff = st.checkbox(
+        "Restaurant staff?",
+        help="Check this if you are a restaurant staff member (requires verification code)"
+    )
 
-        if is_staff:
-            # Show code input immediately after checkbox is checked
-            staff_code = st.text_input(
-                "Staff Access Code *",
-                type="password",
-                placeholder="Enter staff access code",
-                help="Contact your administrator for the staff access code"
-            )
-            
-            if staff_code:
-                if validate_staff_code(staff_code):
-                    staff_code_valid = True
-                    st.success("✅ Staff code verified!")
-                    
-                    # Show role selection immediately after valid code
-                    selected_role = st.selectbox(
-                        "Select Your Role *",
-                        ["staff", "chef", "admin"],
-                        help="Choose your role in the restaurant system"
-                    )
-                else:
-                    st.error("❌ Invalid staff code. Please contact your administrator.")
+    selected_role = "user"  # Default role
+    staff_code_valid = False
+
+    if is_staff:
+        # Show code input immediately after checkbox is checked
+        staff_code = st.text_input(
+            "Staff Access Code *",
+            type="password",
+            placeholder="Enter staff access code",
+            help="Contact your administrator for the staff access code",
+            key="staff_code_input"
+        )
+        
+        if staff_code:
+            if validate_staff_code(staff_code):
+                staff_code_valid = True
+                st.success("✅ Staff code verified!")
+                
+                # Show role selection immediately after valid code
+                selected_role = st.selectbox(
+                    "Select Your Role *",
+                    ["staff", "chef", "admin"],
+                    help="Choose your role in the restaurant system",
+                    key="role_selector"
+                )
             else:
-                st.info("🔐 Please enter your staff access code to continue")
+                st.error("❌ Invalid staff code. Please contact your administrator.")
         else:
-            st.info("👤 You will be registered as a **Customer/User** with access to basic features.")
-        
-        st.markdown("---")
-        
-        password = st.text_input(
-            "Password *",
-            type="password",
-            placeholder="Create a strong password",
-            help="Must be at least 5 characters with one uppercase letter"
-        )
-        
-        confirm_password = st.text_input(
-            "Confirm Password *",
-            type="password",
-            placeholder="Confirm your password"
-        )
-        
-        # Terms and conditions
-        terms_accepted = st.checkbox(
-            "I agree to the Terms of Service and Privacy Policy",
-            help="You must accept the terms to create an account"
-        )
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            signup_button = st.form_submit_button("Create Account", type="primary", use_container_width=True)
-        with col2:
-            if st.form_submit_button("Back to Login", use_container_width=True):
-                st.session_state.show_signup = False
-                st.session_state.staff_code_verified = False
-                st.rerun()
-        
-        if signup_button:
+            st.info("🔐 Please enter your staff access code to continue")
+    else:
+        st.info("👤 You will be registered as a **Customer/User** with access to basic features.")
+    
+    st.markdown("---")
+    
+    password = st.text_input(
+        "Password *",
+        type="password",
+        placeholder="Create a strong password",
+        help="Must be at least 5 characters with one uppercase letter"
+    )
+    
+    confirm_password = st.text_input(
+        "Confirm Password *",
+        type="password",
+        placeholder="Confirm your password"
+    )
+    
+    # Terms and conditions
+    terms_accepted = st.checkbox(
+        "I agree to the Terms of Service and Privacy Policy",
+        help="You must accept the terms to create an account"
+    )
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Create Account", type="primary", use_container_width=True):
             # Validation
             if not all([full_name, email, username, password, confirm_password]):
                 st.error("Please fill in all required fields")
@@ -437,6 +437,11 @@ def render_signup_form():
                             st.rerun()
                     else:
                         st.error(message)
+    with col2:
+        if st.button("Back to Login", use_container_width=True):
+            st.session_state.show_signup = False
+            st.session_state.staff_code_verified = False
+            st.rerun()
 
 def render_auth_ui():
     """Render authentication UI in sidebar"""
@@ -446,38 +451,7 @@ def render_auth_ui():
         st.sidebar.write(f"**Role:** {user['role'].title()}")
         st.sidebar.write(f"**Username:** @{user['username']}")
         
-        # Features section with dropdown
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### Features")
-        
-        # Feature selection dropdown
-        features = [
-            "Smart Leftover Recipe Generator",
-            "Visual Menu Display", 
-            "Cooking Quiz",
-            "Gamification Hub",
-            "AI Marketing Campaign Generator",
-            "Event Planner",
-            "Inventory Management"
-        ]
-        
-        selected_feature = st.sidebar.selectbox(
-            "Choose a feature:",
-            features,
-            key="feature_selector"
-        )
-        
-        if 'selected_feature' not in st.session_state:
-            st.session_state.selected_feature = selected_feature
-        
-        if selected_feature != st.session_state.selected_feature:
-            st.session_state.selected_feature = selected_feature
-            st.rerun()
-        
         # Account management buttons
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### Account")
-        
         col1, col2 = st.sidebar.columns(2)
         
         with col1:
@@ -528,6 +502,34 @@ def render_auth_ui():
                 if st.button("❌ Cancel", use_container_width=True):
                     st.session_state.confirm_clear_data = False
                     st.rerun()
+        
+        # Features section with dropdown
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### Features")
+        
+        # Feature selection dropdown
+        features = [
+            "Smart Leftover Recipe Generator",
+            "Visual Menu Display", 
+            "Cooking Quiz",
+            "Gamification Hub",
+            "AI Marketing Campaign Generator",
+            "Event Planner",
+            "Inventory Management"
+        ]
+        
+        selected_feature = st.sidebar.selectbox(
+            "Choose a feature:",
+            features,
+            key="feature_selector"
+        )
+        
+        if 'selected_feature' not in st.session_state:
+            st.session_state.selected_feature = selected_feature
+        
+        if selected_feature != st.session_state.selected_feature:
+            st.session_state.selected_feature = selected_feature
+            st.rerun()
         
         return True
     else:
