@@ -215,13 +215,16 @@ def register_user(email, username, password, full_name, role='user'):
         return False, f"Registration error: {str(e)}"
 
 def clear_user_data(user_id):
-    """Clear user's gamification data while keeping the account"""
+    """Clear user's gamification data and preferences while keeping the account"""
     try:
-        db = get_firestore_client()
-        if not db:
-            return False, "Database connection failed"
+        # Get both main and event Firebase databases
+        main_db = get_firestore_client()
+        event_db = get_event_firestore_client()
         
-        # Reset user stats to initial values
+        if not main_db:
+            return False, "Main database connection failed"
+        
+        # Reset user stats to initial values in main Firebase
         initial_stats = {
             'user_id': user_id,
             'total_xp': 0,
@@ -238,12 +241,33 @@ def clear_user_data(user_id):
             'data_cleared_at': firestore.SERVER_TIMESTAMP
         }
         
-        # Update user stats document
-        user_stats_ref = db.collection('user_stats').document(user_id)
+        # Update user stats document in main Firebase
+        user_stats_ref = main_db.collection('user_stats').document(user_id)
         user_stats_ref.set(initial_stats, merge=False)  # Overwrite completely
         
-        logger.info(f"Cleared user data for user: {user_id}")
-        return True, "User data cleared successfully! Your account remains active."
+        # Clear user preferences from event Firebase if available
+        if event_db:
+            try:
+                # Clear user preferences
+                user_prefs_ref = event_db.collection('user_preferences').document(user_id)
+                user_prefs_doc = user_prefs_ref.get()
+                if user_prefs_doc.exists:
+                    user_prefs_ref.delete()
+                    logger.info(f"Cleared user preferences for user: {user_id}")
+                
+                # Clear user dish likes (for AI learning)
+                user_likes_ref = event_db.collection('user_dish_likes').where('user_id', '==', user_id)
+                user_likes_docs = list(user_likes_ref.stream())
+                for doc in user_likes_docs:
+                    doc.reference.delete()
+                logger.info(f"Cleared {len(user_likes_docs)} dish likes for user: {user_id}")
+                
+            except Exception as e:
+                logger.warning(f"Could not clear event database data for user {user_id}: {str(e)}")
+                # Continue anyway since main stats were cleared
+        
+        logger.info(f"Cleared user data and preferences for user: {user_id}")
+        return True, "User data and preferences cleared successfully! Your account remains active."
         
     except Exception as e:
         logger.error(f"Error clearing user data: {str(e)}")
@@ -407,6 +431,8 @@ def render_auth_ui():
             st.sidebar.write("• Achievements")
             st.sidebar.write("• Quiz history")
             st.sidebar.write("• Recipe generation stats")
+            st.sidebar.write("• User preferences & liked dishes")
+            st.sidebar.write("• AI learning data")
             st.sidebar.write("")
             st.sidebar.write("Your account will remain active.")
             
