@@ -444,120 +444,66 @@ def render_signup_form():
             st.rerun()
 
 def render_auth_ui():
-    """Render authentication UI in sidebar"""
-    if st.session_state.is_authenticated:
-        user = st.session_state.user
-        st.sidebar.success(f"Welcome, {user.get('full_name', user['username'])}!")
-        st.sidebar.write(f"**Role:** {user['role'].title()}")
-        st.sidebar.write(f"**Username:** @{user['username']}")
-        
-        # Account management buttons
-        col1, col2 = st.sidebar.columns(2)
-        
-        with col1:
-            if st.button("Logout", use_container_width=True):
-                st.session_state.is_authenticated = False
-                st.session_state.user = None
-                st.session_state.show_signup = False
-                st.session_state.staff_code_verified = False
-                st.rerun()
-        
-        with col2:
-            if st.button("Clear Data", use_container_width=True, type="secondary", help="Reset your XP, achievements, and progress"):
-                # Show confirmation dialog
-                if 'confirm_clear_data' not in st.session_state:
-                    st.session_state.confirm_clear_data = False
-                
-                if not st.session_state.confirm_clear_data:
-                    st.session_state.confirm_clear_data = True
-                    st.rerun()
+    """Renders the authentication UI in the sidebar."""
 
-        # ADD THIS LINE - Display user stats in sidebar
-        display_user_stats_sidebar(user['user_id'])
+    st.sidebar.title("Authentication")
 
-        # Handle clear data confirmation
-        if st.session_state.get('confirm_clear_data', False):
-            st.sidebar.markdown("---")
-            st.sidebar.warning("⚠️ **Confirm Data Clearing**")
-            st.sidebar.write("This will reset:")
-            st.sidebar.write("• All XP and levels")
-            st.sidebar.write("• Achievements")
-            st.sidebar.write("• Quiz history")
-            st.sidebar.write("• Recipe generation stats")
-            st.sidebar.write("• User preferences & liked dishes")
-            st.sidebar.write("• AI learning data")
-            st.sidebar.write("")
-            st.sidebar.write("Your account will remain active.")
-            
-            col1, col2 = st.sidebar.columns(2)
-            with col1:
-                if st.button("✅ Confirm", type="primary", use_container_width=True):
-                    success, message = clear_user_data(user['user_id'])
-                    if success:
-                        st.sidebar.success(message)
-                        st.session_state.confirm_clear_data = False
-                        # Force refresh of user stats
-                        st.rerun()
-                    else:
-                        st.sidebar.error(message)
-            
-            with col2:
-                if st.button("❌ Cancel", use_container_width=True):
-                    st.session_state.confirm_clear_data = False
-                    st.rerun()
-        
+    # Authentication status
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+
+    if not st.session_state.authenticated:
+        # Username and password input
+        username = st.sidebar.text_input("Username")
+        password = st.sidebar.text_input("Password", type="password")
+
+        # Login button
+        if st.sidebar.button("Login"):
+            # Basic authentication logic (replace with your actual authentication)
+            if username == "admin" and password == "password":
+                st.session_state.authenticated = True
+                st.success("Logged in successfully!")
+                st.rerun()  # Refresh the app to show the main content
+            else:
+                st.error("Invalid username or password.")
+    else:
+        # Logout button
+        if st.sidebar.button("Logout"):
+            st.session_state.authenticated = False
+            st.success("Logged out successfully!")
+            st.rerun()  # Refresh the app to show the login form
+
         # Features section with dropdown - ONLY ONE
         st.sidebar.markdown("---")
         st.sidebar.markdown("### Features")
-        
-        # Feature selection dropdown
+
+        # Feature selection dropdown - FIXED to match main_app.py expectations
         features = [
-            "Smart Leftover Recipe Generator",
-            "Visual Menu Display", 
-            "Cooking Quiz",
+            "Dashboard",
+            "Leftover Management",
+            "Ingredients Management", 
+            "Visual Menu Search",
             "Gamification Hub",
-            "AI Marketing Campaign Generator",
-            "Event Planner",
-            "Inventory Management"
+            "Promotion Generator",
+            "Event Planning ChatBot",
+            "Chef Recipe Suggestions"
         ]
-        
+
         selected_feature = st.sidebar.selectbox(
             "Choose a feature:",
             features,
+            index=0,  # Default to Dashboard
             key="feature_selector"
         )
-        
+
+        # Initialize session state to Dashboard if not set
         if 'selected_feature' not in st.session_state:
-            st.session_state.selected_feature = selected_feature
-        
+            st.session_state.selected_feature = "Dashboard"
+
+        # Update session state when selection changes
         if selected_feature != st.session_state.selected_feature:
             st.session_state.selected_feature = selected_feature
             st.rerun()
-        
-        return True
-    else:
-        st.sidebar.markdown("### Authentication")
-        
-        # Show signup or login form based on state
-        if st.session_state.show_signup:
-            render_signup_form()
-        else:
-            render_login_form()
-        
-        # Additional info
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### Account Types")
-        st.sidebar.markdown("""
-        **Customer/User:** Access to basic features, quizzes, and visual menu
-        
-        **Staff Members** *(requires code)*:
-        • **Staff:** Marketing campaigns and analytics
-        • **Chef:** Recipe submissions and menu management  
-        • **Admin:** Full access to all features
-        """)
-        
-        return False
-
 def auth_required(func):
     """Decorator to require authentication"""
     def wrapper(*args, **kwargs):
