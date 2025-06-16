@@ -1,6 +1,7 @@
 """
 Authentication module for the Smart Restaurant Menu Management App.
 Handles user registration, authentication, and related functions using Firebase.
+Updated with simplified password requirements.
 """
 
 import hashlib
@@ -18,15 +19,14 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 def validate_password(password: str) -> Tuple[bool, str]:
-    """Validate that the password meets security requirements."""
+    """Validate that the password meets security requirements - UPDATED: simplified requirements"""
     if len(password) < 5:
         return False, "Password must be at least 5 characters long"
     
     has_upper = any(char.isupper() for char in password)
-    has_digit = any(char.isdigit() for char in password)
     
-    if not (has_upper and has_digit):
-        return False, "Password must contain at least one uppercase letter and one number."
+    if not has_upper:
+        return False, "Password must contain at least one uppercase letter"
     return True, ""
 
 def validate_email(email: str) -> Tuple[bool, str]:
