@@ -1,6 +1,7 @@
 """
 Promotion Campaign Services module for the Smart Restaurant Menu Management App.
 Handles campaign generation, submission, and AI scoring using event_firebase configuration.
+Updated with likes/dislikes functionality and user_id integration.
 """
 
 import streamlit as st
@@ -193,8 +194,8 @@ def generate_campaign(staff_name, promotion_type, promotion_goal, target_audienc
         logger.error(f"Error generating campaign: {str(e)}")
         return None
 
-def save_campaign(db, staff_name, campaign_data):
-    """Save campaign to database"""
+def save_campaign(db, staff_name, campaign_data, user_id=None):
+    """Save campaign to database with user_id"""
     try:
         current_month = datetime.now().strftime("%Y-%m")
         campaign_doc_id = f"{staff_name}_{current_month}"
@@ -202,11 +203,16 @@ def save_campaign(db, staff_name, campaign_data):
         campaign_data.update({
             "timestamp": firestore.SERVER_TIMESTAMP,
             "month": current_month,
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now().isoformat(),
+            "user_id": user_id,  # Add user_id to campaign
+            "likes": 0,  # Initialize likes counter
+            "dislikes": 0,  # Initialize dislikes counter
+            "liked_by": [],  # List of user IDs who liked
+            "disliked_by": []  # List of user IDs who disliked
         })
         
         db.collection("staff_campaigns").document(campaign_doc_id).set(campaign_data)
-        logger.info(f"Saved campaign for {staff_name} to database")
+        logger.info(f"Saved campaign for {staff_name} to database with user_id: {user_id}")
         return True
         
     except Exception as e:
@@ -264,6 +270,162 @@ def get_campaigns_for_month(db, month=None):
     except Exception as e:
         logger.error(f"Error retrieving campaigns: {str(e)}")
         return []
+
+def get_all_campaigns(db, limit=50):
+    """Get all campaigns across all months with pagination"""
+    try:
+        docs = db.collection("staff_campaigns").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit).stream()
+        campaigns = []
+        
+        for doc in docs:
+            campaign_data = doc.to_dict()
+            campaign_data['doc_id'] = doc.id  # Add document ID for updates
+            campaigns.append(campaign_data)
+        
+        logger.info(f"Retrieved {len(campaigns)} campaigns total")
+        return campaigns
+        
+    except Exception as e:
+        logger.error(f"Error retrieving all campaigns: {str(e)}")
+        return []
+
+def like_campaign(db, campaign_doc_id, user_id):
+    """Like a campaign and award XP to campaign creator"""
+    try:
+        campaign_ref = db.collection("staff_campaigns").document(campaign_doc_id)
+        campaign_doc = campaign_ref.get()
+        
+        if not campaign_doc.exists:
+            return False, "Campaign not found"
+        
+        campaign_data = campaign_doc.to_dict()
+        liked_by = campaign_data.get('liked_by', [])
+        disliked_by = campaign_data.get('disliked_by', [])
+        
+        # Check if user already liked
+        if user_id in liked_by:
+            return False, "You already liked this campaign"
+        
+        # Remove from dislikes if present
+        if user_id in disliked_by:
+            disliked_by.remove(user_id)
+        
+        # Add to likes
+        liked_by.append(user_id)
+        
+        # Update campaign
+        campaign_ref.update({
+            'likes': len(liked_by),
+            'dislikes': len(disliked_by),
+            'liked_by': liked_by,
+            'disliked_by': disliked_by
+        })
+        
+        # Award XP to campaign creator
+        campaign_creator_id = campaign_data.get('user_id')
+        if campaign_creator_id:
+            award_like_xp(campaign_creator_id, is_like=True)
+        
+        logger.info(f"User {user_id} liked campaign {campaign_doc_id}")
+        return True, "Campaign liked successfully"
+        
+    except Exception as e:
+        logger.error(f"Error liking campaign: {str(e)}")
+        return False, f"Error: {str(e)}"
+
+def dislike_campaign(db, campaign_doc_id, user_id):
+    """Dislike a campaign and award minimal XP to campaign creator"""
+    try:
+        campaign_ref = db.collection("staff_campaigns").document(campaign_doc_id)
+        campaign_doc = campaign_ref.get()
+        
+        if not campaign_doc.exists:
+            return False, "Campaign not found"
+        
+        campaign_data = campaign_doc.to_dict()
+        liked_by = campaign_data.get('liked_by', [])
+        disliked_by = campaign_data.get('disliked_by', [])
+        
+        # Check if user already disliked
+        if user_id in disliked_by:
+            return False, "You already disliked this campaign"
+        
+        # Remove from likes if present
+        if user_id in liked_by:
+            liked_by.remove(user_id)
+        
+        # Add to dislikes
+        disliked_by.append(user_id)
+        
+        # Update campaign
+        campaign_ref.update({
+            'likes': len(liked_by),
+            'dislikes': len(disliked_by),
+            'liked_by': liked_by,
+            'disliked_by': disliked_by
+        })
+        
+        # Award minimal XP to campaign creator
+        campaign_creator_id = campaign_data.get('user_id')
+        if campaign_creator_id:
+            award_like_xp(campaign_creator_id, is_like=False)
+        
+        logger.info(f"User {user_id} disliked campaign {campaign_doc_id}")
+        return True, "Campaign disliked"
+        
+    except Exception as e:
+        logger.error(f"Error disliking campaign: {str(e)}")
+        return False, f"Error: {str(e)}"
+
+def award_like_xp(campaign_creator_id, is_like=True):
+    """Award XP to campaign creator for receiving likes/dislikes"""
+    try:
+        main_db = get_main_firebase_db()
+        if not main_db:
+            logger.error("Could not connect to main Firebase for like XP award")
+            return 0
+        
+        # Award different XP for likes vs dislikes
+        xp_to_award = 10 if is_like else 2
+        
+        # Update user stats in main Firebase
+        user_ref = main_db.collection('user_stats').document(campaign_creator_id)
+        user_doc = user_ref.get()
+        
+        if user_doc.exists:
+            current_stats = user_doc.to_dict()
+            current_xp = current_stats.get('total_xp', 0)
+            new_xp = current_xp + xp_to_award
+            
+            # Calculate new level
+            new_level = (new_xp // 100) + 1
+            
+            # Update stats
+            user_ref.update({
+                'total_xp': new_xp,
+                'level': new_level,
+                'last_activity': firestore.SERVER_TIMESTAMP
+            })
+            
+            action = "like" if is_like else "dislike"
+            logger.info(f"Awarded {xp_to_award} XP to user {campaign_creator_id} for campaign {action}. New total: {new_xp} XP")
+        else:
+            # Create new user stats
+            user_ref.set({
+                'user_id': campaign_creator_id,
+                'total_xp': xp_to_award,
+                'level': 1,
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'last_activity': firestore.SERVER_TIMESTAMP
+            })
+            
+            logger.info(f"Created new user stats for {campaign_creator_id} with {xp_to_award} XP")
+        
+        return xp_to_award
+        
+    except Exception as e:
+        logger.error(f"Error awarding like XP: {str(e)}")
+        return 0
 
 def award_promotion_xp(user_id, campaign_quality="good"):
     """Award XP for creating a promotion campaign using main Firebase"""
@@ -343,3 +505,22 @@ def get_user_stats_promotion(user_id):
     except Exception as e:
         logger.error(f"Error getting user stats: {str(e)}")
         return {'total_xp': 0, 'level': 1}
+
+def get_user_by_id(user_id):
+    """Get user information by user_id from main Firebase"""
+    try:
+        main_db = get_main_firebase_db()
+        if not main_db:
+            return None
+        
+        user_ref = main_db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+        
+        if user_doc.exists:
+            return user_doc.to_dict()
+        else:
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error getting user by ID: {str(e)}")
+        return None
