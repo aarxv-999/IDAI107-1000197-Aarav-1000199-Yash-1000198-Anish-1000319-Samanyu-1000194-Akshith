@@ -148,9 +148,47 @@ def get_xp_for_next_level(current_level: int) -> int:
     
     return next_level_total_xp - current_level_total_xp
 
-def get_xp_progress(total_xp: int, current_level: int) -> Dict:
+def get_xp_progress(total_xp: int, current_level: int) -> Tuple[int, int, float]:
+    """
+    Get progress information for current level.
+    Returns tuple for backward compatibility.
+    
+    Args:
+        total_xp (int): Total XP earned
+        current_level (int): Current level
+        
+    Returns:
+        Tuple[int, int, float]: (current_level_xp, xp_needed_for_next, progress_percentage)
+    """
+    # XP required to reach current level
+    current_level_start_xp = get_xp_required_for_level(current_level)
+    
+    # XP required to reach next level
+    if current_level >= MAX_LEVEL:
+        next_level_start_xp = current_level_start_xp
+        xp_needed_for_next = 0
+        progress_percentage = 100.0
+        current_level_xp = total_xp - current_level_start_xp
+    else:
+        next_level_start_xp = get_xp_required_for_level(current_level + 1)
+        # XP earned in current level
+        current_level_xp = total_xp - current_level_start_xp
+        # XP needed for next level
+        xp_needed_for_next = next_level_start_xp - total_xp
+        # Progress percentage within current level
+        level_xp_requirement = next_level_start_xp - current_level_start_xp
+        progress_percentage = (current_level_xp / level_xp_requirement) * 100 if level_xp_requirement > 0 else 100.0
+    
+    return (
+        max(0, current_level_xp),
+        max(0, xp_needed_for_next), 
+        min(100.0, max(0.0, progress_percentage))
+    )
+
+def get_xp_progress_detailed(total_xp: int, current_level: int) -> Dict:
     """
     Get detailed progress information for current level.
+    Returns dictionary with comprehensive information.
     
     Args:
         total_xp (int): Total XP earned
