@@ -526,81 +526,90 @@ def render_chef_submission(db):
             # Process submission
             process_chef_submission(db, chef_name, dish_name, description, ingredients, cook_time, cuisine, diet, category)
 
-def process_chef_submission(db, chef_name, dish_name, description, ingredients, cook_time, cuisine, diet, category):
-    """Process chef recipe submission"""
-    logger.info(f"Processing chef submission: {dish_name} by {chef_name}")
-    
-    with st.spinner("Processing submission and generating AI rating..."):
-        progress_bar = st.progress(0)
+def process_chef_submission(recipe_name, ingredients, instructions, rating, chef_name):
+    """
+    Processes the chef's recipe submission, including saving the recipe,
+    awarding XP, and displaying notifications.
+    """
+    # Get current user
+    user = st.session_state.get('user', {})
+    if not user or not user.get('user_id'):
+        st.error("User session error. Please log in again.")
+        return
 
-        try:
-            progress_bar.progress(25)
-            rating_data = generate_dish_rating(
-                dish_name, description, ingredients, cook_time, cuisine
-            )
-            progress_bar.progress(75)
-
-            rating = rating_data.get("rating", 3)
-            comment = rating_data.get("rating_comment", "No feedback available")
-            
-            logger.info(f"Generated rating for {dish_name}: {rating}/5 - {comment}")
-
-        except Exception as e:
-            logger.error(f"Error generating rating: {str(e)}")
-            rating = 3
-            comment = f"Rating unavailable: {str(e)}"
-
-        progress_bar.progress(90)
-
-        # Save to database
-        now = datetime.now().isoformat()
-        dish_doc = {
-            "name": dish_name,
-            "description": description,
-            "ingredients": [i.strip() for i in ingredients.split(",")],
-            "cook_time": cook_time,
-            "cuisine": cuisine,
-            "diet": [diet],
-            "category": category,
-            "types": ["Chef Special Items"],
-            "source": f"Chef {chef_name}",
-            "rating": rating,
-            "rating_comment": comment,
-            "timestamp": now,
-            "created_at": now
+    # Save recipe to Firebase database
+    try:
+        from firebase_admin import firestore
+        import firebase_admin
+        from datetime import datetime
+        
+        # Get the main Firebase client (same as authentication)
+        if firebase_admin._DEFAULT_APP_NAME in [app.name for app in firebase_admin._apps.values()]:
+            db = firestore.client()
+        else:
+            from firebase_init import init_firebase
+            init_firebase()
+            db = firestore.client()
+        
+        # Prepare recipe data for database
+        recipe_data = {
+            'name': recipe_name,
+            'ingredients': ingredients if isinstance(ingredients, list) else ingredients.split('\n'),
+            'instructions': instructions,
+            'rating': rating,
+            'chef_name': chef_name,
+            'chef_user_id': user['user_id'],
+            'submitted_at': firestore.SERVER_TIMESTAMP,
+            'created_at': datetime.now().isoformat(),
+            'status': 'submitted',
+            'source': 'Chef Submission'
         }
+        
+        # Save to recipes collection
+        doc_ref = db.collection('recipes').add(recipe_data)
+        recipe_id = doc_ref[1].id
+        
+        logger.info(f"Recipe '{recipe_name}' saved to database with ID: {recipe_id}")
+        st.success(f"✅ Recipe '{recipe_name}' submitted successfully and saved to database!")
 
+        # Award XP based on rating
         try:
-            # Add to menu and recipe archive
-            menu_ref = db.collection("menu").add(dish_doc)
-            archive_ref = db.collection("recipe_archive").add(dish_doc)
+            # Calculate XP based on rating: 1 star = 5 XP, 2 stars = 10 XP, etc.
+            base_xp_per_star = 5
+            rating_xp = rating * base_xp_per_star
             
-            logger.info(f"Saved chef submission to menu: {menu_ref[1].id}")
-            logger.info(f"Saved chef submission to archive: {archive_ref[1].id}")
-
-            # Add to chef ratings
-            rating_ref = db.collection("chef_sub_ratings").add({
-                "dish_name": dish_name,
-                "chef_name": chef_name,
-                "rating": rating,
-                "comment": comment,
-                "timestamp": now
-            })
+            # Bonus XP for high ratings
+            bonus_xp = 0
+            if rating >= 4:
+                bonus_xp = 10  # Bonus for 4-5 star recipes
+            if rating == 5:
+                bonus_xp = 20  # Extra bonus for perfect 5-star recipes
             
-            logger.info(f"Saved chef rating: {rating_ref[1].id}")
-
-            progress_bar.progress(100)
-
-            # Success message
-            st.success(f"✅ Recipe '{dish_name}' submitted successfully! Rating: {rating}/5")
+            total_xp = rating_xp + bonus_xp
             
-            # AI feedback
-            if comment and comment != "No feedback available":
-                st.info(f"**AI Feedback:** {comment}")
+            # Update user stats with XP
+            from modules.leftover import update_user_stats
+            update_user_stats(user_id=user['user_id'], xp_gained=total_xp, recipes_generated=1)
+            
+            # Show XP notification
+            from modules.components import show_xp_notification
+            show_xp_notification(total_xp, f"chef recipe submission ({rating}⭐)")
+            
+            # Show detailed XP breakdown
+            if bonus_xp > 0:
+                st.info(f"🎉 **XP Earned:** {total_xp} total ({rating_xp} base + {bonus_xp} bonus for {rating}⭐ rating)")
+            else:
+                st.info(f"🎉 **XP Earned:** {total_xp} XP for {rating}⭐ rating")
                 
+            logger.info(f"Awarded {total_xp} XP to chef {chef_name} (ID: {user['user_id']}) for {rating}-star recipe submission")
+            
         except Exception as e:
-            logger.error(f"Error saving chef submission: {str(e)}")
-            st.error(f"❌ Error saving recipe: {str(e)}")
+            logger.error(f"Error awarding XP for chef submission: {str(e)}")
+            st.warning("Recipe saved successfully, but there was an issue awarding XP.")
+
+    except Exception as e:
+        st.error(f"Error saving recipe to database: {str(e)}")
+        logger.exception("Error during recipe database save")
 
 def render_analytics_dashboard(db):
     """Render the analytics dashboard component"""
