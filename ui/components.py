@@ -408,7 +408,7 @@ def display_user_stats_sidebar(user_id):
             total_xp = max(0, user_stats.get('total_xp', 0))
             
             # Calculate level and progress using new system
-            current_level, current_level_xp, xp_needed_for_next, progress_percentage = get_current_level_progress(total_xp)
+            current_level, current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp)
             
             # Display metrics
             col1, col2 = st.columns(2)
@@ -466,7 +466,7 @@ def display_gamification_dashboard(user_id):
         total_xp = user_stats.get('total_xp', 0)
         
         # Calculate level and progress using new system
-        current_level, current_level_xp, xp_needed_for_next, progress_percentage = get_current_level_progress(total_xp)
+        current_level, current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp)
         
         # Overview metrics
         st.subheader("Your Progress")
