@@ -394,8 +394,9 @@ def is_user_role(required_role):
 # Gamification Components
 def display_user_stats_sidebar(user_id):
     """Display user gamification stats in sidebar as expandable section with progressive XP system"""
+
     try:
-        from modules.leftover import get_user_stats
+        from modules.leftover import get_user_stats, get_xp_progress
         
         # Get user stats from main Firebase (same as authentication)
         user_stats = get_user_stats(user_id)
@@ -459,7 +460,7 @@ def display_gamification_dashboard(user_id):
     st.title("Gamification Hub")
     
     try:
-        from modules.leftover import get_user_stats, get_leaderboard
+        from modules.leftover import get_user_stats, get_leaderboard, get_xp_progress
         
         # Get user stats from main Firebase
         user_stats = get_user_stats(user_id)
