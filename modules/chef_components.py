@@ -25,7 +25,7 @@ def get_firestore_client():
     """Get Firestore client for chef submissions"""
     try:
         # Use the main Firebase app (default) for chef submissions
-        if firebase_admin._DEFAULT_APP_NAME in [app.name for app in firebase_admin._apps.values()]:
+        if firebase_admin._apps:
             return firestore.client()
         else:
             # Initialize main Firebase if not already done
@@ -251,14 +251,9 @@ def render_chef_submission(db):
             else:
                 # Process the submission
                 with st.spinner("Submitting recipe and generating AI rating..."):
-                    process_chef_submission(
-                        db, chef_name, dish_name, description, ingredients, 
-                        cook_time, cuisine, diet, category, instructions, 
-                        notes, difficulty, servings, prep_time, equipment, 
-                        storage_tips, variations
-                    )
+                    process_chef_submission(db, chef_name, dish_name, description, ingredients, cook_time, cuisine, diet, category)
 
-def process_chef_submission(db, chef_name, dish_name, description, ingredients, cook_time, cuisine, diet, category, instructions, notes="", difficulty="Intermediate", servings=4, prep_time="", equipment="", storage_tips="", variations=""):
+def process_chef_submission(db, chef_name, dish_name, description, ingredients, cook_time, cuisine, diet, category):
     """
     Processes the chef's recipe submission, including saving the recipe,
     generating AI rating, awarding XP, and displaying notifications.
@@ -268,6 +263,16 @@ def process_chef_submission(db, chef_name, dish_name, description, ingredients, 
     if not user or not user.get('user_id'):
         st.error("User session error. Please log in again.")
         return
+
+    # Get additional form data from session state or form
+    instructions = st.session_state.get('instructions', '')
+    notes = st.session_state.get('notes', '')
+    difficulty = st.session_state.get('difficulty', 'Intermediate')
+    servings = st.session_state.get('servings', 4)
+    prep_time = st.session_state.get('prep_time', '')
+    equipment = st.session_state.get('equipment', '')
+    storage_tips = st.session_state.get('storage_tips', '')
+    variations = st.session_state.get('variations', '')
 
     try:
         # Prepare recipe data for database
