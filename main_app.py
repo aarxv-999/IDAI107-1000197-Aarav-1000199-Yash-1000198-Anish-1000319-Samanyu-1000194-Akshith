@@ -116,6 +116,50 @@ def get_inaccessible_features_message(user_role):
     else:
         return "**You have access to all features!**"
 
+def safe_get_user_stats(user_id):
+    """Safely get user stats with error handling"""
+    try:
+        stats = get_user_stats(user_id)
+        # Handle different return formats
+        if isinstance(stats, tuple):
+            if len(stats) == 3:
+                return stats
+            elif len(stats) == 2:
+                # If only 2 values returned, add a default third value
+                return stats[0], stats[1], 0
+            elif len(stats) == 1:
+                # If only 1 value returned, add default values
+                return stats[0], 1, 0
+            else:
+                # If more than 3 values, take first 3
+                return stats[0], stats[1], stats[2]
+        elif isinstance(stats, dict):
+            # If dict returned, extract values safely
+            return (
+                stats.get('total_xp', 0),
+                stats.get('level', 1), 
+                stats.get('recipes_generated', 0)
+            )
+        else:
+            # Default fallback
+            return 0, 1, 0
+    except Exception as e:
+        logging.error(f"Error getting user stats for {user_id}: {str(e)}")
+        return 0, 1, 0
+
+def safe_display_user_stats_sidebar(user_id):
+    """Safely display user stats in sidebar with error handling"""
+    try:
+        display_user_stats_sidebar(user_id)
+    except Exception as e:
+        logging.error(f"Error displaying user stats: {str(e)}")
+        st.sidebar.error("Unable to load user stats")
+        # Display basic fallback stats
+        st.sidebar.markdown("### 📊 Your Stats")
+        st.sidebar.markdown("- **Level:** 1")
+        st.sidebar.markdown("- **XP:** 0")
+        st.sidebar.markdown("- **Recipes:** 0")
+
 # Individual feature functions
 @auth_required
 def leftover_management():
@@ -316,10 +360,13 @@ def leftover_management():
                     if urgent_ingredients:
                         st.info(f"These recipes prioritize ingredients expiring soon: {', '.join(urgent_ingredients)}")
                 
-                # Award XP for generating recipes
+                # Award XP for generating recipes - with error handling
                 user = get_current_user()
                 if user and user.get('user_id'):
-                    award_recipe_generation_xp(user['user_id'], len(st.session_state.recipes))
+                    try:
+                        award_recipe_generation_xp(user['user_id'], len(st.session_state.recipes))
+                    except Exception as e:
+                        logging.error(f"Error awarding XP: {str(e)}")
 
 @auth_required
 def ingredients_management():
@@ -334,7 +381,13 @@ def gamification_hub():
     """Gamification hub feature"""
     user = get_current_user()
     if user and user.get('user_id'):
-        display_gamification_dashboard(user['user_id'])
+        try:
+            display_gamification_dashboard(user['user_id'])
+        except Exception as e:
+            logging.error(f"Error displaying gamification dashboard: {str(e)}")
+            st.error("Unable to load gamification dashboard")
+            st.markdown("### 🎮 Gamification Hub")
+            st.markdown("Your gamification stats are temporarily unavailable.")
     else:
         st.warning("Please log in to view your gamification stats")
 
@@ -424,10 +477,10 @@ def main():
     # Filter features based on user role
     available_features = ["Dashboard"] + [f for f in all_features[1:] if check_feature_access(f)]
 
-    # Display user gamification stats in sidebar if authenticated
+    # Display user gamification stats in sidebar if authenticated - with error handling
     user = get_current_user()
     if user and user.get('user_id'):
-        display_user_stats_sidebar(user['user_id'])
+        safe_display_user_stats_sidebar(user['user_id'])
 
     # Feature selection
     selected_feature = st.sidebar.selectbox(
@@ -464,11 +517,15 @@ def main():
             # Sample ingredients for quiz generation
             sample_ingredients = ["chicken", "rice", "tomatoes", "onions", "garlic", "olive oil"]
             
-            # Display daily challenge
-            display_daily_challenge(user['user_id'])
-            
-            # Render the cooking quiz
-            render_cooking_quiz(sample_ingredients, user['user_id'])
+            try:
+                # Display daily challenge
+                display_daily_challenge(user['user_id'])
+                
+                # Render the cooking quiz
+                render_cooking_quiz(sample_ingredients, user['user_id'])
+            except Exception as e:
+                logging.error(f"Error displaying cooking quiz: {str(e)}")
+                st.error("Unable to load cooking quiz")
             
             # Back button
             if st.button("← Back to Dashboard"):
