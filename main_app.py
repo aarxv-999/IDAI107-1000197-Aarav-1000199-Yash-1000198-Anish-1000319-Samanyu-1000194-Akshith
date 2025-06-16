@@ -2,11 +2,9 @@ import streamlit as st
 st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
 
 from ui.components import (  # Import UI functions
-    render_auth_ui, initialize_session_state, auth_required, get_current_user, is_user_role
-)
-from ui.components import (  # Import gamification UI functions
+    render_auth_ui, initialize_session_state, auth_required, get_current_user, is_user_role,
     display_user_stats_sidebar, render_cooking_quiz, display_gamification_dashboard,
-    display_daily_challenge, award_feature_xp
+    display_daily_challenge, award_feature_xp  # Import award_feature_xp from ui.components
 )
 from modules.leftover import suggest_recipes  # Import logic functions
 from modules.gamification_core import get_user_stats, award_xp  # Import centralized gamification
