@@ -12,173 +12,315 @@ def render_dashboard():
     Render the main dashboard that users see after logging in.
     This serves as the central hub for accessing all features.
     """
-    st.title("Restaurant Management Dashboard")
-    
     # Get current user
     user = st.session_state.get('user', {})
     user_role = user.get('role', 'user')
+    username = user.get('username', 'User')
     
-    # Welcome message with current date
-    current_date = datetime.datetime.now().strftime("%A, %B %d, %Y")
-    st.markdown(f"### Welcome, {user.get('username', 'User')}!")
-    st.markdown(f"**Today is:** {current_date}")
+    # Header section
+    st.title("🏠 Restaurant Management Dashboard")
     
-    # Dashboard metrics
-    col1, col2, col3 = st.columns(3)
-    
+    # Welcome section with clean layout
+    col1, col2 = st.columns([2, 1])
     with col1:
-        st.metric(
-            label="Role",
-            value=user_role.capitalize(),
-            delta=None,
-            help="Your current role in the system"
-        )
+        st.markdown(f"### Welcome back, **{username}**! 👋")
+        current_date = datetime.datetime.now().strftime("%A, %B %d, %Y")
+        st.markdown(f"📅 {current_date}")
     
     with col2:
-        # Different metrics based on user role
+        st.markdown("### Your Role")
+        role_emoji = {
+            'admin': '👑',
+            'chef': '👨‍🍳', 
+            'staff': '👥',
+            'user': '👤'
+        }
+        st.markdown(f"## {role_emoji.get(user_role, '👤')} {user_role.capitalize()}")
+    
+    st.divider()
+    
+    # Quick stats section
+    st.markdown("### 📊 Quick Stats")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
         if user_role in ['admin', 'chef', 'staff']:
-            st.metric(
-                label="Recipe Archive",
-                value="24",
-                delta="+3 from last week",
-                help="Number of recipes in the archive"
-            )
+            st.metric("📦 Recipes", "24", delta="3", help="Recipes in archive")
         else:
-            st.metric(
-                label="Quiz Score",
-                value="85%",
-                delta=None,
-                help="Your average quiz score"
-            )
+            st.metric("🎯 Quiz Score", "85%", help="Average quiz performance")
+    
+    with col2:
+        if user_role in ['admin', 'chef']:
+            st.metric("🍽️ Menu Items", "156", delta="12", help="Total menu items")
+        else:
+            st.metric("⭐ XP Points", "1,240", delta="50", help="Experience points earned")
     
     with col3:
-        if user_role in ['admin', 'chef']:
-            st.metric(
-                label="Menu Items",
-                value="156",
-                delta="+12 new",
-                help="Total number of menu items"
-            )
+        if user_role in ['admin', 'staff']:
+            st.metric("📈 Campaigns", "8", delta="2", help="Active promotions")
         else:
-            st.metric(
-                label="XP Points",
-                value="120",
-                delta=None,
-                help="Your experience points"
-            )
+            st.metric("🏆 Achievements", "12", delta="1", help="Unlocked achievements")
     
-    # Feature cards
-    st.markdown("### Features")
-    st.markdown("Select a feature from the sidebar or click on a card below to get started.")
+    with col4:
+        if user_role in ['admin']:
+            st.metric("👥 Active Users", "45", delta="5", help="Users this week")
+        else:
+            st.metric("🔥 Streak", "7 days", help="Daily activity streak")
     
-    # Define available features based on user role
-    features = []
+    st.divider()
     
-    # Role-specific features
-    if user_role in ['admin', 'staff']:
-        features.append({
-            "title": "Ingredients Management",
-            "description": "Complete CRUD operations for ingredient inventory with AI suggestions",
-            "key": "Ingredients Management"
-        })
+    # Features section
+    st.markdown("### 🚀 Available Features")
+    st.markdown("*Click on any feature to get started*")
     
-    if user_role in ['admin', 'chef']:
-        features.append({
-            "title": "Leftover Management",
-            "description": "Generate recipes from leftover ingredients to reduce waste",
-            "key": "Leftover Management"
-        })
+    # Get role-specific features
+    features = get_features_for_role(user_role)
     
-    if user_role in ['admin', 'staff']:
-        features.append({
-            "title": "Promotion Generator",
-            "description": "AI-powered marketing campaign generation with automatic scoring",
-            "key": "Promotion Generator"
-        })
+    # Display features in a clean grid
+    for i in range(0, len(features), 2):
+        col1, col2 = st.columns(2)
+        
+        # First feature in the row
+        with col1:
+            if i < len(features):
+                render_feature_card(features[i])
+        
+        # Second feature in the row (if exists)
+        with col2:
+            if i + 1 < len(features):
+                render_feature_card(features[i + 1])
     
-    if user_role in ['admin', 'chef']:
-        features.append({
-            "title": "Chef Recipe Suggestions",
-            "description": "AI-powered menu generation, chef submissions, and analytics",
-            "key": "Chef Recipe Suggestions"
-        })
-    
-    # Common features for all users
-    features.append({
-        "title": "Visual Menu Search",
-        "description": "AI-powered dish detection, personalized recommendations, and staff challenges",
-        "key": "Visual Menu Search"
-    })
-    
-    features.append({
-        "title": "Gamification Hub",
-        "description": "View achievements, leaderboard, and progress",
-        "key": "Gamification Hub"
-    })
-    
-    features.append({
-        "title": "Event Planning ChatBot",
-        "description": "AI-powered event planning assistance",
-        "key": "Event Planning ChatBot"
-    })
-    
-    # Display feature cards in a grid
-    cols = st.columns(3)
-    for i, feature in enumerate(features):
-        col_idx = i % 3
-        with cols[col_idx]:
-            with st.container():
-                st.markdown(f"""
-                <div style="padding: 1rem; border-radius: 0.5rem; border: 1px solid #e0e0e0; margin-bottom: 1rem;">
-                    <h3>{feature['title']}</h3>
-                    <p>{feature['description']}</p>
-                </div>
-                """, unsafe_allow_html=True)
-                if st.button("Open", key=f"open_{feature['key']}", use_container_width=True):
-                    st.session_state.selected_feature = feature['key']
-                    st.rerun()
+    st.divider()
     
     # Recent activity section
-    st.markdown("### Recent Activity")
+    st.markdown("### 📋 Recent Activity")
     
-    # Different activity items based on user role
-    if user_role in ['admin', 'chef', 'staff']:
-        activities = [
-            {"time": "Today, 10:30 AM", "description": "New ingredients added to inventory"},
-            {"time": "Yesterday", "description": "Weekly menu generated with 35 dishes"},
-            {"time": "2 days ago", "description": "Chef submitted 3 new signature dishes"},
-            {"time": "3 days ago", "description": "Staff challenge received 15 customer votes"}
-        ]
-    else:
-        activities = [
-            {"time": "Today", "description": "Completed cooking quiz with 90% score"},
-            {"time": "Yesterday", "description": "Generated 3 recipes from leftovers"},
-            {"time": "2 days ago", "description": "Used AI dish detection feature"},
-            {"time": "Last week", "description": "Earned 'Quiz Novice' achievement"}
-        ]
+    activities = get_recent_activities(user_role)
     
     for activity in activities:
-        st.markdown(f"**{activity['time']}**: {activity['description']}")
+        with st.container():
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                st.markdown(f"**{activity['time']}**")
+            with col2:
+                st.markdown(f"{activity['icon']} {activity['description']}")
     
-    # Tips and help section
-    with st.expander("Tips & Help"):
-        st.markdown("""
-        - Use the sidebar to navigate between different features
-        - Click on feature cards above for quick access
-        - Use Ingredients Management for complete inventory control
-        - Check the Gamification Hub to track your progress
-        - Chefs and Admins can access advanced menu management tools
-        - Staff and Admins can create AI-powered marketing campaigns
-        - All users can use Visual Menu Search for AI dish detection
-        - Vote on staff challenge dishes to earn XP
-        - Need help? Contact support at support@restaurant.com
+    # Quick actions section
+    st.divider()
+    st.markdown("### ⚡ Quick Actions")
+    
+    quick_actions = get_quick_actions(user_role)
+    cols = st.columns(len(quick_actions))
+    
+    for i, action in enumerate(quick_actions):
+        with cols[i]:
+            if st.button(
+                f"{action['icon']} {action['title']}", 
+                key=f"quick_{action['key']}", 
+                use_container_width=True,
+                type="secondary"
+            ):
+                st.session_state.selected_feature = action['key']
+                st.rerun()
+    
+    # Help section
+    with st.expander("💡 Tips & Getting Started"):
+        st.markdown(f"""
+        **Welcome to your dashboard, {username}!** Here's how to get started:
+        
+        🎯 **For {user_role.capitalize()}s:**
+        {get_role_specific_tips(user_role)}
+        
+        📱 **Navigation:**
+        - Use the **sidebar** to access all features
+        - Click **feature cards** above for quick access
+        - Check **Recent Activity** to see what's new
+        
+        🆘 **Need Help?**
+        - Contact support: support@restaurant.com
+        - Check the documentation in each feature
+        - Use the help tooltips (ℹ️) throughout the app
         """)
+
+def render_feature_card(feature):
+    """Render a clean feature card"""
+    with st.container():
+        # Create a bordered container effect
+        st.markdown(f"""
+        <div style="
+            padding: 1.5rem; 
+            border-radius: 10px; 
+            border: 1px solid #e1e5e9; 
+            background-color: #f8f9fa;
+            margin-bottom: 1rem;
+            height: 180px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        ">
+            <div>
+                <h4 style="margin: 0 0 0.5rem 0; color: #1f2937;">
+                    {feature['icon']} {feature['title']}
+                </h4>
+                <p style="margin: 0; color: #6b7280; font-size: 0.9rem;">
+                    {feature['description']}
+                </p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Button below the card
+        if st.button(
+            "Open Feature", 
+            key=f"open_{feature['key']}", 
+            use_container_width=True,
+            type="primary"
+        ):
+            st.session_state.selected_feature = feature['key']
+            st.rerun()
+
+def get_features_for_role(user_role):
+    """Get available features based on user role"""
+    all_features = {
+        'ingredients': {
+            "title": "Ingredients Management",
+            "description": "Complete CRUD operations for ingredient inventory with AI suggestions and smart categorization",
+            "key": "Ingredients Management",
+            "icon": "📦",
+            "roles": ['admin', 'staff']
+        },
+        'leftover': {
+            "title": "Leftover Management", 
+            "description": "Generate creative recipes from leftover ingredients to reduce waste and save costs",
+            "key": "Leftover Management",
+            "icon": "♻️",
+            "roles": ['admin', 'chef']
+        },
+        'promotion': {
+            "title": "Promotion Generator",
+            "description": "AI-powered marketing campaign generation with automatic scoring and analytics",
+            "key": "Promotion Generator", 
+            "icon": "📢",
+            "roles": ['admin', 'staff']
+        },
+        'chef': {
+            "title": "Chef Recipe Suggestions",
+            "description": "AI-powered menu generation, chef submissions, ratings, and comprehensive analytics",
+            "key": "Chef Recipe Suggestions",
+            "icon": "👨‍🍳",
+            "roles": ['admin', 'chef']
+        },
+        'visual': {
+            "title": "Visual Menu Search",
+            "description": "AI-powered dish detection, personalized recommendations, and interactive staff challenges",
+            "key": "Visual Menu Search",
+            "icon": "📷",
+            "roles": ['admin', 'chef', 'staff', 'user']
+        },
+        'gamification': {
+            "title": "Gamification Hub",
+            "description": "Track achievements, view leaderboards, monitor progress, and earn rewards",
+            "key": "Gamification Hub", 
+            "icon": "🏆",
+            "roles": ['admin', 'chef', 'staff', 'user']
+        },
+        'chatbot': {
+            "title": "Event Planning ChatBot",
+            "description": "AI-powered event planning assistance with smart recommendations and booking",
+            "key": "Event Planning ChatBot",
+            "icon": "🤖",
+            "roles": ['admin', 'chef', 'staff', 'user']
+        }
+    }
+    
+    # Filter features based on user role
+    available_features = []
+    for feature_key, feature_data in all_features.items():
+        if user_role in feature_data['roles']:
+            available_features.append(feature_data)
+    
+    return available_features
+
+def get_recent_activities(user_role):
+    """Get recent activities based on user role"""
+    if user_role in ['admin', 'chef', 'staff']:
+        return [
+            {"time": "2 min ago", "description": "New ingredients added to inventory", "icon": "📦"},
+            {"time": "1 hour ago", "description": "Weekly menu generated with 35 dishes", "icon": "🍽️"},
+            {"time": "Yesterday", "description": "Chef submitted 3 new signature dishes", "icon": "👨‍🍳"},
+            {"time": "2 days ago", "description": "Staff challenge received 15 customer votes", "icon": "🗳️"}
+        ]
+    else:
+        return [
+            {"time": "30 min ago", "description": "Completed cooking quiz with 90% score", "icon": "🎯"},
+            {"time": "2 hours ago", "description": "Generated 3 recipes from leftovers", "icon": "♻️"},
+            {"time": "Yesterday", "description": "Used AI dish detection feature", "icon": "📷"},
+            {"time": "3 days ago", "description": "Earned 'Quiz Master' achievement", "icon": "🏆"}
+        ]
+
+def get_quick_actions(user_role):
+    """Get quick action buttons based on user role"""
+    if user_role == 'admin':
+        return [
+            {"title": "Add Ingredients", "key": "Ingredients Management", "icon": "➕"},
+            {"title": "Generate Menu", "key": "Chef Recipe Suggestions", "icon": "🍽️"},
+            {"title": "Create Campaign", "key": "Promotion Generator", "icon": "📢"}
+        ]
+    elif user_role == 'chef':
+        return [
+            {"title": "Submit Recipe", "key": "Chef Recipe Suggestions", "icon": "👨‍🍳"},
+            {"title": "Use Leftovers", "key": "Leftover Management", "icon": "♻️"},
+            {"title": "AI Detection", "key": "Visual Menu Search", "icon": "📷"}
+        ]
+    elif user_role == 'staff':
+        return [
+            {"title": "Manage Stock", "key": "Ingredients Management", "icon": "📦"},
+            {"title": "Staff Challenge", "key": "Visual Menu Search", "icon": "🏅"},
+            {"title": "Create Promo", "key": "Promotion Generator", "icon": "📢"}
+        ]
+    else:  # user
+        return [
+            {"title": "Find Recipes", "key": "Leftover Management", "icon": "🔍"},
+            {"title": "AI Detection", "key": "Visual Menu Search", "icon": "📷"},
+            {"title": "Plan Event", "key": "Event Planning ChatBot", "icon": "🎉"}
+        ]
+
+def get_role_specific_tips(user_role):
+    """Get role-specific tips and guidance"""
+    tips = {
+        'admin': """
+        - **Manage everything**: You have access to all features and user management
+        - **Monitor metrics**: Check ingredient usage, menu performance, and user activity
+        - **Generate reports**: Use analytics features to track restaurant performance
+        - **Oversee staff**: Review chef submissions and staff challenge entries
+        """,
+        'chef': """
+        - **Submit recipes**: Share your signature dishes and get AI feedback
+        - **Generate menus**: Use AI to create weekly menus from available ingredients
+        - **Manage leftovers**: Turn waste into creative new dishes
+        - **Track ratings**: Monitor how customers rate your submissions
+        """,
+        'staff': """
+        - **Manage inventory**: Keep ingredient stock updated and organized
+        - **Join challenges**: Submit your dishes to staff challenges for XP
+        - **Create promotions**: Generate marketing campaigns for special offers
+        - **Engage customers**: Help with visual menu features and recommendations
+        """,
+        'user': """
+        - **Discover recipes**: Use leftover ingredients to find new dishes to cook
+        - **Earn XP**: Complete quizzes, use features, and engage with content
+        - **Get recommendations**: Use AI to find dishes that match your preferences
+        - **Plan events**: Use the chatbot to help organize special occasions
+        """
+    }
+    return tips.get(user_role, "Explore the available features to get started!")
 
 def get_feature_description(feature_name: str) -> str:
     """Get the description for a specific feature"""
     descriptions = {
         "Ingredients Management": "Complete CRUD operations for ingredient inventory",
-        "Leftover Management": "Generate recipes from leftover ingredients",
+        "Leftover Management": "Generate recipes from leftover ingredients", 
         "Gamification Hub": "View achievements, leaderboard, and progress",
         "Promotion Generator": "AI marketing campaigns with automatic scoring",
         "Chef Recipe Suggestions": "AI menu generation, chef submissions & analytics",
