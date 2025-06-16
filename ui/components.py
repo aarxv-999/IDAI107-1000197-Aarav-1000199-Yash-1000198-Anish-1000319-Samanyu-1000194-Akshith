@@ -1,22 +1,31 @@
 """
 UI Components for the Smart Restaurant Menu Management App.
-Contains authentication, gamification, and other UI elements.
+Includes authentication, gamification, and utility components.
 """
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import firebase_admin
 from firebase_admin import firestore
-import logging
-import random
 import hashlib
-import re
+import secrets
+import logging
+from typing import Dict, List, Optional, Tuple
+import random
+
+# Import XP utilities
+from modules.xp_utils import (
+    calculate_level_from_xp, get_xp_progress, get_level_title, 
+    calculate_xp_reward, format_xp_display, get_next_milestone,
+    XP_REWARDS, LEVEL_TITLES
+)
 
 logger = logging.getLogger(__name__)
 
-# Authentication Components
+# Authentication Functions
 def initialize_session_state():
     """Initialize session state variables for authentication"""
     if 'is_authenticated' not in st.session_state:
@@ -25,962 +34,705 @@ def initialize_session_state():
         st.session_state.user = None
     if 'auth_error' not in st.session_state:
         st.session_state.auth_error = None
-    if 'show_signup' not in st.session_state:
-        st.session_state.show_signup = False
 
-def get_firestore_client():
-    """Get Firestore client for authentication - using MAIN Firebase"""
+def hash_password(password: str, salt: str = None) -> Tuple[str, str]:
+    """Hash password with salt"""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    
+    password_hash = hashlib.pbkdf2_hmac('sha256', 
+                                       password.encode('utf-8'), 
+                                       salt.encode('utf-8'), 
+                                       100000)
+    return password_hash.hex(), salt
+
+def verify_password(password: str, hashed_password: str, salt: str) -> bool:
+    """Verify password against hash"""
+    password_hash, _ = hash_password(password, salt)
+    return password_hash == hashed_password
+
+def register_user(username: str, password: str, role: str = 'user') -> bool:
+    """Register a new user"""
     try:
-        # Use the main Firebase app (default) for user authentication
-        if firebase_admin._DEFAULT_APP_NAME in [app.name for app in firebase_admin._apps.values()]:
-            return firestore.client()
-        else:
-            # Initialize main Firebase if not already done
-            from firebase_init import init_firebase
-            init_firebase()
-            return firestore.client()
-    except Exception as e:
-        logger.error(f"Error getting Firestore client for auth: {str(e)}")
-        return None
-
-def get_event_firestore_client():
-    """Get event Firestore client for other features"""
-    try:
-        # Use the event Firebase app for other features
-        if 'event_app' in [app.name for app in firebase_admin._apps.values()]:
-            return firestore.client(app=firebase_admin.get_app(name='event_app'))
-        else:
-            # Initialize event Firebase if not already done
-            from modules.event_planner import init_event_firebase
-            init_event_firebase()
-            return firestore.client(app=firebase_admin.get_app(name='event_app'))
-    except Exception as e:
-        logger.error(f"Error getting event Firestore client: {str(e)}")
-        return None
-
-def hash_password(password):
-    """Hash password using SHA-256"""
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def validate_email(email):
-    """Validate email format"""
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return re.match(pattern, email) is not None
-
-def validate_password(password):
-    """Validate password strength"""
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters long"
-    if not re.search(r'[A-Z]', password):
-        return False, "Password must contain at least one uppercase letter"
-    if not re.search(r'[a-z]', password):
-        return False, "Password must contain at least one lowercase letter"
-    if not re.search(r'\d', password):
-        return False, "Password must contain at least one number"
-    return True, "Password is valid"
-
-def authenticate_user(login_identifier, password):
-    """Authenticate user against MAIN Firebase using email or username"""
-    try:
-        db = get_firestore_client()
-        if not db:
-            return None, "Database connection failed"
+        db = firestore.client()
         
-        # Hash the provided password
-        hashed_password = hash_password(password)
-        
-        # Query users collection in MAIN Firebase
+        # Check if username already exists
         users_ref = db.collection('users')
+        existing_user = users_ref.where('username', '==', username).limit(1).get()
         
-        # Try to find user by email first, then by username
-        user_doc = None
-        
-        # Check if login_identifier is an email
-        if validate_email(login_identifier):
-            query = users_ref.where('email', '==', login_identifier).where('password_hash', '==', hashed_password)
-        else:
-            query = users_ref.where('username', '==', login_identifier).where('password_hash', '==', hashed_password)
-        
-        docs = list(query.stream())
-        
-        if docs:
-            user_doc = docs[0]
-            user_data = user_doc.to_dict()
-            user_data['user_id'] = user_doc.id
-            
-            # Update last login
-            user_doc.reference.update({
-                'last_login': firestore.SERVER_TIMESTAMP
-            })
-            
-            logger.info(f"User authenticated successfully: {login_identifier}")
-            return user_data, None
-        else:
-            logger.warning(f"Authentication failed for user: {login_identifier}")
-            return None, "Invalid email/username or password"
-            
-    except Exception as e:
-        logger.error(f"Authentication error: {str(e)}")
-        return None, f"Authentication error: {str(e)}"
-
-def check_user_exists(email, username):
-    """Check if user already exists with given email or username"""
-    try:
-        db = get_firestore_client()
-        if not db:
-            return True, "Database connection failed"
-        
-        users_ref = db.collection('users')
-        
-        # Check email
-        email_query = users_ref.where('email', '==', email)
-        email_docs = list(email_query.stream())
-        if email_docs:
-            return True, "Email already registered"
-        
-        # Check username
-        username_query = users_ref.where('username', '==', username)
-        username_docs = list(username_query.stream())
-        if username_docs:
-            return True, "Username already taken"
-        
-        return False, "User does not exist"
-        
-    except Exception as e:
-        logger.error(f"Error checking user existence: {str(e)}")
-        return True, f"Error checking user: {str(e)}"
-
-def register_user(email, username, password, full_name, role='user'):
-    """Register a new user in MAIN Firebase with proper validation"""
-    try:
-        db = get_firestore_client()
-        if not db:
-            return False, "Database connection failed"
-        
-        # Validate email
-        if not validate_email(email):
-            return False, "Invalid email format"
-        
-        # Validate password
-        is_valid, password_message = validate_password(password)
-        if not is_valid:
-            return False, password_message
-        
-        # Check if user already exists
-        exists, message = check_user_exists(email, username)
-        if exists:
-            return False, message
+        if existing_user:
+            st.session_state.auth_error = "Username already exists"
+            return False
         
         # Hash password
-        password_hash = hash_password(password)
+        password_hash, salt = hash_password(password)
         
-        # Create new user
+        # Generate user ID
+        user_id = f"user_{secrets.token_hex(8)}"
+        
+        # Create user document
         user_data = {
-            'email': email,
+            'user_id': user_id,
             'username': username,
             'password_hash': password_hash,
-            'full_name': full_name,
+            'salt': salt,
             'role': role,
             'created_at': firestore.SERVER_TIMESTAMP,
-            'last_login': None,
-            'is_active': True,
-            'profile_completed': True
+            'last_login': firestore.SERVER_TIMESTAMP
         }
         
-        doc_ref = db.collection('users').add(user_data)
-        user_data['user_id'] = doc_ref[1].id
+        users_ref.document(user_id).set(user_data)
         
-        # Initialize user stats in gamification system
-        try:
-            stats_data = {
-                'user_id': doc_ref[1].id,
-                'username': username,
-                'total_xp': 0,
-                'level': 1,
-                'recipes_generated': 0,
-                'quizzes_completed': 0,
-                'created_at': firestore.SERVER_TIMESTAMP,
-                'last_activity': firestore.SERVER_TIMESTAMP
-            }
-            db.collection('user_stats').document(doc_ref[1].id).set(stats_data)
-            logger.info(f"Created user stats for new user: {username}")
-        except Exception as e:
-            logger.warning(f"Failed to create user stats: {str(e)}")
-        
-        logger.info(f"User registered successfully: {username} ({email})")
-        return True, "Registration successful! You can now log in."
-        
-    except Exception as e:
-        logger.error(f"Registration error: {str(e)}")
-        return False, f"Registration error: {str(e)}"
-
-def clear_user_data(user_id):
-    """Clear user's gamification data and preferences while keeping the account"""
-    try:
-        # Get both main and event Firebase databases
-        main_db = get_firestore_client()
-        event_db = get_event_firestore_client()
-        
-        if not main_db:
-            return False, "Main database connection failed"
-        
-        # Reset user stats to initial values in main Firebase
-        initial_stats = {
+        # Initialize user stats
+        stats_data = {
             'user_id': user_id,
             'total_xp': 0,
             'level': 1,
             'recipes_generated': 0,
+            'campaigns_created': 0,
             'quizzes_completed': 0,
-            'quizzes_taken': 0,
-            'correct_answers': 0,
-            'total_questions': 0,
-            'perfect_scores': 0,
-            'achievements': [],
-            'last_quiz_date': None,
+            'perfect_quizzes': 0,
+            'current_streak': 0,
+            'longest_streak': 0,
             'last_activity': firestore.SERVER_TIMESTAMP,
-            'data_cleared_at': firestore.SERVER_TIMESTAMP
+            'created_at': firestore.SERVER_TIMESTAMP
         }
         
-        # Update user stats document in main Firebase
-        user_stats_ref = main_db.collection('user_stats').document(user_id)
-        user_stats_ref.set(initial_stats, merge=False)  # Overwrite completely
+        db.collection('user_stats').document(user_id).set(stats_data)
         
-        # Clear user preferences from event Firebase if available
-        if event_db:
-            try:
-                # Clear user preferences
-                user_prefs_ref = event_db.collection('user_preferences').document(user_id)
-                user_prefs_doc = user_prefs_ref.get()
-                if user_prefs_doc.exists:
-                    user_prefs_ref.delete()
-                    logger.info(f"Cleared user preferences for user: {user_id}")
-                
-                # Clear user dish likes (for AI learning)
-                user_likes_ref = event_db.collection('user_dish_likes').where('user_id', '==', user_id)
-                user_likes_docs = list(user_likes_ref.stream())
-                for doc in user_likes_docs:
-                    doc.reference.delete()
-                logger.info(f"Cleared {len(user_likes_docs)} dish likes for user: {user_id}")
-                
-            except Exception as e:
-                logger.warning(f"Could not clear event database data for user {user_id}: {str(e)}")
-                # Continue anyway since main stats were cleared
-        
-        logger.info(f"Cleared user data and preferences for user: {user_id}")
-        return True, "User data and preferences cleared successfully! Your account remains active."
+        logger.info(f"User {username} registered successfully with ID {user_id}")
+        return True
         
     except Exception as e:
-        logger.error(f"Error clearing user data: {str(e)}")
-        return False, f"Error clearing user data: {str(e)}"
-
-def render_login_form():
-    """Render the login form"""
-    st.markdown("### Login to Your Account")
-    
-    with st.form("login_form"):
-        login_identifier = st.text_input(
-            "Email or Username",
-            placeholder="Enter your email or username",
-            help="You can use either your email address or username to log in"
-        )
-        password = st.text_input(
-            "Password",
-            type="password",
-            placeholder="Enter your password"
-        )
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            login_button = st.form_submit_button("Login", type="primary", use_container_width=True)
-        with col2:
-            if st.form_submit_button("Create Account", use_container_width=True):
-                st.session_state.show_signup = True
-                st.rerun()
-        
-        if login_button:
-            if not login_identifier or not password:
-                st.error("Please fill in all fields")
-            else:
-                with st.spinner("Authenticating..."):
-                    user_data, error = authenticate_user(login_identifier, password)
-                    if user_data:
-                        st.session_state.is_authenticated = True
-                        st.session_state.user = user_data
-                        st.success("Login successful!")
-                        st.rerun()
-                    else:
-                        st.error(error)
-
-def render_signup_form():
-    """Render the signup form"""
-    st.markdown("### Create Your Account")
-    
-    with st.form("signup_form"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            full_name = st.text_input(
-                "Full Name *",
-                placeholder="Enter your full name",
-                help="Your display name in the system"
-            )
-            email = st.text_input(
-                "Email Address *",
-                placeholder="Enter your email address",
-                help="Used for login and notifications"
-            )
-        
-        with col2:
-            username = st.text_input(
-                "Username *",
-                placeholder="Choose a unique username",
-                help="Used for login and leaderboards"
-            )
-            role = st.selectbox(
-                "Role *",
-                ["user", "staff", "chef", "admin"],
-                help="Select your role in the restaurant system"
-            )
-        
-        password = st.text_input(
-            "Password *",
-            type="password",
-            placeholder="Create a strong password",
-            help="Must be at least 8 characters with uppercase, lowercase, and numbers"
-        )
-        
-        confirm_password = st.text_input(
-            "Confirm Password *",
-            type="password",
-            placeholder="Confirm your password"
-        )
-        
-        # Terms and conditions
-        terms_accepted = st.checkbox(
-            "I agree to the Terms of Service and Privacy Policy",
-            help="You must accept the terms to create an account"
-        )
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            signup_button = st.form_submit_button("Create Account", type="primary", use_container_width=True)
-        with col2:
-            if st.form_submit_button("Back to Login", use_container_width=True):
-                st.session_state.show_signup = False
-                st.rerun()
-        
-        if signup_button:
-            # Validation
-            if not all([full_name, email, username, password, confirm_password]):
-                st.error("Please fill in all required fields")
-            elif not terms_accepted:
-                st.error("Please accept the Terms of Service and Privacy Policy")
-            elif password != confirm_password:
-                st.error("Passwords do not match")
-            else:
-                with st.spinner("Creating your account..."):
-                    success, message = register_user(email, username, password, full_name, role)
-                    if success:
-                        st.success(message)
-                        st.session_state.show_signup = False
-                        st.balloons()
-                        
-                        # Auto-login after successful registration
-                        user_data, _ = authenticate_user(email, password)
-                        if user_data:
-                            st.session_state.is_authenticated = True
-                            st.session_state.user = user_data
-                            st.rerun()
-                    else:
-                        st.error(message)
-
-def render_auth_ui():
-    """Render authentication UI in sidebar"""
-    if st.session_state.is_authenticated:
-        user = st.session_state.user
-        st.sidebar.success(f"Welcome, {user.get('full_name', user['username'])}!")
-        st.sidebar.write(f"**Role:** {user['role'].title()}")
-        st.sidebar.write(f"**Username:** @{user['username']}")
-        
-        # Account management buttons
-        col1, col2 = st.sidebar.columns(2)
-        
-        with col1:
-            if st.button("Logout", use_container_width=True):
-                st.session_state.is_authenticated = False
-                st.session_state.user = None
-                st.session_state.show_signup = False
-                st.rerun()
-        
-        with col2:
-            if st.button("Clear Data", use_container_width=True, type="secondary", help="Reset your XP, achievements, and progress"):
-                # Show confirmation dialog
-                if 'confirm_clear_data' not in st.session_state:
-                    st.session_state.confirm_clear_data = False
-                
-                if not st.session_state.confirm_clear_data:
-                    st.session_state.confirm_clear_data = True
-                    st.rerun()
-        
-        # Handle clear data confirmation
-        if st.session_state.get('confirm_clear_data', False):
-            st.sidebar.markdown("---")
-            st.sidebar.warning("⚠️ **Confirm Data Clearing**")
-            st.sidebar.write("This will reset:")
-            st.sidebar.write("• All XP and levels")
-            st.sidebar.write("• Achievements")
-            st.sidebar.write("• Quiz history")
-            st.sidebar.write("• Recipe generation stats")
-            st.sidebar.write("• User preferences & liked dishes")
-            st.sidebar.write("• AI learning data")
-            st.sidebar.write("")
-            st.sidebar.write("Your account will remain active.")
-            
-            col1, col2 = st.sidebar.columns(2)
-            with col1:
-                if st.button("✅ Confirm", type="primary", use_container_width=True):
-                    success, message = clear_user_data(user['user_id'])
-                    if success:
-                        st.sidebar.success(message)
-                        st.session_state.confirm_clear_data = False
-                        # Force refresh of user stats
-                        st.rerun()
-                    else:
-                        st.sidebar.error(message)
-            
-            with col2:
-                if st.button("❌ Cancel", use_container_width=True):
-                    st.session_state.confirm_clear_data = False
-                    st.rerun()
-        
-        return True
-    else:
-        st.sidebar.markdown("### Authentication")
-        
-        # Show signup or login form based on state
-        if st.session_state.show_signup:
-            render_signup_form()
-        else:
-            render_login_form()
-        
-        # Additional info
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### Account Types")
-        st.sidebar.markdown("""
-        **User:** Access to basic features, quizzes, and visual menu
-        **Staff:** Can create marketing campaigns and access analytics
-        **Chef:** Can submit recipes and manage menu items
-        **Admin:** Full access to all features and management tools
-        """)
-        
+        logger.error(f"Registration error: {str(e)}")
+        st.session_state.auth_error = f"Registration failed: {str(e)}"
         return False
 
-def auth_required(func):
-    """Decorator to require authentication"""
-    def wrapper(*args, **kwargs):
-        if not st.session_state.is_authenticated:
-            st.warning("Please log in to access this feature.")
-            return None
-        return func(*args, **kwargs)
-    return wrapper
+def login_user(username: str, password: str) -> bool:
+    """Login user"""
+    try:
+        db = firestore.client()
+        
+        # Find user by username
+        users_ref = db.collection('users')
+        user_docs = users_ref.where('username', '==', username).limit(1).get()
+        
+        if not user_docs:
+            st.session_state.auth_error = "Invalid username or password"
+            return False
+        
+        user_doc = user_docs[0]
+        user_data = user_doc.to_dict()
+        
+        # Verify password
+        if verify_password(password, user_data['password_hash'], user_data['salt']):
+            # Update last login
+            users_ref.document(user_doc.id).update({
+                'last_login': firestore.SERVER_TIMESTAMP
+            })
+            
+            # Set session state
+            st.session_state.is_authenticated = True
+            st.session_state.user = user_data
+            st.session_state.auth_error = None
+            
+            logger.info(f"User {username} logged in successfully")
+            return True
+        else:
+            st.session_state.auth_error = "Invalid username or password"
+            return False
+            
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}")
+        st.session_state.auth_error = f"Login failed: {str(e)}"
+        return False
 
-def get_current_user():
+def logout_user():
+    """Logout current user"""
+    st.session_state.is_authenticated = False
+    st.session_state.user = None
+    st.session_state.auth_error = None
+    logger.info("User logged out")
+
+def get_current_user() -> Optional[Dict]:
     """Get current authenticated user"""
     return st.session_state.get('user')
 
-def is_user_role(required_role):
+def is_user_role(required_roles: List[str]) -> bool:
     """Check if current user has required role"""
     user = get_current_user()
     if not user:
         return False
-    return user.get('role') == required_role
+    return user.get('role') in required_roles
 
-# Gamification Components
-def display_user_stats_sidebar(user_id):
-    """Display user gamification stats in sidebar as expandable section with progressive XP system"""
-    try:
-        from modules.leftover import get_user_stats
-        from modules.xp_utils import get_xp_progress, calculate_level_from_xp
+def auth_required(func):
+    """Decorator to require authentication"""
+    def wrapper(*args, **kwargs):
+        if not st.session_state.get('is_authenticated', False):
+            st.warning("Please log in to access this feature")
+            return None
+        return func(*args, **kwargs)
+    return wrapper
+
+def render_auth_ui():
+    """Render authentication UI in sidebar"""
+    if st.session_state.get('is_authenticated', False):
+        user = st.session_state.get('user', {})
+        st.sidebar.success(f"Welcome, {user.get('username', 'User')}!")
+        st.sidebar.write(f"Role: {user.get('role', 'user').title()}")
         
-        # Get user stats from main Firebase (same as authentication)
-        user_stats = get_user_stats(user_id)
+        if st.sidebar.button("Logout", type="secondary"):
+            logout_user()
+            st.rerun()
+    else:
+        # Login/Register tabs
+        auth_tab = st.sidebar.radio("Authentication", ["Login", "Register"])
+        
+        if auth_tab == "Login":
+            with st.sidebar.form("login_form"):
+                username = st.text_input("Username")
+                password = st.text_input("Password", type="password")
+                
+                if st.form_submit_button("Login", type="primary"):
+                    if username and password:
+                        if login_user(username, password):
+                            st.rerun()
+                    else:
+                        st.session_state.auth_error = "Please enter username and password"
+        
+        else:  # Register
+            with st.sidebar.form("register_form"):
+                username = st.text_input("Username")
+                password = st.text_input("Password", type="password")
+                confirm_password = st.text_input("Confirm Password", type="password")
+                role = st.selectbox("Role", ["user", "staff", "chef", "admin"])
+                
+                if st.form_submit_button("Register", type="primary"):
+                    if not username or not password:
+                        st.session_state.auth_error = "Please fill all fields"
+                    elif password != confirm_password:
+                        st.session_state.auth_error = "Passwords don't match"
+                    elif len(password) < 6:
+                        st.session_state.auth_error = "Password must be at least 6 characters"
+                    else:
+                        if register_user(username, password, role):
+                            st.success("Registration successful! Please login.")
+                            st.rerun()
+        
+        # Show auth error if any
+        if st.session_state.get('auth_error'):
+            st.sidebar.error(st.session_state.auth_error)
+            st.session_state.auth_error = None
+
+# Gamification Functions
+def get_user_stats(user_id: str) -> Dict:
+    """Get user gamification stats"""
+    try:
+        db = firestore.client()
+        user_stats_ref = db.collection('user_stats').document(user_id)
+        user_stats_doc = user_stats_ref.get()
+        
+        if user_stats_doc.exists:
+            stats = user_stats_doc.to_dict()
+            # Ensure all required fields exist
+            default_stats = {
+                'total_xp': 0,
+                'level': 1,
+                'recipes_generated': 0,
+                'campaigns_created': 0,
+                'quizzes_completed': 0,
+                'perfect_quizzes': 0,
+                'current_streak': 0,
+                'longest_streak': 0
+            }
+            
+            # Merge with defaults
+            for key, default_value in default_stats.items():
+                if key not in stats:
+                    stats[key] = default_value
+            
+            # Recalculate level from XP to ensure consistency
+            stats['level'] = calculate_level_from_xp(stats['total_xp'])
+            
+            return stats
+        else:
+            # Create default stats
+            default_stats = {
+                'user_id': user_id,
+                'total_xp': 0,
+                'level': 1,
+                'recipes_generated': 0,
+                'campaigns_created': 0,
+                'quizzes_completed': 0,
+                'perfect_quizzes': 0,
+                'current_streak': 0,
+                'longest_streak': 0,
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'last_activity': firestore.SERVER_TIMESTAMP
+            }
+            
+            user_stats_ref.set(default_stats)
+            return default_stats
+            
+    except Exception as e:
+        logger.error(f"Error getting user stats: {str(e)}")
+        return {
+            'total_xp': 0,
+            'level': 1,
+            'recipes_generated': 0,
+            'campaigns_created': 0,
+            'quizzes_completed': 0,
+            'perfect_quizzes': 0,
+            'current_streak': 0,
+            'longest_streak': 0
+        }
+
+def award_recipe_xp(user_id: str, recipe_count: int = 1) -> int:
+    """Award XP for recipe generation"""
+    try:
+        xp_earned = calculate_xp_reward('recipe_generation', recipe_count=recipe_count)
+        
+        db = firestore.client()
+        user_stats_ref = db.collection('user_stats').document(user_id)
+        
+        # Get current stats
+        current_stats = get_user_stats(user_id)
+        old_level = current_stats['level']
+        
+        # Update stats
+        new_total_xp = current_stats['total_xp'] + xp_earned
+        new_level = calculate_level_from_xp(new_total_xp)
+        
+        update_data = {
+            'total_xp': new_total_xp,
+            'level': new_level,
+            'recipes_generated': current_stats['recipes_generated'] + recipe_count,
+            'last_activity': firestore.SERVER_TIMESTAMP
+        }
+        
+        user_stats_ref.update(update_data)
+        
+        # Check for level up
+        if new_level > old_level:
+            show_level_up_notification(old_level, new_level)
+        
+        logger.info(f"Awarded {xp_earned} XP to user {user_id} for {recipe_count} recipes")
+        return xp_earned
+        
+    except Exception as e:
+        logger.error(f"Error awarding recipe XP: {str(e)}")
+        return 0
+
+def award_recipe_generation_xp(user_id: str, recipe_count: int = 1):
+    """Award XP for recipe generation with notification"""
+    xp_earned = award_recipe_xp(user_id, recipe_count)
+    if xp_earned > 0:
+        show_xp_notification(xp_earned, f"Generating {recipe_count} recipe{'s' if recipe_count > 1 else ''}")
+
+def display_user_stats_sidebar(user_id: str):
+    """Display user stats in sidebar"""
+    try:
+        stats = get_user_stats(user_id)
         
         st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🎮 Your Progress")
         
-        # Create an expandable section for user stats
-        with st.sidebar.expander("Your Stats & Progress", expanded=False):
-            # Extract stats with safe defaults
-            total_xp = max(0, user_stats.get('total_xp', 0))
-            
-            # Calculate level using progressive system
-            current_level = calculate_level_from_xp(total_xp)
-            
-            # Get progress information
-            current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
-            
-            # Display metrics
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Level", current_level)
-            with col2:
-                st.metric("Total XP", f"{total_xp:,}")
-            
-            # Progress bar with new calculation
-            progress = progress_percentage / 100.0
-            progress = max(0.0, min(1.0, progress))  # Clamp between 0 and 1
-            
-            st.progress(progress, text=f"{xp_needed_for_next} XP to Level {current_level + 1}")
-            
-            # Show current level XP details
-            st.caption(f"Level {current_level}: {current_level_xp} XP earned")
-            
-            # Additional stats
-            recipes_generated = user_stats.get('recipes_generated', 0)
-            quizzes_completed = user_stats.get('quizzes_completed', 0)
-            
-            if recipes_generated > 0 or quizzes_completed > 0:
-                st.markdown("**Activity:**")
-                if recipes_generated > 0:
-                    st.write(f"Recipes: {recipes_generated}")
-                if quizzes_completed > 0:
-                    st.write(f"Quizzes: {quizzes_completed}")
-            
-            # Gamification Hub button
-            st.markdown("---")
-            if st.button("Open Gamification Hub", use_container_width=True, type="primary", key="gamification_hub_btn"):
-                st.session_state.selected_feature = "Gamification Hub"
-                st.rerun()
+        # Level and XP
+        level = stats['level']
+        total_xp = stats['total_xp']
+        title = get_level_title(level)
         
-        logger.info(f"Displayed progressive stats for user {user_id}: Level {current_level}, XP {total_xp}, Progress {progress_percentage:.1f}%")
+        st.sidebar.metric("Level", f"{level}")
+        st.sidebar.caption(f"**{title}**")
+        st.sidebar.metric("Total XP", format_xp_display(total_xp))
+        
+        # Progress to next level
+        try:
+            current_level_xp, xp_needed, progress_pct = get_xp_progress(total_xp, level)
+            
+            if xp_needed > 0:
+                st.sidebar.progress(progress_pct / 100, text=f"Next Level: {progress_pct:.1f}%")
+                st.sidebar.caption(f"Need {xp_needed:,} more XP")
+            else:
+                st.sidebar.success("🏆 Max Level Reached!")
+                
+        except Exception as e:
+            logger.error(f"Error displaying progress: {str(e)}")
+            st.sidebar.caption("Progress calculation error")
+        
+        # Quick stats
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            st.metric("Recipes", stats.get('recipes_generated', 0))
+        with col2:
+            st.metric("Streak", f"{stats.get('current_streak', 0)} days")
         
     except Exception as e:
         logger.error(f"Error displaying user stats: {str(e)}")
         st.sidebar.error("Error loading stats")
 
-def show_xp_notification(xp_amount, activity_type):
-    """Show XP notification"""
-    st.success(f"+{xp_amount} XP earned for {activity_type}!")
+def show_xp_notification(xp_earned: int, activity: str):
+    """Show XP earned notification"""
+    if xp_earned > 0:
+        st.success(f"🎉 **+{xp_earned} XP** earned for {activity}!")
 
-def display_gamification_dashboard(user_id):
-    """Display comprehensive gamification dashboard with progressive XP system"""
-    st.title("Gamification Hub")
+def show_level_up_notification(old_level: int, new_level: int):
+    """Show level up notification"""
+    new_title = get_level_title(new_level)
+    st.balloons()
+    st.success(f"🎉 **LEVEL UP!** You reached Level {new_level}: {new_title}")
+
+def display_gamification_dashboard(user_id: str):
+    """Display comprehensive gamification dashboard"""
+    st.title("🎮 Gamification Hub")
     
     try:
-        from modules.leftover import get_user_stats, get_leaderboard
-        from modules.xp_utils import get_xp_progress, calculate_level_from_xp, get_xp_breakdown_for_levels
+        stats = get_user_stats(user_id)
         
-        # Get user stats from main Firebase
-        user_stats = get_user_stats(user_id)
-        total_xp = user_stats.get('total_xp', 0)
-        
-        # Calculate level using progressive system
-        current_level = calculate_level_from_xp(total_xp)
-        
-        # Get progress information
-        current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
-        
-        # Overview metrics
-        st.subheader("Your Progress")
-        
+        # Main stats
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("Level", current_level)
+            st.metric("Level", stats['level'])
+            st.caption(get_level_title(stats['level']))
         
         with col2:
-            st.metric("Total XP", f"{total_xp:,}")
+            st.metric("Total XP", format_xp_display(stats['total_xp']))
         
         with col3:
-            st.metric("Recipes Generated", user_stats.get('recipes_generated', 0))
+            st.metric("Recipes Generated", stats.get('recipes_generated', 0))
         
         with col4:
-            st.metric("Quizzes Completed", user_stats.get('quizzes_completed', 0))
+            st.metric("Current Streak", f"{stats.get('current_streak', 0)} days")
         
-        # Enhanced progress visualization
-        st.subheader("Level Progress")
-        
-        # Progress bar
-        progress = progress_percentage / 100.0
-        st.progress(progress, text=f"Level {current_level} - {current_level_xp} XP earned")
-        
-        # Detailed progress info
-        col1, col2 = st.columns(2)
-        with col1:
-            st.info(f"**Current Level:** {current_level}\n**XP in this level:** {current_level_xp}")
-        with col2:
-            st.info(f"**Next Level:** {current_level + 1}\n**XP needed:** {xp_needed_for_next}")
-        
-        # XP Requirements Table
-        st.subheader("Level Requirements")
-        
-        # Show XP breakdown for next few levels
-        max_display_level = min(current_level + 5, 15)
-        xp_breakdown = get_xp_breakdown_for_levels(max_display_level)
-        
-        # Create DataFrame for display
-        breakdown_data = []
-        for level, xp_for_level, total_xp_req in xp_breakdown:
-            status = "✅ Completed" if level <= current_level else "🔒 Locked"
-            if level == current_level + 1:
-                status = "🎯 Next Goal"
-            
-            breakdown_data.append({
-                "Level": level,
-                "XP for Level": f"{xp_for_level:,}",
-                "Total XP Required": f"{total_xp_req:,}",
-                "Status": status
-            })
-        
-        df = pd.DataFrame(breakdown_data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        
-        # Achievements section
-        st.subheader("Achievements")
-        
-        achievements = []
-        if user_stats.get('recipes_generated', 0) >= 1:
-            achievements.append("🍳 Recipe Novice - Generated your first recipe")
-        if user_stats.get('recipes_generated', 0) >= 10:
-            achievements.append("👨‍🍳 Recipe Expert - Generated 10+ recipes")
-        if user_stats.get('quizzes_completed', 0) >= 1:
-            achievements.append("📚 Quiz Starter - Completed your first quiz")
-        if user_stats.get('quizzes_completed', 0) >= 5:
-            achievements.append("🧠 Quiz Master - Completed 5+ quizzes")
-        if current_level >= 5:
-            achievements.append("⭐ Rising Star - Reached Level 5")
-        if current_level >= 10:
-            achievements.append("🏆 Culinary Expert - Reached Level 10")
-        if total_xp >= 1000:
-            achievements.append("💎 XP Collector - Earned 1,000+ XP")
-        
-        if achievements:
-            for achievement in achievements:
-                st.success(achievement)
-        else:
-            st.info("Complete activities to unlock achievements!")
-        
-        # Leaderboard
-        st.subheader("Leaderboard")
+        # Progress chart
+        st.markdown("### 📈 Level Progress")
         
         try:
-            leaderboard = get_leaderboard()
-            if leaderboard:
-                df = pd.DataFrame(leaderboard)
-                df.index = df.index + 1  # Start ranking from 1
-                st.dataframe(df, use_container_width=True)
+            current_level_xp, xp_needed, progress_pct = get_xp_progress(stats['total_xp'], stats['level'])
+            
+            if xp_needed > 0:
+                progress_data = {
+                    'Category': ['Current XP', 'Needed XP'],
+                    'XP': [current_level_xp, xp_needed],
+                    'Color': ['#1f77b4', '#d62728']
+                }
+                
+                fig = px.pie(progress_data, values='XP', names='Category', 
+                           title=f"Progress to Level {stats['level'] + 1}",
+                           color_discrete_sequence=['#1f77b4', '#d62728'])
+                st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("No leaderboard data available yet.")
+                st.success("🏆 Maximum level reached!")
+                
         except Exception as e:
-            logger.error(f"Error loading leaderboard: {str(e)}")
-            st.error("Error loading leaderboard")
+            logger.error(f"Error creating progress chart: {str(e)}")
+            st.error("Error displaying progress chart")
         
-        # Enhanced activity suggestions
-        st.subheader("Earn More XP")
+        # Activity breakdown
+        st.markdown("### 🏆 Activity Summary")
         
-        col1, col2 = st.columns(2)
+        activity_data = {
+            'Activity': ['Recipes Generated', 'Campaigns Created', 'Quizzes Completed', 'Perfect Quizzes'],
+            'Count': [
+                stats.get('recipes_generated', 0),
+                stats.get('campaigns_created', 0), 
+                stats.get('quizzes_completed', 0),
+                stats.get('perfect_quizzes', 0)
+            ]
+        }
         
-        with col1:
-            st.info("""
-            **Recipe Generation:**
-            - Generate recipes: +5 XP each
-            - Use priority ingredients: +2 bonus XP
-            - Generate 5+ recipes: +10 bonus XP
-            """)
+        if sum(activity_data['Count']) > 0:
+            fig = px.bar(activity_data, x='Activity', y='Count', 
+                        title="Your Activities",
+                        color='Count',
+                        color_continuous_scale='viridis')
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Start using the app to see your activity summary!")
         
-        with col2:
-            st.info("""
-            **Cooking Quiz:**
-            - Complete quiz: +2 XP per question
-            - Perfect score: +5 bonus XP
-            - Daily streak: +2 bonus XP
-            """)
-        
-        # XP Tips
-        with st.expander("💡 XP Tips & Strategy"):
-            st.markdown(f"""
-            **Your Current Status:**
-            - You're Level {current_level} with {total_xp:,} total XP
-            - You need {xp_needed_for_next} more XP to reach Level {current_level + 1}
+        # Next milestone
+        next_milestone = get_next_milestone(stats['level'])
+        if next_milestone:
+            st.markdown("### 🎯 Next Milestone")
+            col1, col2 = st.columns(2)
             
-            **Fastest Ways to Level Up:**
-            1. **Take Cooking Quizzes** - Up to 15 XP per quiz (10 base + 5 bonus for perfect score)
-            2. **Generate Multiple Recipes** - 5 XP per recipe + bonuses for bulk generation
-            3. **Use Priority Ingredients** - Extra 2 XP when using expiring ingredients
-            4. **Daily Consistency** - Regular activity helps with streak bonuses
+            with col1:
+                st.info(f"**Level {next_milestone['level']}:** {next_milestone['title']}")
             
-            **Level Scaling:**
-            Each level requires progressively more XP, making higher levels more prestigious!
-            """)
+            with col2:
+                xp_needed_for_milestone = next_milestone['xp_required'] - stats['total_xp']
+                st.info(f"**XP Needed:** {xp_needed_for_milestone:,}")
         
     except Exception as e:
-        logger.error(f"Error in gamification dashboard: {str(e)}")
+        logger.error(f"Error displaying gamification dashboard: {str(e)}")
         st.error("Error loading gamification dashboard")
 
-def render_cooking_quiz(ingredients, user_id):
-    """Render cooking quiz component - AI generated questions only"""
-    st.subheader("Cooking Knowledge Quiz")
+def render_cooking_quiz(ingredients: List[str], user_id: str):
+    """Render cooking knowledge quiz"""
+    st.markdown("### 🧠 Cooking Knowledge Quiz")
+    st.markdown("Test your culinary knowledge and earn XP!")
     
-    # Initialize all session state variables properly
-    if 'quiz_started' not in st.session_state:
-        st.session_state.quiz_started = False
-    if 'quiz_questions' not in st.session_state:
-        st.session_state.quiz_questions = []
-    if 'quiz_answers' not in st.session_state:
-        st.session_state.quiz_answers = {}
-    if 'quiz_score' not in st.session_state:
-        st.session_state.quiz_score = 0
-    if 'quiz_num_questions' not in st.session_state:
-        st.session_state.quiz_num_questions = 5
-    if 'quiz_completed' not in st.session_state:
-        st.session_state.quiz_completed = False
+    # Generate quiz questions
+    questions = generate_quiz_questions(ingredients)
     
-    # Quiz setup section
-    if not st.session_state.quiz_started or st.session_state.quiz_completed:
-        st.markdown("### Quiz Setup")
-        
-        # Add slider for number of questions
-        num_questions = st.slider(
-            "Number of questions",
-            min_value=3,
-            max_value=15,
-            value=st.session_state.quiz_num_questions,
-            help="Select how many questions you want in your quiz"
-        )
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Questions", num_questions)
-        with col2:
-            estimated_time = num_questions * 1.5  # Estimate 1.5 minutes per question
-            st.metric("Estimated Time", f"{estimated_time:.0f} min")
-        
-        # Generate Quiz button
-        button_text = "Generate New Quiz" if st.session_state.quiz_completed else "Generate Quiz"
-        if st.button(button_text, type="primary", use_container_width=True):
-            # Generate AI questions with selected number
-            with st.spinner(f"Generating {num_questions} quiz questions..."):
-                from modules.leftover import generate_dynamic_quiz_questions
-                questions = generate_dynamic_quiz_questions(ingredients, num_questions)
-                
-                if questions:
-                    st.session_state.quiz_questions = questions
-                    st.session_state.quiz_started = True
-                    st.session_state.quiz_completed = False
-                    st.session_state.quiz_answers = {}
-                    st.session_state.quiz_num_questions = num_questions
-                    st.rerun()
-                else:
-                    st.error("Unable to generate quiz questions. Please try again later.")
-        
-        # Show previous quiz results if completed
-        if st.session_state.quiz_completed and st.session_state.quiz_questions:
-            st.markdown("---")
-            st.markdown("### Previous Quiz Results")
-            
-            # Calculate and display previous score
-            correct_answers = 0
-            total_questions = len(st.session_state.quiz_questions)
-            
-            for i, q in enumerate(st.session_state.quiz_questions):
-                if st.session_state.quiz_answers.get(i) == q['correct']:
-                    correct_answers += 1
-            
-            score_percentage = (correct_answers / total_questions) * 100
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Score", f"{correct_answers}/{total_questions}")
-            with col2:
-                st.metric("Percentage", f"{score_percentage:.0f}%")
-            with col3:
-                base_xp_per_question = 2
-                base_xp = base_xp_per_question * total_questions
-                bonus_xp = 5 if score_percentage == 100 else 0
-                total_xp = base_xp + bonus_xp
-                st.metric("XP Earned", total_xp)
+    if not questions:
+        st.error("Unable to generate quiz questions")
+        return
     
-    # Quiz taking section
-    elif st.session_state.quiz_started and not st.session_state.quiz_completed:
-        if st.session_state.quiz_questions:
-            st.markdown(f"### Quiz in Progress ({len(st.session_state.quiz_questions)} questions)")
+    # Quiz form
+    with st.form("cooking_quiz"):
+        user_answers = []
+        
+        for i, question in enumerate(questions):
+            st.markdown(f"**Question {i+1}:** {question['question']}")
+            answer = st.radio(
+                f"Select your answer for question {i+1}:",
+                question['options'],
+                key=f"q_{i}",
+                label_visibility="collapsed"
+            )
+            user_answers.append(answer)
+        
+        submitted = st.form_submit_button("Submit Quiz", type="primary")
+        
+        if submitted:
+            score = calculate_quiz_score(questions, user_answers)
+            total_questions = len(questions)
             
-            with st.form("cooking_quiz"):
-                for i, q in enumerate(st.session_state.quiz_questions):
-                    st.write(f"**Question {i+1}:** {q['question']}")
-                    answer = st.radio(
-                        f"Select your answer for question {i+1}:",
-                        options=q['options'],
-                        key=f"q_{i}"
-                    )
-                    st.session_state.quiz_answers[i] = q['options'].index(answer)
-                
-                submitted = st.form_submit_button("Submit Quiz", type="primary")
-                
-                if submitted:
-                    # Calculate score
-                    correct_answers = 0
-                    total_questions = len(st.session_state.quiz_questions)
+            # Display results
+            st.markdown("### 📊 Quiz Results")
+            
+            if score == total_questions:
+                st.success(f"🎉 Perfect Score! {score}/{total_questions}")
+                xp_earned = calculate_xp_reward('cooking_quiz_perfect')
+                award_quiz_xp(user_id, score, total_questions, perfect=True)
+            elif score >= total_questions * 0.7:
+                st.success(f"✅ Great job! {score}/{total_questions}")
+                xp_earned = calculate_xp_reward('cooking_quiz_correct') * score
+                award_quiz_xp(user_id, score, total_questions)
+            else:
+                st.warning(f"📚 Keep studying! {score}/{total_questions}")
+                xp_earned = calculate_xp_reward('cooking_quiz_correct') * score
+                award_quiz_xp(user_id, score, total_questions)
+            
+            # Show correct answers
+            with st.expander("📖 Review Answers"):
+                for i, question in enumerate(questions):
+                    user_answer = user_answers[i]
+                    correct_answer = question['correct_answer']
                     
-                    for i, q in enumerate(st.session_state.quiz_questions):
-                        if st.session_state.quiz_answers.get(i) == q['correct']:
-                            correct_answers += 1
-                    
-                    score_percentage = (correct_answers / total_questions) * 100
-                    st.session_state.quiz_score = score_percentage
-                    st.session_state.quiz_completed = True
-                    
-                    # Display results
-                    st.subheader("Quiz Results")
-                    st.write(f"Score: {correct_answers}/{total_questions} ({score_percentage:.0f}%)")
-                    
-                    # Award XP - scale with number of questions
-                    base_xp_per_question = 2
-                    base_xp = base_xp_per_question * len(st.session_state.quiz_questions)
-                    bonus_xp = 5 if score_percentage == 100 else 0
-                    total_xp = base_xp + bonus_xp
-                    
-                    try:
-                        from modules.leftover import update_user_stats
-                        update_user_stats(user_id, total_xp, quizzes_completed=1)
-                        show_xp_notification(total_xp, "completing cooking quiz")
-                    except Exception as e:
-                        logger.error(f"Error awarding quiz XP: {str(e)}")
-                    
-                    # Show explanations
-                    st.subheader("Explanations")
-                    for i, q in enumerate(st.session_state.quiz_questions):
-                        user_answer = st.session_state.quiz_answers.get(i)
-                        correct_answer = q['correct']
-                        
-                        if user_answer == correct_answer:
-                            st.success(f"Q{i+1}: Correct! {q.get('explanation', 'No explanation available.')}")
-                        else:
-                            st.error(f"Q{i+1}: Incorrect. {q.get('explanation', 'No explanation available.')}")
-                    
-                    st.rerun()
-        else:
-            st.error("No quiz questions available. Please try generating the quiz again.")
-    
-    # Reset quiz button (outside of form)
-    if st.session_state.quiz_started and not st.session_state.quiz_completed:
-        st.markdown("---")
-        if st.button("Cancel Quiz", help="Cancel current quiz and return to setup"):
-            st.session_state.quiz_started = False
-            st.session_state.quiz_completed = False
-            st.session_state.quiz_questions = []
-            st.session_state.quiz_answers = {}
-            st.rerun()
+                    if user_answer == correct_answer:
+                        st.success(f"Q{i+1}: ✅ {user_answer}")
+                    else:
+                        st.error(f"Q{i+1}: ❌ Your answer: {user_answer}")
+                        st.info(f"Correct answer: {correct_answer}")
 
-def display_daily_challenge(user_id):
-    """Display daily cooking challenge"""
-    st.subheader("Daily Challenge")
+def generate_quiz_questions(ingredients: List[str]) -> List[Dict]:
+    """Generate cooking quiz questions"""
+    # Sample quiz questions - in a real app, this could be more sophisticated
+    all_questions = [
+        {
+            "question": "What is the ideal internal temperature for cooked chicken?",
+            "options": ["145°F (63°C)", "165°F (74°C)", "180°F (82°C)", "200°F (93°C)"],
+            "correct_answer": "165°F (74°C)"
+        },
+        {
+            "question": "Which cooking method uses dry heat?",
+            "options": ["Boiling", "Steaming", "Roasting", "Poaching"],
+            "correct_answer": "Roasting"
+        },
+        {
+            "question": "What does 'mise en place' mean in cooking?",
+            "options": ["Cooking technique", "Everything in its place", "French sauce", "Knife skill"],
+            "correct_answer": "Everything in its place"
+        },
+        {
+            "question": "Which ingredient is used to thicken sauces?",
+            "options": ["Salt", "Sugar", "Flour", "Vinegar"],
+            "correct_answer": "Flour"
+        },
+        {
+            "question": "What is the purpose of resting meat after cooking?",
+            "options": ["Cool it down", "Redistribute juices", "Add flavor", "Tenderize"],
+            "correct_answer": "Redistribute juices"
+        }
+    ]
     
-    # Generate a daily challenge based on date
+    # Return random selection of questions
+    import random
+    return random.sample(all_questions, min(3, len(all_questions)))
+
+def calculate_quiz_score(questions: List[Dict], user_answers: List[str]) -> int:
+    """Calculate quiz score"""
+    score = 0
+    for question, user_answer in zip(questions, user_answers):
+        if user_answer == question['correct_answer']:
+            score += 1
+    return score
+
+def award_quiz_xp(user_id: str, score: int, total_questions: int, perfect: bool = False):
+    """Award XP for quiz completion"""
+    try:
+        if perfect:
+            xp_earned = calculate_xp_reward('cooking_quiz_perfect')
+        else:
+            xp_earned = calculate_xp_reward('cooking_quiz_correct') * score
+        
+        db = firestore.client()
+        user_stats_ref = db.collection('user_stats').document(user_id)
+        
+        # Get current stats
+        current_stats = get_user_stats(user_id)
+        old_level = current_stats['level']
+        
+        # Update stats
+        new_total_xp = current_stats['total_xp'] + xp_earned
+        new_level = calculate_level_from_xp(new_total_xp)
+        
+        update_data = {
+            'total_xp': new_total_xp,
+            'level': new_level,
+            'quizzes_completed': current_stats['quizzes_completed'] + 1,
+            'last_activity': firestore.SERVER_TIMESTAMP
+        }
+        
+        if perfect:
+            update_data['perfect_quizzes'] = current_stats.get('perfect_quizzes', 0) + 1
+        
+        user_stats_ref.update(update_data)
+        
+        # Show notifications
+        show_xp_notification(xp_earned, f"Quiz ({score}/{total_questions})")
+        
+        if new_level > old_level:
+            show_level_up_notification(old_level, new_level)
+        
+        logger.info(f"Awarded {xp_earned} XP to user {user_id} for quiz score {score}/{total_questions}")
+        
+    except Exception as e:
+        logger.error(f"Error awarding quiz XP: {str(e)}")
+
+def display_daily_challenge(user_id: str):
+    """Display daily cooking challenge"""
+    st.markdown("### 🎯 Daily Challenge")
+    
+    # Generate daily challenge based on date
     today = datetime.now().date()
-    random.seed(today.toordinal())  # Consistent challenge per day
+    challenge_seed = int(today.strftime("%Y%m%d"))
+    random.seed(challenge_seed)
     
     challenges = [
-        "Generate a recipe using at least 3 vegetables",
-        "Create a recipe with ingredients expiring in 2 days",
-        "Generate a vegetarian recipe",
-        "Create a recipe that takes less than 30 minutes",
-        "Generate a recipe using leftover rice or pasta"
+        "Create a recipe using only 5 ingredients",
+        "Design a vegetarian main course",
+        "Plan a complete breakfast menu",
+        "Suggest a recipe for food waste reduction",
+        "Create a kid-friendly healthy snack"
     ]
     
     daily_challenge = random.choice(challenges)
     
     st.info(f"**Today's Challenge:** {daily_challenge}")
-    st.write("Complete this challenge to earn bonus XP!")
+    
+    if st.button("Complete Challenge", key="daily_challenge"):
+        # Award challenge XP
+        xp_earned = calculate_xp_reward('daily_challenge_complete')
+        
+        try:
+            db = firestore.client()
+            user_stats_ref = db.collection('user_stats').document(user_id)
+            
+            current_stats = get_user_stats(user_id)
+            old_level = current_stats['level']
+            
+            new_total_xp = current_stats['total_xp'] + xp_earned
+            new_level = calculate_level_from_xp(new_total_xp)
+            
+            user_stats_ref.update({
+                'total_xp': new_total_xp,
+                'level': new_level,
+                'last_activity': firestore.SERVER_TIMESTAMP
+            })
+            
+            show_xp_notification(xp_earned, "Daily Challenge")
+            
+            if new_level > old_level:
+                show_level_up_notification(old_level, new_level)
+                
+        except Exception as e:
+            logger.error(f"Error awarding daily challenge XP: {str(e)}")
 
-# Leftover Management Components
+# CSV Input Functions
 def leftover_input_csv():
-    """Handle CSV file upload for leftovers"""
-    st.sidebar.subheader("Upload CSV")
-    uploaded_file = st.sidebar.file_uploader("Choose a CSV file", type="csv")
+    """Handle CSV file upload for leftover ingredients"""
+    st.subheader("Upload CSV File")
+    
+    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
     
     if uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file)
+            
+            # Display the uploaded data
+            st.write("Uploaded data:")
+            st.dataframe(df)
+            
+            # Extract ingredients (assuming there's an 'ingredient' column)
             if 'ingredient' in df.columns:
                 ingredients = df['ingredient'].dropna().tolist()
-                st.sidebar.success(f"Loaded {len(ingredients)} ingredients from CSV")
                 return [ing.lower().strip() for ing in ingredients]
             else:
-                st.sidebar.error("CSV must have an 'ingredient' column")
+                st.error("CSV file must contain an 'ingredient' column")
+                return []
+                
         except Exception as e:
-            st.sidebar.error(f"Error reading CSV: {str(e)}")
+            st.error(f"Error reading CSV file: {str(e)}")
+            return []
     
     return []
 
 def leftover_input_manual():
-    """Handle manual input for leftovers"""
-    st.sidebar.subheader("Manual Input")
-    manual_input = st.sidebar.text_area(
-        "Enter ingredients (one per line)",
-        placeholder="tomatoes\nonions\ngarlic\nrice"
+    """Handle manual input of leftover ingredients"""
+    st.subheader("Manual Input")
+    
+    ingredients_text = st.text_area(
+        "Enter ingredients (one per line or comma-separated)",
+        placeholder="tomatoes\nonions\ngarlic\nrice\n\nOr: tomatoes, onions, garlic, rice",
+        height=150
     )
     
-    if manual_input:
-        ingredients = [ing.strip().lower() for ing in manual_input.split('\n') if ing.strip()]
-        if ingredients:
-            st.sidebar.success(f"Added {len(ingredients)} ingredients manually")
+    if ingredients_text:
+        # Handle both line-separated and comma-separated input
+        if '\n' in ingredients_text:
+            ingredients = [ing.strip().lower() for ing in ingredients_text.split('\n') if ing.strip()]
+        else:
+            ingredients = [ing.strip().lower() for ing in ingredients_text.split(',') if ing.strip()]
+        
         return ingredients
     
     return []
 
 def leftover_input_firebase():
-    """Handle Firebase integration for leftovers"""
-    st.sidebar.subheader("Firebase Integration")
+    """Handle Firebase inventory input for leftover ingredients"""
+    st.subheader("Firebase Inventory")
     
-    use_firebase = st.sidebar.checkbox("Use current inventory from Firebase")
+    max_ingredients = st.slider(
+        "Maximum ingredients to fetch", 
+        min_value=5, 
+        max_value=50, 
+        value=20,
+        help="Limit the number of ingredients to prioritize those expiring soon"
+    )
     
-    if use_firebase:
-        max_ingredients = st.sidebar.slider(
-            "Max ingredients to fetch", 
-            min_value=5, 
-            max_value=50, 
-            value=20,
-            help="Limit the number of ingredients to prioritize those expiring soon"
-        )
-        
-        if st.sidebar.button("Fetch Priority Ingredients"):
-            try:
-                from modules.leftover import get_ingredients_by_expiry_priority, fetch_ingredients_from_firebase
-                firebase_ingredients = fetch_ingredients_from_firebase()
-                ingredients, detailed_info = get_ingredients_by_expiry_priority(firebase_ingredients, max_ingredients)
-                
-                if ingredients:
-                    st.sidebar.success(f"Fetched {len(ingredients)} priority ingredients")
-                    return ingredients, detailed_info
-                else:
-                    st.sidebar.warning("No ingredients found in Firebase inventory")
-            except Exception as e:
-                st.sidebar.error(f"Firebase error: {str(e)}")
-                logger.error(f"Firebase integration error: {str(e)}")
+    if st.button("Fetch Priority Ingredients", type="primary"):
+        try:
+            # This would integrate with your Firebase inventory
+            # For now, return sample data
+            st.info("Firebase integration would fetch ingredients here")
+            return []
+            
+        except Exception as e:
+            st.error(f"Firebase error: {str(e)}")
+            return []
     
-    return [], []
-
-def award_recipe_generation_xp(user_id, num_recipes):
-    """Award XP for recipe generation with reasonable amounts"""
-    try:
-        from modules.leftover import update_user_stats
-        
-        # Base XP: 5 XP per recipe
-        base_xp = 5 * num_recipes
-        
-        # Bonus XP for bulk generation (5+ recipes)
-        bonus_xp = 10 if num_recipes >= 5 else 0
-        
-        total_xp = base_xp + bonus_xp
-        
-        # Update user stats
-        update_user_stats(user_id, total_xp, recipes_generated=num_recipes)
-        
-        # Show notification
-        if bonus_xp > 0:
-            show_xp_notification(total_xp, f"generating {num_recipes} recipes (includes {bonus_xp} bonus XP)")
-        else:
-            show_xp_notification(total_xp, f"generating {num_recipes} recipes")
-        
-    except Exception as e:
-        logger.error(f"Error awarding recipe generation XP: {str(e)}")
+    return []
