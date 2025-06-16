@@ -48,25 +48,25 @@ def render_dashboard():
         if user_role in ['admin', 'chef', 'staff']:
             st.metric("📦 Recipes", "24", delta="3", help="Recipes in archive")
         else:
-            st.metric("🎯 Quiz Score", "85%", help="Average quiz performance")
+            st.metric("⭐ XP Points", "1,240", delta="50", help="Experience points earned")
     
     with col2:
         if user_role in ['admin', 'chef']:
             st.metric("🍽️ Menu Items", "156", delta="12", help="Total menu items")
         else:
-            st.metric("⭐ XP Points", "1,240", delta="50", help="Experience points earned")
+            st.metric("🏆 Achievements", "12", delta="1", help="Unlocked achievements")
     
     with col3:
         if user_role in ['admin', 'staff']:
             st.metric("📈 Campaigns", "8", delta="2", help="Active promotions")
         else:
-            st.metric("🏆 Achievements", "12", delta="1", help="Unlocked achievements")
+            st.metric("🔥 Streak", "7 days", help="Daily activity streak")
     
     with col4:
         if user_role in ['admin']:
             st.metric("👥 Active Users", "45", delta="5", help="Users this week")
         else:
-            st.metric("🔥 Streak", "7 days", help="Daily activity streak")
+            st.metric("📚 Recipes Found", "89", help="Total recipes discovered")
     
     st.divider()
     
@@ -144,15 +144,15 @@ def render_dashboard():
         """)
 
 def render_feature_card(feature):
-    """Render a clean feature card"""
+    """Render a clean feature card with dark theme"""
     with st.container():
-        # Create a bordered container effect
+        # Create a bordered container with dark theme
         st.markdown(f"""
         <div style="
             padding: 1.5rem; 
             border-radius: 10px; 
-            border: 1px solid #e1e5e9; 
-            background-color: #f8f9fa;
+            border: 1px solid #374151; 
+            background-color: #1f2937;
             margin-bottom: 1rem;
             height: 180px;
             display: flex;
@@ -160,10 +160,10 @@ def render_feature_card(feature):
             justify-content: space-between;
         ">
             <div>
-                <h4 style="margin: 0 0 0.5rem 0; color: #1f2937;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #f9fafb;">
                     {feature['icon']} {feature['title']}
                 </h4>
-                <p style="margin: 0; color: #6b7280; font-size: 0.9rem;">
+                <p style="margin: 0; color: #d1d5db; font-size: 0.9rem;">
                     {feature['description']}
                 </p>
             </div>
@@ -181,7 +181,7 @@ def render_feature_card(feature):
             st.rerun()
 
 def get_features_for_role(user_role):
-    """Get available features based on user role"""
+    """Get available features based on user role (excluding Gamification Hub)"""
     all_features = {
         'ingredients': {
             "title": "Ingredients Management",
@@ -195,7 +195,7 @@ def get_features_for_role(user_role):
             "description": "Generate creative recipes from leftover ingredients to reduce waste and save costs",
             "key": "Leftover Management",
             "icon": "♻️",
-            "roles": ['admin', 'chef']
+            "roles": ['admin', 'chef', 'user']
         },
         'promotion': {
             "title": "Promotion Generator",
@@ -218,13 +218,6 @@ def get_features_for_role(user_role):
             "icon": "📷",
             "roles": ['admin', 'chef', 'staff', 'user']
         },
-        'gamification': {
-            "title": "Gamification Hub",
-            "description": "Track achievements, view leaderboards, monitor progress, and earn rewards",
-            "key": "Gamification Hub", 
-            "icon": "🏆",
-            "roles": ['admin', 'chef', 'staff', 'user']
-        },
         'chatbot': {
             "title": "Event Planning ChatBot",
             "description": "AI-powered event planning assistance with smart recommendations and booking",
@@ -243,7 +236,7 @@ def get_features_for_role(user_role):
     return available_features
 
 def get_recent_activities(user_role):
-    """Get recent activities based on user role"""
+    """Get recent activities based on user role (no quiz references)"""
     if user_role in ['admin', 'chef', 'staff']:
         return [
             {"time": "2 min ago", "description": "New ingredients added to inventory", "icon": "📦"},
@@ -253,14 +246,14 @@ def get_recent_activities(user_role):
         ]
     else:
         return [
-            {"time": "30 min ago", "description": "Completed cooking quiz with 90% score", "icon": "🎯"},
-            {"time": "2 hours ago", "description": "Generated 3 recipes from leftovers", "icon": "♻️"},
-            {"time": "Yesterday", "description": "Used AI dish detection feature", "icon": "📷"},
-            {"time": "3 days ago", "description": "Earned 'Quiz Master' achievement", "icon": "🏆"}
+            {"time": "30 min ago", "description": "Generated 3 recipes from leftovers", "icon": "♻️"},
+            {"time": "2 hours ago", "description": "Used AI dish detection feature", "icon": "📷"},
+            {"time": "Yesterday", "description": "Discovered new recipe combinations", "icon": "🔍"},
+            {"time": "3 days ago", "description": "Earned 'Recipe Explorer' achievement", "icon": "🏆"}
         ]
 
 def get_quick_actions(user_role):
-    """Get quick action buttons based on user role"""
+    """Get quick action buttons based on user role (no quiz actions)"""
     if user_role == 'admin':
         return [
             {"title": "Add Ingredients", "key": "Ingredients Management", "icon": "➕"},
@@ -287,7 +280,7 @@ def get_quick_actions(user_role):
         ]
 
 def get_role_specific_tips(user_role):
-    """Get role-specific tips and guidance"""
+    """Get role-specific tips and guidance (no quiz references)"""
     tips = {
         'admin': """
         - **Manage everything**: You have access to all features and user management
@@ -309,7 +302,7 @@ def get_role_specific_tips(user_role):
         """,
         'user': """
         - **Discover recipes**: Use leftover ingredients to find new dishes to cook
-        - **Earn XP**: Complete quizzes, use features, and engage with content
+        - **Earn XP**: Use features and engage with content to gain experience
         - **Get recommendations**: Use AI to find dishes that match your preferences
         - **Plan events**: Use the chatbot to help organize special occasions
         """
@@ -321,7 +314,6 @@ def get_feature_description(feature_name: str) -> str:
     descriptions = {
         "Ingredients Management": "Complete CRUD operations for ingredient inventory",
         "Leftover Management": "Generate recipes from leftover ingredients", 
-        "Gamification Hub": "View achievements, leaderboard, and progress",
         "Promotion Generator": "AI marketing campaigns with automatic scoring",
         "Chef Recipe Suggestions": "AI menu generation, chef submissions & analytics",
         "Visual Menu Search": "AI dish detection, personalized recommendations & staff challenges",
