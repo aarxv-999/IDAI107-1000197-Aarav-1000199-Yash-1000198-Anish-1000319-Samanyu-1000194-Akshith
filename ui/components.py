@@ -1,7 +1,7 @@
 """
 UI Components for the Smart Restaurant Menu Management App.
 Contains authentication, gamification, and other UI elements.
-Updated with simplified password requirements.
+Updated with staff code verification system.
 """
 
 import streamlit as st
@@ -28,6 +28,8 @@ def initialize_session_state():
         st.session_state.auth_error = None
     if 'show_signup' not in st.session_state:
         st.session_state.show_signup = False
+    if 'staff_code_verified' not in st.session_state:
+        st.session_state.staff_code_verified = False
 
 def get_firestore_client():
     """Get Firestore client for authentication - using MAIN Firebase"""
@@ -75,6 +77,10 @@ def validate_password(password):
     if not re.search(r'[A-Z]', password):
         return False, "Password must contain at least one uppercase letter"
     return True, "Password is valid"
+
+def validate_staff_code(code):
+    """Validate staff access code"""
+    return code == "staffcode123"
 
 def authenticate_user(login_identifier, password):
     """Authenticate user against MAIN Firebase using email or username"""
@@ -204,7 +210,7 @@ def register_user(email, username, password, full_name, role='user'):
         except Exception as e:
             logger.warning(f"Failed to create user stats: {str(e)}")
         
-        logger.info(f"User registered successfully: {username} ({email})")
+        logger.info(f"User registered successfully: {username} ({email}) as {role}")
         return True, "Registration successful! You can now log in."
         
     except Exception as e:
@@ -292,6 +298,7 @@ def render_login_form():
         with col2:
             if st.form_submit_button("Create Account", use_container_width=True):
                 st.session_state.show_signup = True
+                st.session_state.staff_code_verified = False  # Reset staff code verification
                 st.rerun()
         
         if login_button:
@@ -309,7 +316,7 @@ def render_login_form():
                         st.error(error)
 
 def render_signup_form():
-    """Render the signup form"""
+    """Render the signup form with staff code verification"""
     st.markdown("### Create Your Account")
     
     with st.form("signup_form"):
@@ -333,11 +340,45 @@ def render_signup_form():
                 placeholder="Choose a unique username",
                 help="Used for login and leaderboards"
             )
-            role = st.selectbox(
-                "Role *",
-                ["user", "staff", "chef", "admin"],
-                help="Select your role in the restaurant system"
+        
+        # Staff verification section
+        st.markdown("---")
+        st.markdown("#### Account Type")
+        
+        is_staff = st.checkbox(
+            "Restaurant staff?",
+            help="Check this if you are a restaurant staff member (requires verification code)"
+        )
+        
+        selected_role = "user"  # Default role
+        staff_code_valid = False
+        
+        if is_staff:
+            st.info("🔐 **Staff Verification Required**")
+            staff_code = st.text_input(
+                "Staff Access Code *",
+                type="password",
+                placeholder="Enter staff access code",
+                help="Contact your administrator for the staff access code"
             )
+            
+            if staff_code:
+                if validate_staff_code(staff_code):
+                    staff_code_valid = True
+                    st.success("✅ Staff code verified!")
+                    
+                    # Show role selection only after valid code
+                    selected_role = st.selectbox(
+                        "Select Your Role *",
+                        ["staff", "chef", "admin"],
+                        help="Choose your role in the restaurant system"
+                    )
+                else:
+                    st.error("❌ Invalid staff code. Please contact your administrator.")
+        else:
+            st.info("👤 You will be registered as a **Customer/User** with access to basic features.")
+        
+        st.markdown("---")
         
         password = st.text_input(
             "Password *",
@@ -364,6 +405,7 @@ def render_signup_form():
         with col2:
             if st.form_submit_button("Back to Login", use_container_width=True):
                 st.session_state.show_signup = False
+                st.session_state.staff_code_verified = False
                 st.rerun()
         
         if signup_button:
@@ -374,12 +416,15 @@ def render_signup_form():
                 st.error("Please accept the Terms of Service and Privacy Policy")
             elif password != confirm_password:
                 st.error("Passwords do not match")
+            elif is_staff and not staff_code_valid:
+                st.error("Please enter a valid staff access code")
             else:
                 with st.spinner("Creating your account..."):
-                    success, message = register_user(email, username, password, full_name, role)
+                    success, message = register_user(email, username, password, full_name, selected_role)
                     if success:
                         st.success(message)
                         st.session_state.show_signup = False
+                        st.session_state.staff_code_verified = False
                         st.balloons()
                         
                         # Auto-login after successful registration
@@ -407,6 +452,7 @@ def render_auth_ui():
                 st.session_state.is_authenticated = False
                 st.session_state.user = None
                 st.session_state.show_signup = False
+                st.session_state.staff_code_verified = False
                 st.rerun()
         
         with col2:
@@ -464,10 +510,12 @@ def render_auth_ui():
         st.sidebar.markdown("---")
         st.sidebar.markdown("### Account Types")
         st.sidebar.markdown("""
-        **User:** Access to basic features, quizzes, and visual menu
-        **Staff:** Can create marketing campaigns and access analytics
-        **Chef:** Can submit recipes and manage menu items
-        **Admin:** Full access to all features and management tools
+        **Customer/User:** Access to basic features, quizzes, and visual menu
+        
+        **Staff Members** *(requires code)*:
+        • **Staff:** Marketing campaigns and analytics
+        • **Chef:** Recipe submissions and menu management  
+        • **Admin:** Full access to all features
         """)
         
         return False
