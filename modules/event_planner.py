@@ -1,5 +1,5 @@
 """
-Enhanced Event Planning Chatbot with Firebase integration
+Enhanced Event Planning Chatbot with Firebase integration and XP rewards
 """
 
 import streamlit as st
@@ -19,7 +19,7 @@ import random
 
 from modules.leftover import (
     get_user_stats, calculate_level, get_firestore_db,
-    generate_dynamic_quiz_questions, calculate_quiz_score
+    generate_dynamic_quiz_questions, calculate_quiz_score, update_user_stats
 )
 from modules.firebase_data import (
     fetch_recipe_archive, fetch_menu_items, get_popular_recipes,
@@ -78,6 +78,157 @@ def configure_ai_model():
         logger.error(f"Error configuring AI model: {str(e)}")
         st.error(f"Failed to configure AI model: {str(e)}")
         return None
+
+def analyze_prompt_quality(prompt: str) -> Dict[str, Any]:
+    """
+    Analyze the quality and detail level of the user's event planning prompt.
+    Returns a dictionary with quality metrics and XP calculation.
+    """
+    quality_score = 0
+    details_found = []
+    
+    # Convert to lowercase for analysis
+    prompt_lower = prompt.lower()
+    
+    # Base points for submitting any prompt
+    base_xp = 8
+    
+    # Length analysis (more detailed prompts get more points)
+    word_count = len(prompt.split())
+    if word_count >= 50:
+        quality_score += 15
+        details_found.append("Very detailed description")
+    elif word_count >= 30:
+        quality_score += 10
+        details_found.append("Detailed description")
+    elif word_count >= 15:
+        quality_score += 5
+        details_found.append("Good description length")
+    
+    # Specific details mentioned
+    detail_keywords = {
+        'guest_count': ['guests', 'people', 'persons', 'attendees', 'participants'],
+        'event_type': ['birthday', 'wedding', 'corporate', 'anniversary', 'graduation', 'party', 'celebration'],
+        'preferences': ['vegetarian', 'vegan', 'spicy', 'mild', 'traditional', 'modern', 'fusion'],
+        'budget': ['budget', 'cost', 'expensive', 'affordable', 'cheap', 'premium', 'luxury'],
+        'timing': ['morning', 'afternoon', 'evening', 'lunch', 'dinner', 'brunch'],
+        'venue': ['indoor', 'outdoor', 'garden', 'hall', 'restaurant', 'home'],
+        'theme': ['theme', 'color', 'decoration', 'style', 'elegant', 'casual', 'formal'],
+        'special_requirements': ['allergies', 'dietary', 'wheelchair', 'kids', 'children', 'elderly']
+    }
+    
+    for category, keywords in detail_keywords.items():
+        if any(keyword in prompt_lower for keyword in keywords):
+            quality_score += 3
+            details_found.append(f"Specified {category.replace('_', ' ')}")
+    
+    # Bonus for specific numbers (guest count, budget, etc.)
+    numbers_found = re.findall(r'\d+', prompt)
+    if numbers_found:
+        quality_score += 5
+        details_found.append("Included specific numbers")
+    
+    # Bonus for questions or considerations
+    question_words = ['how', 'what', 'when', 'where', 'should', 'would', 'could', 'can']
+    if any(word in prompt_lower for word in question_words):
+        quality_score += 3
+        details_found.append("Asked thoughtful questions")
+    
+    # Bonus for mentioning multiple aspects
+    aspects = ['menu', 'decoration', 'seating', 'entertainment', 'music', 'photography']
+    mentioned_aspects = [aspect for aspect in aspects if aspect in prompt_lower]
+    if len(mentioned_aspects) >= 3:
+        quality_score += 8
+        details_found.append("Considered multiple event aspects")
+    elif len(mentioned_aspects) >= 2:
+        quality_score += 5
+        details_found.append("Considered multiple aspects")
+    
+    # Calculate total XP
+    total_xp = base_xp + quality_score
+    
+    # Cap the maximum XP to prevent exploitation
+    total_xp = min(total_xp, 50)
+    
+    # Determine quality level
+    if total_xp >= 35:
+        quality_level = "Exceptional"
+    elif total_xp >= 25:
+        quality_level = "Excellent"
+    elif total_xp >= 18:
+        quality_level = "Good"
+    elif total_xp >= 12:
+        quality_level = "Fair"
+    else:
+        quality_level = "Basic"
+    
+    return {
+        'total_xp': total_xp,
+        'base_xp': base_xp,
+        'quality_bonus': quality_score,
+        'quality_level': quality_level,
+        'details_found': details_found,
+        'word_count': word_count
+    }
+
+def award_event_planning_xp(user_id: str, prompt: str, event_plan_success: bool = True):
+    """Award XP for event planning based on prompt quality"""
+    try:
+        # Analyze prompt quality
+        quality_analysis = analyze_prompt_quality(prompt)
+        
+        # Reduce XP if event plan generation failed
+        if not event_plan_success:
+            quality_analysis['total_xp'] = max(5, quality_analysis['total_xp'] // 2)
+            quality_analysis['quality_level'] = "Partial (generation failed)"
+        
+        # Award XP using the existing system
+        update_user_stats(user_id, quality_analysis['total_xp'])
+        
+        # Show detailed XP notification
+        show_event_xp_notification(quality_analysis)
+        
+        logger.info(f"Awarded {quality_analysis['total_xp']} XP to user {user_id} for {quality_analysis['quality_level']} event planning prompt")
+        
+        return quality_analysis
+        
+    except Exception as e:
+        logger.error(f"Error awarding event planning XP: {str(e)}")
+        return None
+
+def show_event_xp_notification(quality_analysis: Dict[str, Any]):
+    """Show detailed XP notification for event planning"""
+    total_xp = quality_analysis['total_xp']
+    quality_level = quality_analysis['quality_level']
+    details_found = quality_analysis['details_found']
+    
+    # Create expandable notification
+    with st.expander(f"🎉 +{total_xp} XP Earned! ({quality_level} Event Planning)", expanded=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Total XP", total_xp)
+            st.metric("Quality Level", quality_level)
+        
+        with col2:
+            st.metric("Base XP", quality_analysis['base_xp'])
+            st.metric("Quality Bonus", quality_analysis['quality_bonus'])
+        
+        if details_found:
+            st.markdown("**Details Recognized:**")
+            for detail in details_found:
+                st.write(f"✅ {detail}")
+        
+        # XP improvement tips
+        if quality_analysis['quality_level'] in ['Basic', 'Fair']:
+            st.info("""
+            💡 **Tips for more XP:**
+            - Include specific guest count
+            - Mention event type and theme
+            - Add dietary preferences or special requirements
+            - Describe venue or timing preferences
+            - Consider multiple aspects (menu, decoration, seating)
+            """)
 
 def clean_text_for_pdf(text: str) -> str:
     """Clean text to remove Unicode characters that can't be encoded in latin-1"""
@@ -406,6 +557,16 @@ def event_planner():
     user_role = user.get('role', 'user')
     user_id = user.get('user_id', '')
     
+    # Show XP information for event planning
+    st.info("""
+    🎯 **Earn XP for Event Planning:**
+    - Base: +8 XP for any event plan
+    - Detailed descriptions: +5-15 XP bonus
+    - Specific requirements: +3 XP each
+    - Multiple aspects considered: +5-8 XP bonus
+    - Maximum: 50 XP per event plan
+    """)
+    
     # Show Firebase integration status
     try:
         recipes = fetch_recipe_archive()
@@ -433,7 +594,7 @@ def event_planner():
         render_user_interface(user_id)
 
 def render_chatbot_ui(user_id: str, user_role: str):
-    """Enhanced chatbot interface with Firebase integration"""
+    """Enhanced chatbot interface with Firebase integration and XP rewards"""
     st.markdown("### 🤖 AI Assistant (Connected to Restaurant Database)")
     
     if 'event_chat_history' not in st.session_state:
@@ -449,23 +610,24 @@ def render_chatbot_ui(user_id: str, user_role: str):
         else:
             st.chat_message('assistant').write(message['content'])
 
-    # Quick suggestions
+    # Quick suggestions with XP hints
+    st.markdown("**💡 Quick Suggestions (More details = More XP):**")
     col1, col2, col3 = st.columns(3)
     
     with col1:
         if st.button("🎂 Birthday Party", use_container_width=True):
-            st.session_state.suggested_query = "Plan a birthday party for 50 guests using our restaurant menu"
+            st.session_state.suggested_query = "Plan a birthday party for 50 guests using our restaurant menu with vegetarian options, colorful decorations, and a fun theme suitable for all ages"
     
     with col2:
         if st.button("💼 Corporate Event", use_container_width=True):
-            st.session_state.suggested_query = "Plan a corporate event for 100 guests using our restaurant specialties"
+            st.session_state.suggested_query = "Plan a corporate event for 100 guests using our restaurant specialties, formal seating arrangement, professional atmosphere, and dietary accommodations"
     
     with col3:
         if st.button("💒 Wedding Reception", use_container_width=True):
-            st.session_state.suggested_query = "Plan a wedding reception for 200 guests with our premium menu items"
+            st.session_state.suggested_query = "Plan a wedding reception for 200 guests with our premium menu items, elegant decorations, traditional and modern fusion cuisine, and special dietary requirements"
 
     # Chat input
-    user_query = st.chat_input("Describe your event (will use restaurant database)...")
+    user_query = st.chat_input("Describe your event in detail (more details = more XP)...")
     
     if 'suggested_query' in st.session_state:
         user_query = st.session_state.suggested_query
@@ -482,6 +644,9 @@ def render_chatbot_ui(user_id: str, user_role: str):
         with st.chat_message('assistant'):
             with st.spinner("Creating event plan using restaurant database..."):
                 response = generate_event_plan(user_query, user_id, user_role)
+                
+                # Award XP based on prompt quality
+                quality_analysis = award_event_planning_xp(user_id, user_query, response['success'])
                 
                 if response['success']:
                     event_plan = response['plan']
