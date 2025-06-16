@@ -344,17 +344,17 @@ def render_signup_form():
         # Staff verification section
         st.markdown("---")
         st.markdown("#### Account Type")
-        
+
         is_staff = st.checkbox(
             "Restaurant staff?",
             help="Check this if you are a restaurant staff member (requires verification code)"
         )
-        
+
         selected_role = "user"  # Default role
         staff_code_valid = False
-        
+
         if is_staff:
-            st.info("🔐 **Staff Verification Required**")
+            # Show code input immediately after checkbox is checked
             staff_code = st.text_input(
                 "Staff Access Code *",
                 type="password",
@@ -367,7 +367,7 @@ def render_signup_form():
                     staff_code_valid = True
                     st.success("✅ Staff code verified!")
                     
-                    # Show role selection only after valid code
+                    # Show role selection immediately after valid code
                     selected_role = st.selectbox(
                         "Select Your Role *",
                         ["staff", "chef", "admin"],
@@ -375,6 +375,8 @@ def render_signup_form():
                     )
                 else:
                     st.error("❌ Invalid staff code. Please contact your administrator.")
+            else:
+                st.info("🔐 Please enter your staff access code to continue")
         else:
             st.info("👤 You will be registered as a **Customer/User** with access to basic features.")
         
@@ -444,7 +446,38 @@ def render_auth_ui():
         st.sidebar.write(f"**Role:** {user['role'].title()}")
         st.sidebar.write(f"**Username:** @{user['username']}")
         
+        # Features section with dropdown
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### Features")
+        
+        # Feature selection dropdown
+        features = [
+            "Smart Leftover Recipe Generator",
+            "Visual Menu Display", 
+            "Cooking Quiz",
+            "Gamification Hub",
+            "AI Marketing Campaign Generator",
+            "Event Planner",
+            "Inventory Management"
+        ]
+        
+        selected_feature = st.sidebar.selectbox(
+            "Choose a feature:",
+            features,
+            key="feature_selector"
+        )
+        
+        if 'selected_feature' not in st.session_state:
+            st.session_state.selected_feature = selected_feature
+        
+        if selected_feature != st.session_state.selected_feature:
+            st.session_state.selected_feature = selected_feature
+            st.rerun()
+        
         # Account management buttons
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### Account")
+        
         col1, col2 = st.sidebar.columns(2)
         
         with col1:
