@@ -6,7 +6,7 @@ Handles authentication, gamification display, and user interface elements
 import streamlit as st
 import hashlib
 import logging
-from typing import Dict, List, Optional, Tuple  # Added Optional import
+from typing import Dict, List, Optional, Tuple
 import datetime
 from firebase_admin import firestore
 from firebase_init import init_firebase
@@ -14,7 +14,8 @@ from firebase_init import init_firebase
 # Import centralized gamification system
 from modules.gamification_core import (
     get_user_stats, award_xp, get_leaderboard, get_achievements,
-    get_daily_challenge, complete_daily_challenge, get_user_tasks
+    get_daily_challenge, complete_daily_challenge, get_user_tasks,
+    update_daily_streak
 )
 
 logger = logging.getLogger(__name__)
@@ -123,6 +124,11 @@ def render_auth_ui():
         user = st.session_state.user
         st.sidebar.success(f"Welcome, {user.get('username', 'User')}!")
         st.sidebar.write(f"**Role:** {user.get('role', 'user').title()}")
+        
+        # Update daily streak on login
+        user_id = user.get('user_id')
+        if user_id:
+            update_daily_streak(user_id)
         
         if st.sidebar.button("Logout", use_container_width=True):
             st.session_state.is_authenticated = False
