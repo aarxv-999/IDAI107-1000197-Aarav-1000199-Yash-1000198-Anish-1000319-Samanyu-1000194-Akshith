@@ -1,18 +1,15 @@
 import streamlit as st
 st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
 
-from ui.components import (  # Import UI functions
-    leftover_input_csv, leftover_input_manual, leftover_input_firebase
-)
-from ui.components import (
+from components import (  # Import UI functions
     render_auth_ui, initialize_session_state, auth_required, get_current_user, is_user_role
 )
-from ui.components import (  # Import gamification UI functions
+from components import (  # Import gamification UI functions
     display_user_stats_sidebar, render_cooking_quiz, display_gamification_dashboard,
-    award_recipe_generation_xp, display_daily_challenge, show_xp_notification
+    display_daily_challenge, award_feature_xp
 )
 from modules.leftover import suggest_recipes  # Import logic functions
-from modules.leftover import get_user_stats, award_recipe_xp  # Import gamification logic
+from modules.gamification_core import get_user_stats, award_xp  # Import centralized gamification
 from firebase_init import init_firebase
 
 # Import the event planner integration
@@ -30,16 +27,12 @@ from modules.promotion_components import render_promotion_generator
 # Import the NEW visual menu components
 from modules.visual_menu_components import render_visual_menu_search
 
-# Import the ingredients management module (your existing file)
+# Import the ingredients management module
 try:
-    from modules.ingredients_management import render_ingredient_management
+    from ingredients_management import render_ingredient_management
 except ImportError:
-    # Fallback if the module is in a different location
-    try:
-        from ingredients_management import render_ingredient_management
-    except ImportError:
-        st.error("Ingredients management module not found. Please check the file location.")
-        render_ingredient_management = None
+    st.error("Ingredients management module not found. Please check the file location.")
+    render_ingredient_management = None
 
 init_firebase()
 
@@ -119,7 +112,7 @@ def get_inaccessible_features_message(user_role):
 # Individual feature functions
 @auth_required
 def leftover_management():
-    """Leftover management feature with step-by-step selection"""
+    """Leftover management feature with step-by-step selection and gamification"""
     st.title("Leftover Management")
 
     # Initialize session state variables if they don't exist
@@ -133,6 +126,10 @@ def leftover_management():
         st.session_state.recipes = []
     if 'recipe_generation_error' not in st.session_state:
         st.session_state.recipe_generation_error = None
+
+    # Get current user for XP awarding
+    user = get_current_user()
+    user_id = user.get('user_id') if user else None
 
     # Step 1: Method Selection
     if st.session_state.leftover_method is None:
@@ -230,6 +227,10 @@ def leftover_management():
                         st.session_state.all_leftovers = ingredients
                         st.session_state.detailed_ingredient_info = detailed_info
                         st.success(f"Fetched {len(ingredients)} priority ingredients")
+                        
+                        # Award XP for using priority ingredients
+                        if user_id:
+                            award_feature_xp(user_id, 'leftover_management', 'priority_ingredient_use')
                     else:
                         st.error("No ingredients found in Firebase inventory")
                 except Exception as e:
@@ -294,6 +295,17 @@ def leftover_management():
                         st.session_state.recipes = recipes
                         st.session_state.recipe_generation_error = None
                         
+                        # Award XP for recipe generation
+                        if user_id and recipes:
+                            if st.session_state.detailed_ingredient_info:
+                                # Leftover recipe creation (higher XP)
+                                award_feature_xp(user_id, 'leftover_management', 'leftover_recipe_creation', 
+                                               context={'recipe_count': len(recipes)})
+                            else:
+                                # Regular recipe generation
+                                award_feature_xp(user_id, 'leftover_management', 'recipe_generation',
+                                               context={'recipe_count': len(recipes)})
+                        
                         logging.info(f"Generated {len(recipes)} recipes")
                 except Exception as e:
                     st.session_state.recipe_generation_error = str(e)
@@ -315,11 +327,6 @@ def leftover_management():
                     urgent_ingredients = [item['name'] for item in st.session_state.detailed_ingredient_info if item['days_until_expiry'] <= 3]
                     if urgent_ingredients:
                         st.info(f"These recipes prioritize ingredients expiring soon: {', '.join(urgent_ingredients)}")
-                
-                # Award XP for generating recipes
-                user = get_current_user()
-                if user and user.get('user_id'):
-                    award_recipe_generation_xp(user['user_id'], len(st.session_state.recipes))
 
 @auth_required
 def ingredients_management():
@@ -434,13 +441,19 @@ def main():
     if st.sidebar.button("Take Cooking Quiz", use_container_width=True, type="secondary"):
         st.session_state.show_cooking_quiz = True
 
-    # Feature selection
+    # Feature selection with tracking
     selected_feature = st.sidebar.selectbox(
         "Choose a Feature",
         options=available_features,
         index=available_features.index(st.session_state.selected_feature) if st.session_state.selected_feature in available_features else 0,
         help="Select a feature to explore different aspects of the restaurant management system"
     )
+
+    # Track feature usage for weekly tasks
+    if selected_feature != st.session_state.selected_feature and user and user.get('user_id'):
+        # Award XP for feature exploration (contributes to weekly tasks)
+        award_feature_xp(user['user_id'], 'feature_navigation', 'daily_login', amount=2,
+                        context={'feature_used': selected_feature})
 
     # Show inaccessible features message
     if user:
