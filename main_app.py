@@ -1,7 +1,7 @@
 import streamlit as st
 st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
 
-from components import (  # Import UI functions
+from ui.components import (  # Import UI functions
     render_auth_ui, initialize_session_state, auth_required, get_current_user, is_user_role
 )
 from ui.components import (  # Import gamification UI functions
