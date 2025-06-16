@@ -17,6 +17,12 @@ from modules.visual_menu_services import (
 from ui.components import show_xp_notification
 import logging
 
+# Add missing import for Vision API
+try:
+    from google.cloud import vision
+except ImportError:
+    vision = None
+    
 logger = logging.getLogger(__name__)
 
 def render_visual_menu_search():
@@ -858,7 +864,7 @@ def analyze_challenge_image_with_ai(vision_client, gemini_model, image_content, 
         gemini_score = 0
         
         # Vision API Analysis (if available)
-        if vision_client:
+        if vision_client and vision:  # Check if vision module is available
             try:
                 vision_image = vision.Image(content=image_content)
                 
@@ -898,6 +904,8 @@ def analyze_challenge_image_with_ai(vision_client, gemini_model, image_content, 
                 vision_score = 25  # Default score if Vision API fails
         else:
             vision_score = 25  # Default score if Vision API not available
+            if not vision:
+                logger.warning("Google Cloud Vision library not installed")
         
         # Gemini AI Analysis
         if gemini_model:
