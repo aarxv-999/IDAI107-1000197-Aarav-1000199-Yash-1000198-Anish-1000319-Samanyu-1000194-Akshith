@@ -393,7 +393,7 @@ def is_user_role(required_role):
 
 # Gamification Components
 def display_user_stats_sidebar(user_id):
-    """Display user gamification stats in sidebar as expandable section with Gamification Hub button"""
+    """Display user gamification stats in sidebar as expandable section with progressive XP system"""
     try:
         from modules.leftover import get_user_stats
         
@@ -406,29 +406,25 @@ def display_user_stats_sidebar(user_id):
         with st.sidebar.expander("Your Stats & Progress", expanded=False):
             # Extract stats with safe defaults
             total_xp = max(0, user_stats.get('total_xp', 0))
-            level = max(1, user_stats.get('level', 1))
             
-            # Calculate current level XP and progress
-            xp_for_current_level = (level - 1) * 100
-            current_level_xp = total_xp - xp_for_current_level
-            xp_needed = 100 - current_level_xp
-            
-            # Ensure current_level_xp is within bounds
-            current_level_xp = max(0, min(100, current_level_xp))
-            
-            # Calculate progress as a value between 0.0 and 1.0
-            progress = current_level_xp / 100.0
-            progress = max(0.0, min(1.0, progress))  # Clamp between 0 and 1
+            # Calculate level and progress using new system
+            current_level, current_level_xp, xp_needed_for_next, progress_percentage = get_current_level_progress(total_xp)
             
             # Display metrics
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("Level", level)
+                st.metric("Level", current_level)
             with col2:
                 st.metric("Total XP", f"{total_xp:,}")
             
-            # Progress bar with safe values
-            st.progress(progress, text=f"{max(0, xp_needed)} XP to next level")
+            # Progress bar with new calculation
+            progress = progress_percentage / 100.0
+            progress = max(0.0, min(1.0, progress))  # Clamp between 0 and 1
+            
+            st.progress(progress, text=f"{xp_needed_for_next} XP to Level {current_level + 1}")
+            
+            # Show current level XP details
+            st.caption(f"Level {current_level}: {current_level_xp} XP earned")
             
             # Additional stats
             recipes_generated = user_stats.get('recipes_generated', 0)
@@ -447,18 +443,19 @@ def display_user_stats_sidebar(user_id):
                 st.session_state.selected_feature = "Gamification Hub"
                 st.rerun()
         
-        logger.info(f"Displayed stats for user {user_id}: Level {level}, XP {total_xp}, Progress {progress:.2f}")
+        logger.info(f"Displayed progressive stats for user {user_id}: Level {current_level}, XP {total_xp}, Progress {progress_percentage:.1f}%")
         
     except Exception as e:
         logger.error(f"Error displaying user stats: {str(e)}")
         st.sidebar.error("Error loading stats")
+
 
 def show_xp_notification(xp_amount, activity_type):
     """Show XP notification"""
     st.success(f"+{xp_amount} XP earned for {activity_type}!")
 
 def display_gamification_dashboard(user_id):
-    """Display comprehensive gamification dashboard"""
+    """Display comprehensive gamification dashboard with progressive XP system"""
     st.title("Gamification Hub")
     
     try:
@@ -466,6 +463,10 @@ def display_gamification_dashboard(user_id):
         
         # Get user stats from main Firebase
         user_stats = get_user_stats(user_id)
+        total_xp = user_stats.get('total_xp', 0)
+        
+        # Calculate level and progress using new system
+        current_level, current_level_xp, xp_needed_for_next, progress_percentage = get_current_level_progress(total_xp)
         
         # Overview metrics
         st.subheader("Your Progress")
@@ -473,10 +474,10 @@ def display_gamification_dashboard(user_id):
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("Level", user_stats.get('level', 1))
+            st.metric("Level", current_level)
         
         with col2:
-            st.metric("Total XP", f"{user_stats.get('total_xp', 0):,}")
+            st.metric("Total XP", f"{total_xp:,}")
         
         with col3:
             st.metric("Recipes Generated", user_stats.get('recipes_generated', 0))
@@ -484,34 +485,62 @@ def display_gamification_dashboard(user_id):
         with col4:
             st.metric("Quizzes Completed", user_stats.get('quizzes_completed', 0))
         
-        # Progress visualization
-        total_xp = user_stats.get('total_xp', 0)
-        level = user_stats.get('level', 1)
-        
-        # Calculate progress for current level
-        xp_for_current_level = (level - 1) * 100
-        current_level_xp = total_xp - xp_for_current_level
-        progress = min(current_level_xp / 100.0, 1.0)
-        
+        # Enhanced progress visualization
         st.subheader("Level Progress")
-        st.progress(progress, text=f"Level {level} - {current_level_xp}/100 XP")
         
-        # Achievements section
+        # Progress bar
+        progress = progress_percentage / 100.0
+        st.progress(progress, text=f"Level {current_level} - {current_level_xp} XP earned")
+        
+        # Detailed progress info
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info(f"**Current Level:** {current_level}\n**XP in this level:** {current_level_xp}")
+        with col2:
+            st.info(f"**Next Level:** {current_level + 1}\n**XP needed:** {xp_needed_for_next}")
+        
+        # XP Requirements Table
+        st.subheader("Level Requirements")
+        
+        # Show XP breakdown for next few levels
+        max_display_level = min(current_level + 5, 15)
+        xp_breakdown = get_xp_breakdown_for_levels(max_display_level)
+        
+        # Create DataFrame for display
+        breakdown_data = []
+        for level, xp_for_level, total_xp_req in xp_breakdown:
+            status = "✅ Completed" if level <= current_level else "🔒 Locked"
+            if level == current_level + 1:
+                status = "🎯 Next Goal"
+            
+            breakdown_data.append({
+                "Level": level,
+                "XP for Level": f"{xp_for_level:,}",
+                "Total XP Required": f"{total_xp_req:,}",
+                "Status": status
+            })
+        
+        df = pd.DataFrame(breakdown_data)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        # Achievements section (same as before)
         st.subheader("Achievements")
         
         achievements = []
         if user_stats.get('recipes_generated', 0) >= 1:
-            achievements.append("Recipe Novice - Generated your first recipe")
+            achievements.append("🍳 Recipe Novice - Generated your first recipe")
         if user_stats.get('recipes_generated', 0) >= 10:
-            achievements.append("Recipe Expert - Generated 10+ recipes")
+            achievements.append("👨‍🍳 Recipe Expert - Generated 10+ recipes")
         if user_stats.get('quizzes_completed', 0) >= 1:
-            achievements.append("Quiz Starter - Completed your first quiz")
+            achievements.append("📚 Quiz Starter - Completed your first quiz")
         if user_stats.get('quizzes_completed', 0) >= 5:
-            achievements.append("Quiz Master - Completed 5+ quizzes")
-        if user_stats.get('level', 1) >= 5:
-            achievements.append("Rising Star - Reached Level 5")
-        if user_stats.get('level', 1) >= 10:
-            achievements.append("Culinary Expert - Reached Level 10")
+            achievements.append("🧠 Quiz Master - Completed 5+ quizzes")
+        if current_level >= 5:
+            achievements.append("⭐ Rising Star - Reached Level 5")
+        if current_level >= 10:
+            achievements.append("🏆 Culinary Expert - Reached Level 10")
+        if total_xp >= 1000:
+            achievements.append("💎 XP Collector - Earned 1,000+ XP")
         
         if achievements:
             for achievement in achievements:
@@ -519,7 +548,7 @@ def display_gamification_dashboard(user_id):
         else:
             st.info("Complete activities to unlock achievements!")
         
-        # Leaderboard
+        # Leaderboard (same as before)
         st.subheader("Leaderboard")
         
         try:
@@ -534,7 +563,7 @@ def display_gamification_dashboard(user_id):
             logger.error(f"Error loading leaderboard: {str(e)}")
             st.error("Error loading leaderboard")
         
-        # Activity suggestions
+        # Enhanced activity suggestions
         st.subheader("Earn More XP")
         
         col1, col2 = st.columns(2)
@@ -544,6 +573,7 @@ def display_gamification_dashboard(user_id):
             **Recipe Generation:**
             - Generate recipes: +10 XP each
             - Use priority ingredients: +5 bonus XP
+            - Generate 5+ recipes: +25 bonus XP
             """)
         
         with col2:
@@ -551,6 +581,24 @@ def display_gamification_dashboard(user_id):
             **Cooking Quiz:**
             - Complete quiz: +15 XP
             - Perfect score: +10 bonus XP
+            - Daily streak: +5 bonus XP
+            """)
+        
+        # XP Tips
+        with st.expander("💡 XP Tips & Strategy"):
+            st.markdown(f"""
+            **Your Current Status:**
+            - You're Level {current_level} with {total_xp:,} total XP
+            - You need {xp_needed_for_next} more XP to reach Level {current_level + 1}
+            
+            **Fastest Ways to Level Up:**
+            1. **Take Cooking Quizzes** - Up to 25 XP per quiz (15 base + 10 bonus for perfect score)
+            2. **Generate Multiple Recipes** - 10 XP per recipe + bonuses for bulk generation
+            3. **Use Priority Ingredients** - Extra 5 XP when using expiring ingredients
+            4. **Daily Consistency** - Regular activity helps with streak bonuses
+            
+            **Level Scaling:**
+            Each level requires progressively more XP, making higher levels more prestigious!
             """)
         
     except Exception as e:
