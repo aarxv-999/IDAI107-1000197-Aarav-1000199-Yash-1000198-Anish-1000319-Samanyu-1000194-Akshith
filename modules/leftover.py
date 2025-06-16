@@ -16,6 +16,16 @@ from modules.gamification_core import award_xp
 
 logger = logging.getLogger(__name__)
 
+def calculate_level(total_xp: int) -> int:
+    """Calculate user level based on total XP - legacy function for backward compatibility"""
+    try:
+        from modules.gamification_core import calculate_level_from_xp
+        return calculate_level_from_xp(total_xp)
+    except Exception as e:
+        logger.error(f"Error calculating level: {str(e)}")
+        # Fallback calculation
+        return max(1, (total_xp // 100) + 1)
+
 def get_event_firestore_db():
     """Get the event Firestore client for ingredient data"""
     try:
