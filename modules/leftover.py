@@ -18,6 +18,7 @@ from modules.firebase_data import (
     format_recipe_for_display, format_menu_item_for_display,
     get_popular_recipes, fetch_recipe_archive, fetch_menu_items
 )
+from modules.xp_utils import calculate_level_from_xp
 
 logger = logging.getLogger('leftover_combined')
 
@@ -495,46 +496,51 @@ def get_user_stats(user_id: str) -> Dict:
             'achievements': []
         }
 
-def update_user_stats(user_id: str, xp_gained: int, correct: int, total: int) -> Dict:
-    """Update user stats after quiz"""
+def update_user_stats(user_id, xp_gained, recipes_generated=0, quizzes_completed=0):
+    """Update user stats with XP and calculate new level using progressive system"""
     try:
-        db = get_firestore_db()
+        db = get_firestore_client()
+        if not db:
+            return False
+        
         user_stats_ref = db.collection('user_stats').document(user_id)
-
-        current_stats = get_user_stats(user_id)
-        old_level = current_stats['level']
-
-        new_total_xp = current_stats['total_xp'] + xp_gained
-        new_level = calculate_level(new_total_xp)
-        new_quizzes = current_stats['quizzes_taken'] + 1
-        new_correct = current_stats['correct_answers'] + correct
-        new_total_questions = current_stats['total_questions'] + total
-        new_perfect_scores = current_stats['perfect_scores'] + (1 if correct == total else 0)
-
-        current_achievements = current_stats.get('achievements', [])
-        new_achievements = check_achievements(
-            new_quizzes, new_perfect_scores, new_level, old_level, current_achievements
-        )
-
+        user_stats_doc = user_stats_ref.get()
+        
+        if user_stats_doc.exists:
+            current_stats = user_stats_doc.to_dict()
+            current_xp = current_stats.get('total_xp', 0)
+            current_recipes = current_stats.get('recipes_generated', 0)
+            current_quizzes = current_stats.get('quizzes_completed', 0)
+        else:
+            current_xp = 0
+            current_recipes = 0
+            current_quizzes = 0
+        
+        # Calculate new totals
+        new_total_xp = current_xp + xp_gained
+        new_recipes = current_recipes + recipes_generated
+        new_quizzes = current_quizzes + quizzes_completed
+        
+        # Calculate new level using progressive system
+        new_level = calculate_level_from_xp(new_total_xp)
+        
+        # Update stats
         updated_stats = {
-            'user_id': user_id,
             'total_xp': new_total_xp,
             'level': new_level,
-            'quizzes_taken': new_quizzes,
-            'correct_answers': new_correct,
-            'total_questions': new_total_questions,
-            'recipes_generated': current_stats.get('recipes_generated', 0),
-            'perfect_scores': new_perfect_scores,
-            'last_quiz_date': firestore.SERVER_TIMESTAMP,
-            'achievements': new_achievements
+            'recipes_generated': new_recipes,
+            'quizzes_completed': new_quizzes,
+            'last_activity': firestore.SERVER_TIMESTAMP
         }
-
-        user_stats_ref.set(updated_stats)
-        return updated_stats
-
+        
+        user_stats_ref.set(updated_stats, merge=True)
+        
+        logger.info(f"Updated user {user_id} stats: +{xp_gained} XP, Level {new_level}, Total XP: {new_total_xp}")
+        return True
+        
     except Exception as e:
         logger.error(f"Error updating user stats: {str(e)}")
-        return current_stats
+        return False
 
 def check_achievements(quizzes: int, perfect_scores: int, new_level: int, old_level: int, current_achievements: List[str]) -> List[str]:
     """Check for new achievements"""
