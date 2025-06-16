@@ -1,7 +1,6 @@
 """
 Comprehensive Ingredient Management System for Smart Restaurant Menu Management App.
 Handles CRUD operations for ingredient inventory with AI-powered suggestions.
-Enhanced with gamification integration.
 """
 
 import streamlit as st
@@ -14,9 +13,6 @@ import google.generativeai as genai
 import os
 import uuid
 import re
-
-# Import gamification system
-from modules.gamification_core import award_xp
 
 logger = logging.getLogger(__name__)
 
@@ -186,8 +182,8 @@ def get_ingredient_types() -> List[str]:
         return []
 
 def add_ingredient(event_id: str, ingredient_name: str, quantity: float, ingredient_type: str, 
-                  expiry_date: str, alternatives: str = "", user_id: str = None) -> Tuple[bool, str]:
-    """Add a new ingredient to inventory with XP reward"""
+                  expiry_date: str, alternatives: str = "") -> Tuple[bool, str]:
+    """Add a new ingredient to inventory"""
     try:
         db = get_event_firestore_db()
         if not db:
@@ -218,28 +214,6 @@ def add_ingredient(event_id: str, ingredient_name: str, quantity: float, ingredi
         inventory_ref = db.collection('ingredient_inventory')
         inventory_ref.add(ingredient_data)
         
-        # Award XP for adding ingredient
-        if user_id:
-            try:
-                xp_awarded, level_up, achievements = award_xp(
-                    user_id, 
-                    'ingredient_add', 
-                    context={'feature': 'ingredients_management', 'ingredient_name': ingredient_name}
-                )
-                if xp_awarded > 0:
-                    st.success(f"✅ Added {ingredient_name} (+{xp_awarded} XP)")
-                    if level_up:
-                        st.balloons()
-                        st.success("🎉 LEVEL UP!")
-                    if achievements:
-                        for achievement in achievements:
-                            st.success(f"🏆 Achievement Unlocked: {achievement}!")
-                else:
-                    st.success(f"✅ Added {ingredient_name}")
-            except Exception as e:
-                logger.error(f"Error awarding XP for ingredient add: {str(e)}")
-                st.success(f"✅ Added {ingredient_name}")
-        
         logger.info(f"Added ingredient: {ingredient_name} to event {event_id}")
         return True, f"Successfully added {ingredient_name}"
         
@@ -248,8 +222,8 @@ def add_ingredient(event_id: str, ingredient_name: str, quantity: float, ingredi
         return False, f"Error adding ingredient: {str(e)}"
 
 def update_ingredient(doc_id: str, ingredient_name: str, quantity: float, ingredient_type: str,
-                     expiry_date: str, alternatives: str = "", user_id: str = None) -> Tuple[bool, str]:
-    """Update an existing ingredient with XP reward"""
+                     expiry_date: str, alternatives: str = "") -> Tuple[bool, str]:
+    """Update an existing ingredient"""
     try:
         db = get_event_firestore_db()
         if not db:
@@ -261,6 +235,9 @@ def update_ingredient(doc_id: str, ingredient_name: str, quantity: float, ingred
         
         if not validate_date_format(expiry_date):
             return False, "Invalid date format. Use dd/mm/yyyy"
+        
+        # For updates, allow past dates (in case ingredient is already expired)
+        # Just validate the format, not the future date requirement
         
         # Update ingredient document
         update_data = {
@@ -274,28 +251,6 @@ def update_ingredient(doc_id: str, ingredient_name: str, quantity: float, ingred
         
         inventory_ref = db.collection('ingredient_inventory').document(doc_id)
         inventory_ref.update(update_data)
-        
-        # Award XP for updating ingredient
-        if user_id:
-            try:
-                xp_awarded, level_up, achievements = award_xp(
-                    user_id, 
-                    'ingredient_update', 
-                    context={'feature': 'ingredients_management', 'ingredient_name': ingredient_name}
-                )
-                if xp_awarded > 0:
-                    st.success(f"✅ Updated {ingredient_name} (+{xp_awarded} XP)")
-                    if level_up:
-                        st.balloons()
-                        st.success("🎉 LEVEL UP!")
-                    if achievements:
-                        for achievement in achievements:
-                            st.success(f"🏆 Achievement Unlocked: {achievement}!")
-                else:
-                    st.success(f"✅ Updated {ingredient_name}")
-            except Exception as e:
-                logger.error(f"Error awarding XP for ingredient update: {str(e)}")
-                st.success(f"✅ Updated {ingredient_name}")
         
         logger.info(f"Updated ingredient: {ingredient_name}")
         return True, f"Successfully updated {ingredient_name}"
@@ -344,8 +299,8 @@ def bulk_delete_ingredients(doc_ids: List[str]) -> Tuple[bool, str]:
         logger.error(f"Error bulk deleting ingredients: {str(e)}")
         return False, f"Error bulk deleting ingredients: {str(e)}"
 
-def bulk_update_expiry(doc_ids: List[str], new_expiry_date: str, user_id: str = None) -> Tuple[bool, str]:
-    """Update expiry date for multiple ingredients with XP reward"""
+def bulk_update_expiry(doc_ids: List[str], new_expiry_date: str) -> Tuple[bool, str]:
+    """Update expiry date for multiple ingredients"""
     try:
         db = get_event_firestore_db()
         if not db:
@@ -368,25 +323,6 @@ def bulk_update_expiry(doc_ids: List[str], new_expiry_date: str, user_id: str = 
             })
         
         batch.commit()
-        
-        # Award XP for inventory management
-        if user_id:
-            try:
-                xp_awarded, level_up, achievements = award_xp(
-                    user_id, 
-                    'inventory_management', 
-                    context={'feature': 'ingredients_management', 'items_updated': len(doc_ids)}
-                )
-                if xp_awarded > 0:
-                    st.success(f"✅ Updated {len(doc_ids)} ingredients (+{xp_awarded} XP)")
-                    if level_up:
-                        st.balloons()
-                        st.success("🎉 LEVEL UP!")
-                    if achievements:
-                        for achievement in achievements:
-                            st.success(f"🏆 Achievement Unlocked: {achievement}!")
-            except Exception as e:
-                logger.error(f"Error awarding XP for bulk update: {str(e)}")
         
         logger.info(f"Bulk updated expiry for {len(doc_ids)} ingredients")
         return True, f"Successfully updated expiry date for {len(doc_ids)} ingredients"
@@ -439,12 +375,8 @@ Ingredient: {ingredient_name}'''
         return ["Similar ingredient", "Substitute ingredient"]
 
 def render_ingredient_management():
-    """Main ingredient management interface with gamification"""
+    """Main ingredient management interface"""
     st.title("🥬 Ingredient Management")
-    
-    # Get current user for XP awarding
-    user = st.session_state.get('user', {})
-    user_id = user.get('user_id')
     
     # Check database connection
     db = get_event_firestore_db()
@@ -459,13 +391,13 @@ def render_ingredient_management():
         render_view_ingredients()
     
     with tab2:
-        render_add_ingredient(user_id)
+        render_add_ingredient()
     
     with tab3:
-        render_edit_ingredient(user_id)
+        render_edit_ingredient()
     
     with tab4:
-        render_bulk_operations(user_id)
+        render_bulk_operations()
 
 def render_view_ingredients():
     """Render the ingredient viewing interface with search and filters"""
@@ -568,8 +500,8 @@ def render_view_ingredients():
         
         st.divider()
 
-def render_add_ingredient(user_id: str):
-    """Render the add ingredient interface with gamification"""
+def render_add_ingredient():
+    """Render the add ingredient interface"""
     st.markdown("### ➕ Add New Ingredient")
     
     with st.form("add_ingredient_form", clear_on_submit=True):
@@ -646,8 +578,9 @@ def render_add_ingredient(user_id: str):
                 st.error("❌ Please fill all required fields with valid values")
             else:
                 success, message = add_ingredient(event_id, ingredient_name, quantity, 
-                                                ingredient_type, expiry_date, alternatives, user_id)
+                                                ingredient_type, expiry_date, alternatives)
                 if success:
+                    st.success(f"✅ {message}")
                     # Clear AI suggestions
                     if 'suggested_alternatives' in st.session_state:
                         del st.session_state.suggested_alternatives
@@ -655,8 +588,8 @@ def render_add_ingredient(user_id: str):
                 else:
                     st.error(f"❌ {message}")
 
-def render_edit_ingredient(user_id: str):
-    """Render the edit ingredient interface with gamification"""
+def render_edit_ingredient():
+    """Render the edit ingredient interface"""
     st.markdown("### ✏️ Edit Ingredient")
     
     # Get ingredient to edit
@@ -772,8 +705,9 @@ def render_edit_ingredient(user_id: str):
                 st.error("❌ Please fill all required fields with valid values")
             else:
                 success, message = update_ingredient(edit_id, ingredient_name, quantity, 
-                                                   ingredient_type, expiry_date, alternatives, user_id)
+                                                   ingredient_type, expiry_date, alternatives)
                 if success:
+                    st.success(f"✅ {message}")
                     del st.session_state.edit_ingredient_id
                     if 'edit_suggested_alternatives' in st.session_state:
                         del st.session_state.edit_suggested_alternatives
@@ -812,8 +746,8 @@ def render_edit_ingredient(user_id: str):
                 del st.session_state.confirm_delete
                 st.rerun()
 
-def render_bulk_operations(user_id: str):
-    """Render bulk operations interface with gamification"""
+def render_bulk_operations():
+    """Render bulk operations interface"""
     st.markdown("### 🔧 Bulk Operations")
     
     ingredients = get_all_ingredients()
@@ -877,8 +811,9 @@ def render_bulk_operations(user_id: str):
             doc_ids = [ing['doc_id'] for ing in selected_ingredients]
             expiry_str = new_expiry_date.strftime("%d/%m/%Y")
             
-            success, message = bulk_update_expiry(doc_ids, expiry_str, user_id)
+            success, message = bulk_update_expiry(doc_ids, expiry_str)
             if success:
+                st.success(f"✅ {message}")
                 st.rerun()
             else:
                 st.error(f"❌ {message}")
