@@ -50,7 +50,6 @@ def render_promotion_generator():
     with tabs[1]:
         render_campaign_history(db, staff_name)
 
-
 def render_clean_gamification_header(user_id):
     """Render clean, minimal gamification stats"""
     try:
@@ -87,7 +86,7 @@ def render_campaign_creation(db, staff_name, user_id):
     month_name = datetime.now().strftime("%B %Y")
     
     # Simple XP info
-    st.info("💡 **XP Rewards:** Basic (20 XP) • Good (30 XP) • Excellent (50 XP) • Likes (+10 XP) • Dislikes (+2 XP)")
+    st.info("💡 **XP Rewards:** Basic (20 XP) • Good (30 XP) • Excellent (50 XP)")
     
     # Check if user already submitted this month
     existing_campaign = get_existing_campaign(db, staff_name)
@@ -110,18 +109,15 @@ def render_campaign_creation(db, staff_name, user_id):
             else:
                 xp_earned = "20 XP (Basic)"
             
-            # Show vote counts
-            likes = existing_campaign.get('likes', 0)
-            dislikes = existing_campaign.get('dislikes', 0)
-            vote_xp = (likes * 10) + (dislikes * 2)
+            st.caption(f"XP Earned: {xp_earned}")
             
             col1, col2 = st.columns(2)
             with col1:
-                st.caption(f"Creation XP: {xp_earned}")
-                st.caption(f"Vote XP: +{vote_xp} XP ({likes} likes, {dislikes} dislikes)")
-            with col2:
                 st.write(f"**Type:** {existing_campaign.get('promotion_type', 'N/A')}")
                 st.write(f"**Goal:** {existing_campaign.get('goal', 'N/A')}")
+            with col2:
+                st.write(f"**Target:** {existing_campaign.get('target_audience', 'N/A')}")
+                st.write(f"**Duration:** {existing_campaign.get('campaign_duration', 'N/A')}")
         
         # Campaign management
         st.markdown("#### 🔄 Campaign Management")
@@ -235,8 +231,9 @@ def create_campaign_with_xp(db, staff_name, user_id, promotion_type, promotion_g
                 st.error("❌ Failed to generate campaign. Please try again.")
                 return
             
-            # Save campaign data with user_id
+            # Save campaign data
             campaign_data = {
+                "name": staff_name,
                 "campaign": campaign,
                 "promotion_type": promotion_type,
                 "goal": promotion_goal,
@@ -244,7 +241,7 @@ def create_campaign_with_xp(db, staff_name, user_id, promotion_type, promotion_g
                 "campaign_duration": campaign_duration
             }
             
-            success = save_campaign(db, staff_name, user_id, campaign_data)
+            success = save_campaign(db, staff_name, campaign_data)
             
             if success:
                 # Calculate XP based on campaign quality
@@ -338,25 +335,17 @@ def render_campaign_history(db, staff_name):
         for campaign in all_user_campaigns:
             campaign_length = len(campaign.get('campaign', ''))
             if campaign_length >= 300:
-                creation_xp = 50
-                campaign['creation_xp'] = 50
+                total_estimated_xp += 50
+                campaign['estimated_xp'] = 50
                 campaign['quality'] = 'Excellent'
             elif campaign_length >= 200:
-                creation_xp = 30
-                campaign['creation_xp'] = 30
+                total_estimated_xp += 30
+                campaign['estimated_xp'] = 30
                 campaign['quality'] = 'Good'
             else:
-                creation_xp = 20
-                campaign['creation_xp'] = 20
+                total_estimated_xp += 20
+                campaign['estimated_xp'] = 20
                 campaign['quality'] = 'Basic'
-            
-            # Add vote XP
-            likes = campaign.get('likes', 0)
-            dislikes = campaign.get('dislikes', 0)
-            vote_xp = (likes * 10) + (dislikes * 2)
-            campaign['vote_xp'] = vote_xp
-            campaign['total_xp'] = creation_xp + vote_xp
-            total_estimated_xp += campaign['total_xp']
         
         # Display simple statistics
         col1, col2, col3 = st.columns(3)
@@ -365,7 +354,7 @@ def render_campaign_history(db, staff_name):
             st.metric("Total Campaigns", len(all_user_campaigns))
         
         with col2:
-            st.metric("Total XP Earned", f"{total_estimated_xp} XP")
+            st.metric("Estimated XP Earned", f"{total_estimated_xp} XP")
         
         with col3:
             # Average XP per campaign
@@ -378,14 +367,10 @@ def render_campaign_history(db, staff_name):
         for i, campaign in enumerate(reversed(all_user_campaigns[-5:])):  # Show last 5
             month = campaign.get('month', 'Unknown')
             month_name = datetime.strptime(month + "-01", "%Y-%m-%d").strftime("%B %Y") if month != 'Unknown' else 'Unknown'
-            total_xp = campaign.get('total_xp', 0)
-            creation_xp = campaign.get('creation_xp', 0)
-            vote_xp = campaign.get('vote_xp', 0)
+            xp = campaign.get('estimated_xp', 0)
             quality = campaign.get('quality', 'Unknown')
-            likes = campaign.get('likes', 0)
-            dislikes = campaign.get('dislikes', 0)
             
-            with st.expander(f"{month_name} - {campaign.get('promotion_type', 'Unknown')} (+{total_xp} XP)", expanded=False):
+            with st.expander(f"{month_name} - {campaign.get('promotion_type', 'Unknown')} (+{xp} XP)", expanded=False):
                 col1, col2 = st.columns([3, 1])
                 
                 with col1:
@@ -394,16 +379,15 @@ def render_campaign_history(db, staff_name):
                     st.write(f"**Duration:** {campaign.get('campaign_duration', 'N/A')}")
                 
                 with col2:
-                    st.metric("Total XP", f"{total_xp}")
-                    st.caption(f"Creation: +{creation_xp} XP ({quality})")
-                    st.caption(f"Votes: +{vote_xp} XP ({likes}👍 {dislikes}👎)")
+                    st.metric("XP", f"{xp}")
+                    st.caption(f"Quality: {quality}")
                 
                 st.markdown("**Campaign:**")
                 st.write(campaign.get('campaign', 'No content available'))
         
         # Simple tips
         st.markdown("#### 💡 Tips")
-        st.info("Create longer, more detailed campaigns to earn more XP. Get likes from other users to earn bonus XP!")
+        st.info("Create longer, more detailed campaigns to earn more XP (up to 50 XP for excellent campaigns)")
         
     except Exception as e:
         logger.error(f"Error loading campaign history: {str(e)}")
