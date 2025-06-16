@@ -471,7 +471,10 @@ def render_auth_ui():
                 if not st.session_state.confirm_clear_data:
                     st.session_state.confirm_clear_data = True
                     st.rerun()
-        
+
+        # ADD THIS LINE - Display user stats in sidebar
+        display_user_stats_sidebar(user['user_id'])
+
         # Handle clear data confirmation
         if st.session_state.get('confirm_clear_data', False):
             st.sidebar.markdown("---")
