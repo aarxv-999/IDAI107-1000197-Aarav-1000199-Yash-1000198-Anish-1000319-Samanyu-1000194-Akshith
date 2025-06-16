@@ -335,21 +335,21 @@ def process_chef_submission(db, chef_name, dish_name, description, ingredients, 
             
             # Show detailed scores
             if detailed_scores:
-                with st.expander("📊 Detailed AI Evaluation", expanded=True):
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Creativity", f"{detailed_scores.get('creativity', 0)}/5")
-                    with col2:
-                        st.metric("Ingredients", f"{detailed_scores.get('ingredients', 0)}/5")
-                    with col3:
-                        st.metric("Technique", f"{detailed_scores.get('technique', 0)}/5")
-                    with col4:
-                        st.metric("Appeal", f"{detailed_scores.get('appeal', 0)}/5")
+                st.markdown("### 📊 Detailed AI Evaluation")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Creativity", f"{detailed_scores.get('creativity', 0)}/5")
+                with col2:
+                    st.metric("Ingredients", f"{detailed_scores.get('ingredients', 0)}/5")
+                with col3:
+                    st.metric("Technique", f"{detailed_scores.get('technique', 0)}/5")
+                with col4:
+                    st.metric("Appeal", f"{detailed_scores.get('appeal', 0)}/5")
             
             # Show AI feedback
             if feedback:
-                with st.expander("📝 AI Feedback & Suggestions", expanded=True):
-                    st.write(feedback)
+                st.markdown("### 📝 AI Feedback & Suggestions")
+                st.write(feedback)
             
             # Award XP based on rating
             award_chef_submission_xp(user['user_id'], rating, chef_name, dish_name)
@@ -676,8 +676,12 @@ def render_chef_submissions_history(db):
         for doc in filtered_submissions:
             recipe = doc.to_dict()
             
-            # Recipe card
-            with st.expander(f"🍽️ {recipe.get('name', 'Unnamed Recipe')} - {recipe.get('rating', 'No rating')}⭐"):
+            # Recipe card - REMOVED NESTED EXPANDERS
+            recipe_title = f"🍽️ {recipe.get('name', 'Unnamed Recipe')} - {recipe.get('rating', 'No rating')}⭐"
+            
+            with st.container():
+                st.markdown(f"#### {recipe_title}")
+                
                 col1, col2 = st.columns([2, 1])
                 
                 with col1:
@@ -689,9 +693,10 @@ def render_chef_submissions_history(db):
                     if recipe.get('diet'):
                         st.write(f"**Dietary:** {', '.join(recipe['diet'])}")
                     
+                    # Show AI feedback directly without nested expander
                     if recipe.get('ai_feedback'):
-                        with st.expander("AI Feedback"):
-                            st.write(recipe['ai_feedback'])
+                        st.markdown("**AI Feedback:**")
+                        st.write(recipe['ai_feedback'])
                 
                 with col2:
                     rating = recipe.get('rating', 0)
@@ -714,6 +719,8 @@ def render_chef_submissions_history(db):
                     # Action buttons
                     if st.button(f"View Full Recipe", key=f"view_{doc.id}"):
                         show_full_recipe_modal(recipe)
+                
+                st.markdown("---")
         
     except Exception as e:
         logger.error(f"Error loading chef submissions: {str(e)}")
