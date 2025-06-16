@@ -527,7 +527,7 @@ def award_chef_submission_xp(user_id, rating, chef_name, dish_name):
         update_user_stats(user_id=user_id, xp_gained=total_xp, recipes_generated=1)
         
         # Show XP notification
-        from ui.components import show_xp_notification
+        from modules.components import show_xp_notification
         show_xp_notification(total_xp, f"chef recipe submission ({rating}⭐)")
         
         # Show detailed XP breakdown
@@ -552,8 +552,12 @@ def check_chef_achievements(user_id, rating):
         if not db:
             return
         
-        # Get user's recipe submissions
-        user_recipes = db.collection('recipes').where('chef_user_id', '==', user_id).where('source', '==', 'Chef Submission').get()
+        # Get user's recipe submissions - simpler query
+        user_recipes_ref = db.collection('recipes').where('chef_user_id', '==', user_id)
+        all_user_recipes = list(user_recipes_ref.stream())
+        
+        # Filter for chef submissions after fetching
+        user_recipes = [doc for doc in all_user_recipes if doc.to_dict().get('source') == 'Chef Submission']
         
         total_submissions = len(user_recipes)
         five_star_count = sum(1 for doc in user_recipes if doc.to_dict().get('rating') == 5)
@@ -601,9 +605,16 @@ def render_chef_submissions_history(db):
         return
     
     try:
-        # Get user's submissions
-        submissions_ref = db.collection('recipes').where('chef_user_id', '==', user['user_id']).where('source', '==', 'Chef Submission').order_by('submitted_at', direction=firestore.Query.DESCENDING)
+        # Get user's submissions - SIMPLER QUERY WITHOUT ORDERING
+        # This avoids the need for a composite index
+        submissions_ref = db.collection('recipes').where('chef_user_id', '==', user['user_id'])
         submissions = list(submissions_ref.stream())
+        
+        # Filter for chef submissions after fetching
+        submissions = [doc for doc in submissions if doc.to_dict().get('source') == 'Chef Submission']
+        
+        # Sort in Python instead of in the query
+        submissions.sort(key=lambda x: x.to_dict().get('submitted_at', datetime.min), reverse=True)
         
         if not submissions:
             st.info("You haven't submitted any recipes yet. Use the 'Submit Recipe' tab to get started!")
@@ -672,7 +683,7 @@ def render_chef_submissions_history(db):
                 with col1:
                     st.write(f"**Description:** {recipe.get('description', 'No description')}")
                     st.write(f"**Category:** {recipe.get('category', 'Unknown')} | **Cuisine:** {recipe.get('cuisine', 'Unknown')}")
-                    st.write(f"**Difficulty:** {recipe.get('difficulty', 'Unknown')} | **Cook Time:** {recipe.get('cook_time', 'Unknown')}")
+                    st.write(f"**Cook Time:** {recipe.get('cook_time', 'Unknown')}")
                     st.write(f"**Servings:** {recipe.get('servings', 'Unknown')}")
                     
                     if recipe.get('diet'):
@@ -757,9 +768,13 @@ def render_chef_leaderboard(db):
     st.subheader("🏆 Chef Leaderboard")
     
     try:
-        # Get all chef submissions
-        recipes_ref = db.collection('recipes').where('source', '==', 'Chef Submission')
-        recipes = list(recipes_ref.stream())
+        # Get all recipes first, then filter for chef submissions
+        # This avoids the need for a composite index
+        recipes_ref = db.collection('recipes')
+        all_recipes = list(recipes_ref.stream())
+        
+        # Filter for chef submissions after fetching
+        recipes = [doc for doc in all_recipes if doc.to_dict().get('source') == 'Chef Submission']
         
         if not recipes:
             st.info("No chef submissions found yet.")
@@ -888,9 +903,12 @@ def render_chef_analytics(db):
         return
     
     try:
-        # Get user's submissions
-        submissions_ref = db.collection('recipes').where('chef_user_id', '==', user['user_id']).where('source', '==', 'Chef Submission')
-        submissions = list(submissions_ref.stream())
+        # Get user's submissions - simpler query
+        submissions_ref = db.collection('recipes').where('chef_user_id', '==', user['user_id'])
+        all_submissions = list(submissions_ref.stream())
+        
+        # Filter for chef submissions after fetching
+        submissions = [doc for doc in all_submissions if doc.to_dict().get('source') == 'Chef Submission']
         
         if not submissions:
             st.info("Submit some recipes to see your analytics!")
@@ -920,15 +938,15 @@ def render_chef_analytics(db):
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            avg_rating = df['rating'].mean()
+            avg_rating = df['rating'].mean() if not df['rating'].empty else 0
             st.metric("Average Rating", f"{avg_rating:.1f}⭐")
         
         with col2:
-            best_rating = df['rating'].max()
+            best_rating = df['rating'].max() if not df['rating'].empty else 0
             st.metric("Best Rating", f"{best_rating}⭐")
         
         with col3:
-            consistency = df['rating'].std()
+            consistency = df['rating'].std() if len(df) > 1 and not df['rating'].empty else 0
             st.metric("Consistency", f"{consistency:.1f}", help="Lower is more consistent")
         
         with col4:
@@ -936,17 +954,24 @@ def render_chef_analytics(db):
             st.metric("Trend", improvement_trend)
         
         # Charts and visualizations
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### Rating Distribution")
-            rating_counts = df['rating'].value_counts().sort_index()
-            st.bar_chart(rating_counts)
-        
-        with col2:
-            st.markdown("### Performance by Category")
-            category_performance = df.groupby('category')['rating'].mean().sort_values(ascending=False)
-            st.bar_chart(category_performance)
+        if not df.empty:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("### Rating Distribution")
+                if not df['rating'].empty:
+                    rating_counts = df['rating'].value_counts().sort_index()
+                    st.bar_chart(rating_counts)
+                else:
+                    st.info("No ratings available yet")
+            
+            with col2:
+                st.markdown("### Performance by Category")
+                if not df['category'].empty and not df['rating'].empty:
+                    category_performance = df.groupby('category')['rating'].mean().sort_values(ascending=False)
+                    st.bar_chart(category_performance)
+                else:
+                    st.info("Not enough data for category analysis")
         
         # Detailed scores radar chart (if available)
         if any(df[['creativity', 'ingredients', 'technique', 'appeal']].sum()):
@@ -955,10 +980,10 @@ def render_chef_analytics(db):
             
             with col1:
                 avg_scores = {
-                    'Creativity': df['creativity'].mean(),
-                    'Ingredients': df['ingredients'].mean(),
-                    'Technique': df['technique'].mean(),
-                    'Appeal': df['appeal'].mean()
+                    'Creativity': df['creativity'].mean() if not df['creativity'].empty else 0,
+                    'Ingredients': df['ingredients'].mean() if not df['ingredients'].empty else 0,
+                    'Technique': df['technique'].mean() if not df['technique'].empty else 0,
+                    'Appeal': df['appeal'].mean() if not df['appeal'].empty else 0
                 }
                 
                 for skill, score in avg_scores.items():
@@ -978,7 +1003,7 @@ def render_chef_analytics(db):
         # Recent performance trend
         if len(df) >= 5:
             st.markdown("### Recent Performance Trend")
-            df_sorted = df.sort_values('submitted_at')
+            df_sorted = df.sort_values('submitted_at') if 'submitted_at' in df.columns else df
             recent_ratings = df_sorted.tail(10)['rating'].tolist()
             
             st.line_chart(pd.DataFrame({'Rating': recent_ratings}))
