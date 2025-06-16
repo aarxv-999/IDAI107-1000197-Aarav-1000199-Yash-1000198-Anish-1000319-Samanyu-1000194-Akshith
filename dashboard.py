@@ -6,6 +6,7 @@ Provides a central dashboard view that users see after logging in.
 import streamlit as st
 from typing import Dict, Optional
 import datetime
+from modules.notifications import render_notification_bell
 
 def render_dashboard():
     """
@@ -17,9 +18,18 @@ def render_dashboard():
     user_role = user.get('role', 'user')
     username = user.get('username', 'User')
     
-    # Header section
-    st.title("🏠 Restaurant Management Dashboard")
-    
+    # Header section with notification bell
+    col1, col2 = st.columns([4, 1])
+
+    with col1:
+        st.title("🏠 Restaurant Management Dashboard")
+
+    with col2:
+        # Add notification bell for authenticated users
+        user = st.session_state.get('user', {})
+        if user and user.get('user_id'):
+            render_notification_bell(user['user_id'])
+
     # Welcome section with clean layout
     st.markdown(f"### Welcome back, **{username}**! 👋")
     current_date = datetime.datetime.now().strftime("%A, %B %d, %Y")
