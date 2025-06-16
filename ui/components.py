@@ -27,6 +27,8 @@ def initialize_session_state():
         st.session_state.auth_error = None
     if 'show_signup' not in st.session_state:
         st.session_state.show_signup = False
+    if 'show_notifications' not in st.session_state:
+        st.session_state.show_notifications = False
 
 def get_firestore_client():
     """Get Firestore client for authentication - using MAIN Firebase"""
