@@ -429,11 +429,6 @@ def main():
     if user and user.get('user_id'):
         display_user_stats_sidebar(user['user_id'])
 
-    # Add cooking quiz to sidebar
-    st.sidebar.divider()
-    if st.sidebar.button("Take Cooking Quiz", use_container_width=True, type="secondary"):
-        st.session_state.show_cooking_quiz = True
-
     # Feature selection
     selected_feature = st.sidebar.selectbox(
         "Choose a Feature",
@@ -454,6 +449,12 @@ def main():
     feature_description = get_feature_description(selected_feature)
     if feature_description:
         st.sidebar.info(feature_description)
+
+    # UPDATED: Only show cooking quiz button when on Leftover Management page
+    if selected_feature == "Leftover Management":
+        st.sidebar.divider()
+        if st.sidebar.button("Take Cooking Quiz", use_container_width=True, type="secondary"):
+            st.session_state.show_cooking_quiz = True
 
     # Show cooking quiz if requested
     if st.session_state.get('show_cooking_quiz', False):
