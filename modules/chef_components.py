@@ -527,7 +527,7 @@ def award_chef_submission_xp(user_id, rating, chef_name, dish_name):
         update_user_stats(user_id=user_id, xp_gained=total_xp, recipes_generated=1)
         
         # Show XP notification
-        from modules.components import show_xp_notification
+        from ui.components import show_xp_notification
         show_xp_notification(total_xp, f"chef recipe submission ({rating}⭐)")
         
         # Show detailed XP breakdown
