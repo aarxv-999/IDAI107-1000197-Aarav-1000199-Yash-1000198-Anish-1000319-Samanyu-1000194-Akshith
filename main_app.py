@@ -47,115 +47,6 @@ import logging
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-# OVERRIDE the problematic display_user_stats_sidebar function
-def display_user_stats_sidebar(user_id):
-    """
-    Safe version of display_user_stats_sidebar that handles unpacking errors.
-    This overrides the original function from ui.components.
-    """
-    try:
-        # Get user stats safely
-        user_stats_result = get_user_stats(user_id)
-        
-        # Handle different return formats
-        if isinstance(user_stats_result, tuple):
-            if len(user_stats_result) == 1:
-                total_xp = user_stats_result[0]
-                level = 1
-                additional_stats = {}
-            elif len(user_stats_result) == 2:
-                total_xp, level = user_stats_result
-                additional_stats = {}
-            elif len(user_stats_result) == 3:
-                total_xp, level, additional_stats = user_stats_result
-            elif len(user_stats_result) == 4:
-                total_xp, level, additional_stats, _ = user_stats_result
-            else:
-                # Handle any other length by taking first 3 values or padding with defaults
-                values = list(user_stats_result)
-                total_xp = values[0] if len(values) > 0 else 0
-                level = values[1] if len(values) > 1 else 1
-                additional_stats = values[2] if len(values) > 2 else {}
-        elif isinstance(user_stats_result, dict):
-            total_xp = user_stats_result.get('total_xp', 0)
-            level = user_stats_result.get('level', 1)
-            additional_stats = user_stats_result
-        else:
-            # Single value or unexpected format
-            total_xp = user_stats_result if isinstance(user_stats_result, (int, float)) else 0
-            level = 1
-            additional_stats = {}
-        
-        # Calculate level from XP if needed
-        if level == 1 and total_xp > 0:
-            try:
-                from xp_utils import calculate_level_from_xp
-                level = calculate_level_from_xp(total_xp)
-            except ImportError:
-                # Simple level calculation if xp_utils not available
-                level = max(1, int(total_xp / 100) + 1)
-        
-        # Display stats in sidebar
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 🎮 Your Stats")
-        
-        # Basic stats
-        col1, col2 = st.sidebar.columns(2)
-        with col1:
-            st.metric("Level", level)
-        with col2:
-            st.metric("XP", f"{total_xp:,}")
-        
-        # Progress bar for next level
-        if level < 100:  # Assuming max level is 100
-            try:
-                from xp_utils import get_xp_progress, get_level_title
-                progress_info = get_xp_progress(total_xp, level)
-                progress_percentage = progress_info.get('progress_percentage', 0)
-                
-                st.sidebar.progress(progress_percentage / 100)
-                st.sidebar.caption(f"Progress to Level {level + 1}")
-                
-                # Level title
-                title = get_level_title(level)
-                st.sidebar.markdown(f"**{title}**")
-            except ImportError:
-                # Simple progress calculation
-                xp_for_current_level = (level - 1) * 100
-                xp_for_next_level = level * 100
-                current_level_xp = total_xp - xp_for_current_level
-                progress = min(100, (current_level_xp / 100) * 100)
-                
-                st.sidebar.progress(progress / 100)
-                st.sidebar.caption(f"Progress to Level {level + 1}")
-        else:
-            st.sidebar.markdown("**🏆 Max Level Reached!**")
-        
-        # Additional stats if available
-        if isinstance(additional_stats, dict):
-            if additional_stats.get('recipes_generated', 0) > 0:
-                st.sidebar.metric("Recipes", additional_stats['recipes_generated'])
-            
-            if additional_stats.get('current_streak', 0) > 0:
-                st.sidebar.metric("Streak", f"{additional_stats['current_streak']} days")
-            
-            if additional_stats.get('campaigns_created', 0) > 0:
-                st.sidebar.metric("Campaigns", additional_stats['campaigns_created'])
-    
-    except Exception as e:
-        logging.error(f"Error displaying user stats: {str(e)}")
-        # Display fallback stats
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 🎮 Your Stats")
-        st.sidebar.error("Stats temporarily unavailable")
-        
-        # Show basic fallback
-        col1, col2 = st.sidebar.columns(2)
-        with col1:
-            st.metric("Level", "1")
-        with col2:
-            st.metric("XP", "0")
-
 # Updated feature access control based on new requirements
 def check_feature_access(feature_name):
     """Check if the current user has access to a specific feature"""
@@ -502,8 +393,7 @@ def main():
     # Check Event Firebase configuration
     check_event_firebase_config()
 
-    # Render authentication UI in sidebar
-    st.sidebar.title("Authentication")
+    # Render authentication UI in sidebar - THIS WILL NOW CALL THE FIXED display_user_stats_sidebar
     auth_status = render_auth_ui()
 
     # Main content
@@ -523,10 +413,6 @@ def main():
         ''')
         return
 
-    # Feature selection in sidebar
-    st.sidebar.divider()
-    st.sidebar.header("Features")
-
     # List of all available features
     all_features = [
         "Dashboard",
@@ -542,26 +428,18 @@ def main():
     # Filter features based on user role
     available_features = ["Dashboard"] + [f for f in all_features[1:] if check_feature_access(f)]
 
-    # Display user gamification stats in sidebar if authenticated - using our safe version
-    user = get_current_user()
-    if user and user.get('user_id'):
-        display_user_stats_sidebar(user['user_id'])
-
-    # Feature selection
-    selected_feature = st.sidebar.selectbox(
-        "Choose a Feature",
-        options=available_features,
-        index=available_features.index(st.session_state.selected_feature) if st.session_state.selected_feature in available_features else 0,
-        help="Select a feature to explore different aspects of the restaurant management system"
-    )
-
     # Show inaccessible features message
+    user = get_current_user()
     if user:
         inaccessible_message = get_inaccessible_features_message(user['role'])
+        st.sidebar.markdown("---")
         st.sidebar.markdown(inaccessible_message)
 
     # Update session state with selected feature
-    st.session_state.selected_feature = selected_feature
+    if 'selected_feature' in st.session_state:
+        selected_feature = st.session_state.selected_feature
+    else:
+        selected_feature = "Dashboard"
 
     # Add feature descriptions in sidebar
     feature_description = get_feature_description(selected_feature)
