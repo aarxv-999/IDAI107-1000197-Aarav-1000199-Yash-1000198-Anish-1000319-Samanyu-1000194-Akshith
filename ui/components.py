@@ -585,21 +585,47 @@ def display_user_stats_sidebar(user_id):
         from modules.leftover import get_user_stats
         from modules.xp_utils import get_xp_progress, calculate_level_from_xp
         
-        # Get user stats from main Firebase (same as authentication)
-        user_stats = get_user_stats(user_id)
+        # Get user stats from main Firebase (same as authentication) - SAFE UNPACKING
+        user_stats_result = get_user_stats(user_id)
+        
+        # Handle different return formats safely
+        if isinstance(user_stats_result, tuple):
+            # Handle variable tuple lengths
+            values = list(user_stats_result)
+            total_xp = values[0] if len(values) > 0 else 0
+            current_level = values[1] if len(values) > 1 else 1
+            additional_stats = values[2] if len(values) > 2 else {}
+            # Ignore any additional values beyond the first 3
+        elif isinstance(user_stats_result, dict):
+            # Handle dictionary return
+            total_xp = user_stats_result.get('total_xp', 0)
+            current_level = user_stats_result.get('level', 1)
+            additional_stats = user_stats_result
+        else:
+            # Handle single value or unexpected format
+            total_xp = user_stats_result if isinstance(user_stats_result, (int, float)) else 0
+            current_level = 1
+            additional_stats = {}
+        
+        # Ensure values are valid
+        total_xp = max(0, int(total_xp)) if total_xp is not None else 0
+        current_level = max(1, int(current_level)) if current_level is not None else 1
         
         st.sidebar.markdown("---")
         
         # Create an expandable section for user stats - REMOVE duplicate feature selector
         with st.sidebar.expander("Your Stats & Progress", expanded=False):
-            # Extract stats with safe defaults
-            total_xp = max(0, user_stats.get('total_xp', 0))
-            
-            # Calculate level using progressive system
-            current_level = calculate_level_from_xp(total_xp)
-            
-            # Get progress information
-            current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
+            # Calculate level using progressive system if available
+            try:
+                current_level = calculate_level_from_xp(total_xp)
+                current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
+            except (ImportError, Exception) as e:
+                logger.warning(f"XP utils not available, using simple calculation: {str(e)}")
+                # Simple fallback calculation
+                current_level = max(1, int(total_xp / 100) + 1)
+                current_level_xp = total_xp % 100
+                xp_needed_for_next = 100 - current_level_xp
+                progress_percentage = (current_level_xp / 100) * 100
             
             # Display metrics
             col1, col2 = st.columns(2)
@@ -609,24 +635,23 @@ def display_user_stats_sidebar(user_id):
                 st.metric("Total XP", f"{total_xp:,}")
             
             # Progress bar with new calculation
-            progress = progress_percentage / 100.0
-            progress = max(0.0, min(1.0, progress))  # Clamp between 0 and 1
-            
+            progress = max(0.0, min(1.0, progress_percentage / 100.0))
             st.progress(progress, text=f"{xp_needed_for_next} XP to Level {current_level + 1}")
             
             # Show current level XP details
             st.caption(f"Level {current_level}: {current_level_xp} XP earned")
             
-            # Additional stats
-            recipes_generated = user_stats.get('recipes_generated', 0)
-            quizzes_completed = user_stats.get('quizzes_completed', 0)
-            
-            if recipes_generated > 0 or quizzes_completed > 0:
-                st.markdown("**Activity:**")
-                if recipes_generated > 0:
-                    st.write(f"Recipes: {recipes_generated}")
-                if quizzes_completed > 0:
-                    st.write(f"Quizzes: {quizzes_completed}")
+            # Additional stats if available
+            if isinstance(additional_stats, dict):
+                recipes_generated = additional_stats.get('recipes_generated', 0)
+                quizzes_completed = additional_stats.get('quizzes_completed', 0)
+                
+                if recipes_generated > 0 or quizzes_completed > 0:
+                    st.markdown("**Activity:**")
+                    if recipes_generated > 0:
+                        st.write(f"Recipes: {recipes_generated}")
+                    if quizzes_completed > 0:
+                        st.write(f"Quizzes: {quizzes_completed}")
             
             # Gamification Hub button - ONLY THIS BUTTON, NO FEATURE SELECTOR
             st.markdown("---")
@@ -634,11 +659,27 @@ def display_user_stats_sidebar(user_id):
                 st.session_state.selected_feature = "Gamification Hub"
                 st.rerun()
         
-        logger.info(f"Displayed progressive stats for user {user_id}: Level {current_level}, XP {total_xp}, Progress {progress_percentage:.1f}%")
+        logger.info(f"Displayed stats for user {user_id}: Level {current_level}, XP {total_xp}")
         
     except Exception as e:
         logger.error(f"Error displaying user stats: {str(e)}")
-        st.sidebar.error("Error loading stats")
+        # Display fallback stats
+        st.sidebar.markdown("---")
+        with st.sidebar.expander("Your Stats & Progress", expanded=False):
+            st.error("Stats temporarily unavailable")
+            
+            # Show basic fallback
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Level", "1")
+            with col2:
+                st.metric("XP", "0")
+            
+            # Still show the Gamification Hub button
+            st.markdown("---")
+            if st.button("Open Gamification Hub", use_container_width=True, type="primary", key="gamification_hub_btn_fallback"):
+                st.session_state.selected_feature = "Gamification Hub"
+                st.rerun()
 
 def show_xp_notification(xp_amount, activity_type):
     """Show XP notification"""
