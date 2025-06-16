@@ -11,7 +11,6 @@ from ui.components import (  # Import gamification UI functions
     display_user_stats_sidebar, render_cooking_quiz, display_gamification_dashboard,
     award_recipe_generation_xp, display_daily_challenge, show_xp_notification
 )
-from ui.notification_components import render_notification_system  # Import notification system
 from modules.leftover import suggest_recipes  # Import logic functions
 from modules.leftover import get_user_stats, award_recipe_xp  # Import gamification logic
 from firebase_init import init_firebase
@@ -406,16 +405,6 @@ def main():
         ''')
         return
 
-    # Add notification bell in top right when authenticated
-    if st.session_state.is_authenticated:
-        # Create a container at the top for the notification bell
-         
-        # Create a container at the top for the notification bell
-        with st.container():
-            col1, col2 = st.columns([9, 1])
-            with col2:
-                render_notification_system()
-
     # Feature selection in sidebar
     st.sidebar.divider()
     st.sidebar.header("Features")
@@ -487,12 +476,6 @@ def main():
                 st.rerun()
         else:
             st.warning("Please log in to take quizzes")
-        return
-
-    # Handle notification page display
-    if st.session_state.get('show_notifications', False):
-        from ui.notification_components import render_notifications_page
-        render_notifications_page()
         return
 
     # Display the selected feature
