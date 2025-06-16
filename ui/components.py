@@ -394,9 +394,9 @@ def is_user_role(required_role):
 # Gamification Components
 def display_user_stats_sidebar(user_id):
     """Display user gamification stats in sidebar as expandable section with progressive XP system"""
-
     try:
-        from modules.leftover import get_user_stats, get_xp_progress
+        from modules.leftover import get_user_stats
+        from modules.xp_utils import get_current_level_progress
         
         # Get user stats from main Firebase (same as authentication)
         user_stats = get_user_stats(user_id)
@@ -409,7 +409,7 @@ def display_user_stats_sidebar(user_id):
             total_xp = max(0, user_stats.get('total_xp', 0))
             
             # Calculate level and progress using new system
-            current_level, current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp)
+            current_level, current_level_xp, xp_needed_for_next, progress_percentage = get_current_level_progress(total_xp)
             
             # Display metrics
             col1, col2 = st.columns(2)
@@ -460,14 +460,15 @@ def display_gamification_dashboard(user_id):
     st.title("Gamification Hub")
     
     try:
-        from modules.leftover import get_user_stats, get_leaderboard, get_xp_progress
+        from modules.leftover import get_user_stats, get_leaderboard
+        from modules.xp_utils import get_current_level_progress
         
         # Get user stats from main Firebase
         user_stats = get_user_stats(user_id)
         total_xp = user_stats.get('total_xp', 0)
         
         # Calculate level and progress using new system
-        current_level, current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp)
+        current_level, current_level_xp, xp_needed_for_next, progress_percentage = get_current_level_progress(total_xp)
         
         # Overview metrics
         st.subheader("Your Progress")
