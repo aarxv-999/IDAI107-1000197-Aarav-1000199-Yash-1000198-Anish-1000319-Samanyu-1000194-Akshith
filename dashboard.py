@@ -44,7 +44,7 @@ def render_feature_card(feature):
         ">
             <div>
                 <h4 style="margin: 0 0 0.5rem 0; color: #f9fafb;">
-                    {feature.get('icon', '')} {feature['title']}
+                    {feature['title']}
                 </h4>
                 <p style="margin: 0; color: #d1d5db; font-size: 0.9rem;">
                     {feature['description']}
