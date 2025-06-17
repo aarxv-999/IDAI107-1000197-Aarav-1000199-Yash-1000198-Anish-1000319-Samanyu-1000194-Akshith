@@ -1,8 +1,3 @@
-"""
-Visual Menu Services module for the Smart Restaurant Menu Management App.
-Handles AI dish detection, personalized recommendations, and staff challenges using event_firebase configuration.
-"""
-
 import streamlit as st
 import google.generativeai as genai
 from google.cloud import vision
@@ -20,13 +15,10 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 def get_visual_menu_firebase_db():
-    """Get Firestore client for visual menu services using event_firebase configuration"""
     try:
-        # Use the event Firebase app
         if 'event_app' in [app.name for app in firebase_admin._apps.values()]:
             return firestore.client(app=firebase_admin.get_app(name='event_app'))
         else:
-            # Initialize event Firebase if not already done
             from modules.event_planner import init_event_firebase
             init_event_firebase()
             return firestore.client(app=firebase_admin.get_app(name='event_app'))
@@ -36,13 +28,10 @@ def get_visual_menu_firebase_db():
         return None
 
 def get_main_firebase_db():
-    """Get Firestore client for main Firebase (for gamification stats)"""
     try:
-        # Use the main Firebase app (default)
         if firebase_admin._DEFAULT_APP_NAME in [app.name for app in firebase_admin._apps.values()]:
             return firestore.client()
         else:
-            # Initialize main Firebase if not already done
             from firebase_init import init_firebase
             init_firebase()
             return firestore.client()
@@ -51,9 +40,7 @@ def get_main_firebase_db():
         return None
 
 def configure_vision_api():
-    """Configure Google Cloud Vision API using Streamlit secrets"""
     try:
-        # Check if Vision API credentials are available
         if "GOOGLE_CLOUD_VISION_CREDENTIALS" not in st.secrets:
             logger.warning("Google Cloud Vision API credentials not found in secrets")
             return None
@@ -66,7 +53,6 @@ def configure_vision_api():
         return None
 
 def configure_visual_gemini_ai():
-    """Configure Gemini AI using Streamlit secrets"""
     try:
         api_key = st.secrets.get("GEMINI_API_KEY")
         if not api_key:
@@ -79,21 +65,19 @@ def configure_visual_gemini_ai():
         st.error("Failed to configure AI service. Please check your API key configuration.")
         return None
 
-# Allergy mapping for dietary restrictions
 ALLERGY_MAPPING = {
     "Nut-Free": ["peanuts", "almonds", "walnuts", "cashews", "hazelnuts", "peanut butter", "almond milk", "almond extract", "nut"],
     "Shellfish-Free": ["shrimp", "crab", "lobster", "mussels", "clams", "prawns", "shellfish"],
     "Soy-Free": ["soy", "tofu", "soybean", "edamame", "soy sauce", "soy milk", "tamari"],
     "Dairy-Free": ["milk", "cheese", "yogurt", "butter", "cream", "whey", "casein", "lactose"],
     "Veg": ["chicken", "beef", "pork", "lamb", "fish", "turkey", "duck", "venison", "meat"],
-    "Non-Veg": [],  # Special handling: exclude items without non-veg ingredients
+    "Non-Veg": [],
     "Gluten-Free": ["wheat", "barley", "rye", "malt", "flour", "bread", "pasta"],
     "Vegan": ["milk", "cheese", "yogurt", "butter", "cream", "egg", "honey", "gelatin", "meat", "fish", "chicken", "beef", "pork"]
 }
 
 @st.cache_data(ttl=300)
 def fetch_menu_items(_db):
-    """Fetch menu items from Firebase"""
     try:
         if not _db:
             return []
@@ -105,7 +89,6 @@ def fetch_menu_items(_db):
 
 @st.cache_data(ttl=300)
 def fetch_order_history(_db, user_id):
-    """Fetch user's order history"""
     try:
         if not _db or not user_id:
             return []
@@ -117,7 +100,6 @@ def fetch_order_history(_db, user_id):
 
 @st.cache_data(ttl=60)
 def fetch_challenge_entries(_db):
-    """Fetch visual challenge entries"""
     try:
         if not _db:
             return []
@@ -128,7 +110,6 @@ def fetch_challenge_entries(_db):
         return []
 
 def calculate_challenge_score(entry):
-    """Calculate score for challenge entry"""
     base_score = entry.get("views", 0) + entry.get("likes", 0) * 2 + entry.get("orders", 0) * 3
     if entry.get("trendy"): 
         base_score += 5
@@ -137,17 +118,14 @@ def calculate_challenge_score(entry):
     return base_score
 
 def preprocess_image(uploaded_file):
-    """Preprocess uploaded image for better analysis"""
     try:
         image = Image.open(uploaded_file).convert("RGB")
         
-        # Enhance contrast and brightness
         enhancer = ImageEnhance.Contrast(image)
         image = enhancer.enhance(1.3)
         enhancer = ImageEnhance.Brightness(image)
         image = enhancer.enhance(1.1)
         
-        # Convert to bytes
         img_bytes = io.BytesIO()
         image.save(img_bytes, format="JPEG")
         content = img_bytes.getvalue()
@@ -158,32 +136,26 @@ def preprocess_image(uploaded_file):
         return None, None
 
 def analyze_image_with_vision(vision_client, content):
-    """Analyze image using Google Cloud Vision API"""
     try:
         if not vision_client:
             return [], [], [], []
             
         vision_image = vision.Image(content=content)
         
-        # Label detection
         label_response = vision_client.label_detection(image=vision_image)
         labels = [(label.description, label.score) for label in label_response.label_annotations if label.score > 0.7]
         
-        # Object localization
         obj_response = vision_client.object_localization(image=vision_image)
         objects = [(obj.name, obj.score) for obj in obj_response.localized_object_annotations]
         
-        # Text detection
         text_response = vision_client.text_detection(image=vision_image)
         texts = [text.description.lower().strip() for text in text_response.text_annotations[1:] if text.description.strip()]
         
-        # Image properties for style detection
         properties_response = vision_client.image_properties(image=vision_image)
         dominant_colors = properties_response.image_properties_annotation.dominant_colors.colors
         style_indicators = [label[0].lower() for label in labels if "style" in label[0].lower() or "plating" in label[0].lower()]
         
         if not style_indicators:
-            # Infer style from colors
             style_indicators.append("modern" if any(color.color.red > 200 or color.color.green > 200 for color in dominant_colors) else "classic")
         
         return labels, objects, texts, style_indicators
@@ -193,7 +165,6 @@ def analyze_image_with_vision(vision_client, content):
         return [], [], [], []
 
 def find_matching_dishes(menu_items, combined_labels):
-    """Find dishes matching detected labels using fuzzy matching"""
     try:
         matching_dishes = []
         
@@ -205,7 +176,6 @@ def find_matching_dishes(menu_items, combined_labels):
                 ' '.join(item.get('diet', [])).lower() if isinstance(item.get('diet'), list) else str(item.get('diet', '')).lower()
             ])
             
-            # Calculate similarity score
             score = max(fuzz.partial_ratio(label, item_text) for label in combined_labels) if combined_labels else 0
             
             if score > 60:
@@ -225,7 +195,6 @@ def find_matching_dishes(menu_items, combined_labels):
         return []
 
 def generate_ai_dish_analysis(model, labels, objects, texts, style_indicators, user_allergies, menu_text):
-    """Generate AI analysis of the dish"""
     try:
         if not model:
             return "AI analysis unavailable - Gemini API not configured"
@@ -267,7 +236,6 @@ def generate_ai_dish_analysis(model, labels, objects, texts, style_indicators, u
         return f"AI analysis error: {str(e)}"
 
 def generate_personalized_recommendations(model, user_allergies, order_history, menu_text):
-    """Generate personalized menu recommendations"""
     try:
         if not model:
             return "AI recommendations unavailable - Gemini API not configured"
@@ -306,7 +274,6 @@ def generate_personalized_recommendations(model, user_allergies, order_history, 
         return f"Recommendation error: {str(e)}"
 
 def filter_menu_by_allergies(menu_items, selected_allergies):
-    """Filter menu items based on selected allergies and dietary restrictions"""
     try:
         filtered_menu = []
         debug_info = []
@@ -316,7 +283,6 @@ def filter_menu_by_allergies(menu_items, selected_allergies):
             restriction_match = True
             
             for restriction in selected_allergies:
-                # Special handling for "Non-Veg"
                 if restriction == "Non-Veg":
                     non_veg_ingredients = ALLERGY_MAPPING["Veg"]
                     has_non_veg = any(
@@ -328,7 +294,6 @@ def filter_menu_by_allergies(menu_items, selected_allergies):
                         debug_info.append(f"Item '{item.get('name', 'Unknown')}' filtered out: Does not contain non-veg ingredients")
                     continue
 
-                # Handle other restrictions
                 items_to_exclude = ALLERGY_MAPPING.get(restriction, [])
                 for item_to_exclude in items_to_exclude:
                     for ing in ingredients:
@@ -352,7 +317,6 @@ def filter_menu_by_allergies(menu_items, selected_allergies):
         return menu_items, [f"Filter error: {str(e)}"]
 
 def save_challenge_entry(db, staff_name, dish_name, ingredients, plating_style, trendy, diet_match):
-    """Save staff challenge entry to database"""
     try:
         if not db:
             return False, "Database connection failed"
@@ -380,7 +344,6 @@ def save_challenge_entry(db, staff_name, dish_name, ingredients, plating_style, 
         return False, f"Error saving challenge: {str(e)}"
 
 def update_challenge_interaction(db, challenge_id, interaction_type):
-    """Update challenge entry interaction (like, view, order)"""
     try:
         if not db:
             return False
@@ -404,7 +367,6 @@ def update_challenge_interaction(db, challenge_id, interaction_type):
         return False
 
 def save_order(db, user_id, dish_name, price=0.0):
-    """Save customer order to database"""
     try:
         if not db:
             return False
@@ -427,14 +389,12 @@ def save_order(db, user_id, dish_name, price=0.0):
         return False
 
 def award_visual_menu_xp(user_id, xp_amount, activity_type):
-    """Award XP for visual menu activities using main Firebase"""
     try:
         main_db = get_main_firebase_db()
         if not main_db:
             logger.error("Could not connect to main Firebase for XP award")
             return 0
         
-        # Update user stats in main Firebase
         user_ref = main_db.collection('user_stats').document(user_id)
         user_doc = user_ref.get()
         
@@ -452,7 +412,6 @@ def award_visual_menu_xp(user_id, xp_amount, activity_type):
             
             logger.info(f"Awarded {xp_amount} XP to user {user_id} for {activity_type}")
         else:
-            # Create new user stats
             user_ref.set({
                 'user_id': user_id,
                 'total_xp': xp_amount,
@@ -470,12 +429,10 @@ def award_visual_menu_xp(user_id, xp_amount, activity_type):
         return 0
 
 def reset_weekly_leaderboard(db):
-    """Reset weekly leaderboard (call this weekly via scheduler)"""
     try:
         if not db:
             return False
             
-        # Archive current week's results
         current_week = datetime.now().strftime("%Y-W%U")
         challenges = db.collection("visual_challenges").stream()
         
@@ -484,10 +441,8 @@ def reset_weekly_leaderboard(db):
             challenge_data['week'] = current_week
             challenge_data['archived_at'] = datetime.now().isoformat()
             
-            # Save to archive
             db.collection("challenge_archive").add(challenge_data)
             
-            # Reset current challenge scores
             challenge.reference.update({
                 'views': 0,
                 'likes': 0,
