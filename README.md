@@ -24,13 +24,18 @@ FutureEats is a smart restaurant management application powered by Generative AI
 - **Ingredients Manager Dashboard:**
 
 ## Technologies Used
+
 | Category            | Tools / Frameworks                    |
 | ------------------- | ------------------------------------- |
 | **Frontend**        | Streamlit                             |
-| **Backend**         | Python, Gemini 1.5 Pro API            |
+| **Backend**         | Python, Gemini 1.5 Flash API          |
 | **Database**        | Firebase Firestore                    |
-| **Design**          | Figma (Wireframes & UI)               |
-| **Deployment**      | Streamlit Cloud                       |
+| **Design**          |                                       |
+| **Deployment**      | Hugging Face                          |
 | **AI/ML Libraries** | Google Generative AI (Gemini), Pandas |
+
+## Installation Instructions
+
+1. Clone the repository
 
   
