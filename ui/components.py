@@ -214,65 +214,6 @@ def register_user(email, username, password, full_name, role='user'):
         logger.error(f"Registration error: {str(e)}")
         return False, f"Registration error: {str(e)}"
 
-def clear_user_data(user_id):
-    """Clear user's gamification data and preferences while keeping the account"""
-    try:
-        # Get both main and event Firebase databases
-        main_db = get_firestore_client()
-        event_db = get_event_firestore_client()
-        
-        if not main_db:
-            return False, "Main database connection failed"
-        
-        # Reset user stats to initial values in main Firebase
-        initial_stats = {
-            'user_id': user_id,
-            'total_xp': 0,
-            'level': 1,
-            'recipes_generated': 0,
-            'quizzes_completed': 0,
-            'quizzes_taken': 0,
-            'correct_answers': 0,
-            'total_questions': 0,
-            'perfect_scores': 0,
-            'achievements': [],
-            'last_quiz_date': None,
-            'last_activity': firestore.SERVER_TIMESTAMP,
-            'data_cleared_at': firestore.SERVER_TIMESTAMP
-        }
-        
-        # Update user stats document in main Firebase
-        user_stats_ref = main_db.collection('user_stats').document(user_id)
-        user_stats_ref.set(initial_stats, merge=False)  # Overwrite completely
-        
-        # Clear user preferences from event Firebase if available
-        if event_db:
-            try:
-                # Clear user preferences
-                user_prefs_ref = event_db.collection('user_preferences').document(user_id)
-                user_prefs_doc = user_prefs_ref.get()
-                if user_prefs_doc.exists:
-                    user_prefs_ref.delete()
-                    logger.info(f"Cleared user preferences for user: {user_id}")
-                
-                # Clear user dish likes (for AI learning)
-                user_likes_ref = event_db.collection('user_dish_likes').where('user_id', '==', user_id)
-                user_likes_docs = list(user_likes_ref.stream())
-                for doc in user_likes_docs:
-                    doc.reference.delete()
-                logger.info(f"Cleared {len(user_likes_docs)} dish likes for user: {user_id}")
-                
-            except Exception as e:
-                logger.warning(f"Could not clear event database data for user {user_id}: {str(e)}")
-                # Continue anyway since main stats were cleared
-        
-        logger.info(f"Cleared user data and preferences for user: {user_id}")
-        return True, "User data and preferences cleared successfully! Your account remains active."
-        
-    except Exception as e:
-        logger.error(f"Error clearing user data: {str(e)}")
-        return False, f"Error clearing user data: {str(e)}"
-
 def render_login_form():
     """Render the login form"""
     st.markdown("### Login to Your Account")
@@ -402,56 +343,11 @@ def render_auth_ui():
         st.sidebar.write(f"**Role:** {user['role'].title()}")
         st.sidebar.write(f"**Username:** @{user['username']}")
         
-        # Account management buttons
-        col1, col2 = st.sidebar.columns(2)
-        
-        with col1:
-            if st.button("Logout", use_container_width=True):
-                st.session_state.is_authenticated = False
-                st.session_state.user = None
-                st.session_state.show_signup = False
-                st.rerun()
-        
-        with col2:
-            if st.button("Clear Data", use_container_width=True, type="secondary", help="Reset your XP, achievements, and progress"):
-                # Show confirmation dialog
-                if 'confirm_clear_data' not in st.session_state:
-                    st.session_state.confirm_clear_data = False
-                
-                if not st.session_state.confirm_clear_data:
-                    st.session_state.confirm_clear_data = True
-                    st.rerun()
-        
-        # Handle clear data confirmation
-        if st.session_state.get('confirm_clear_data', False):
-            st.sidebar.markdown("---")
-            st.sidebar.warning("⚠️ **Confirm Data Clearing**")
-            st.sidebar.write("This will reset:")
-            st.sidebar.write("• All XP and levels")
-            st.sidebar.write("• Achievements")
-            st.sidebar.write("• Quiz history")
-            st.sidebar.write("• Recipe generation stats")
-            st.sidebar.write("• User preferences & liked dishes")
-            st.sidebar.write("• AI learning data")
-            st.sidebar.write("")
-            st.sidebar.write("Your account will remain active.")
-            
-            col1, col2 = st.sidebar.columns(2)
-            with col1:
-                if st.button("✅ Confirm", type="primary", use_container_width=True):
-                    success, message = clear_user_data(user['user_id'])
-                    if success:
-                        st.sidebar.success(message)
-                        st.session_state.confirm_clear_data = False
-                        # Force refresh of user stats
-                        st.rerun()
-                    else:
-                        st.sidebar.error(message)
-            
-            with col2:
-                if st.button("❌ Cancel", use_container_width=True):
-                    st.session_state.confirm_clear_data = False
-                    st.rerun()
+        if st.sidebar.button("Logout", use_container_width=True):
+            st.session_state.is_authenticated = False
+            st.session_state.user = None
+            st.session_state.show_signup = False
+            st.rerun()
         
         return True
     else:
