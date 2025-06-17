@@ -1,9 +1,3 @@
-"""
-Authentication module for the Smart Restaurant Menu Management App.
-Handles user registration, authentication, and related functions using Firebase.
-Updated with simplified password requirements.
-"""
-
 import hashlib
 import uuid
 import logging
@@ -15,11 +9,9 @@ from firebase_init import init_firebase
 logger = logging.getLogger(__name__)
 
 def hash_password(password: str) -> str:
-    """Hash the password using SHA-256 algorithm."""
     return hashlib.sha256(password.encode()).hexdigest()
 
 def validate_password(password: str) -> Tuple[bool, str]:
-    """Validate that the password meets security requirements - UPDATED: simplified requirements"""
     if len(password) < 5:
         return False, "Password must be at least 5 characters long"
     
@@ -30,18 +22,15 @@ def validate_password(password: str) -> Tuple[bool, str]:
     return True, ""
 
 def validate_email(email: str) -> Tuple[bool, str]:
-    """Validate that the email has a proper format."""
     if '@' not in email or '.' not in email.split('@')[1]:
         return False, "Please use a proper email format"
     return True, ""
 
 def get_firestore_db():
-    """Get a Firestore client instance."""
     init_firebase()
     return firestore.client()
 
 def email_exists(email: str) -> bool:
-    """Check if an email already exists in the database."""
     try:
         db = get_firestore_db()
         users_ref = db.collection('users')
@@ -52,7 +41,6 @@ def email_exists(email: str) -> bool:
         return False
 
 def username_exists(username: str) -> bool:
-    """Check if a username already exists in the database."""
     try:
         db = get_firestore_db()
         users_ref = db.collection('users')
@@ -63,7 +51,6 @@ def username_exists(username: str) -> bool:
         return False
 
 def register_user(username: str, email: str, password: str, role: str = "user") -> Tuple[bool, str]:
-    """Register a new user in the Firebase database."""
     try:
         is_valid, error_msg = validate_email(email)
         if not is_valid:
@@ -103,7 +90,6 @@ def register_user(username: str, email: str, password: str, role: str = "user") 
         return False, f"User registration unsuccessful: {str(e)}"
 
 def authenticate_user(username_or_email: str, password: str) -> Tuple[bool, Optional[Dict], str]:
-    """Authenticate a user with username/email and password."""
     try:
         db = get_firestore_db()
         users_ref = db.collection('users')
