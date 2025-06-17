@@ -561,11 +561,18 @@ def display_gamification_dashboard(user_id):
             current_level = 1
             user_stats = {}
 
-        current_level = calculate_level_from_xp(total_xp)
-        progress_info = get_xp_progress(total_xp, current_level)
-        current_level_xp = progress_info['current_level_xp']
-        xp_needed_for_next = progress_info['xp_needed_for_next']
-        progress_percentage = progress_info['progress_percentage']
+        try:
+            current_level = calculate_level_from_xp(total_xp)
+            progress_info = get_xp_progress(total_xp, current_level)
+            current_level_xp = progress_info['current_level_xp']
+            xp_needed_for_next = progress_info['xp_needed_for_next']
+            progress_percentage = progress_info['progress_percentage']
+        except Exception as e:
+            logger.warning(f"XP utils not available, using simple calculation fallback: {str(e)}")
+            current_level = max(1, int(total_xp / 100) + 1)
+            current_level_xp = total_xp % 100
+            xp_needed_for_next = 100 - current_level_xp
+            progress_percentage = (current_level_xp / 100) * 100
         
         st.subheader("Your Progress")
         col1, col2, col3, col4 = st.columns(4)
