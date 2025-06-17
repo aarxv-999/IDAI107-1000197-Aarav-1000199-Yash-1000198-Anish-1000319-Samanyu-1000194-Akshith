@@ -581,9 +581,12 @@ def display_gamification_dashboard(user_id):
                 max_display_level = min(current_level + 5, 15)
                 xp_breakdown = get_xp_breakdown_for_levels(max_display_level)
                 
-                # Create DataFrame for display
+                # Create DataFrame for display - FIXED UNPACKING
                 breakdown_data = []
-                for level, xp_for_level, total_xp_req in xp_breakdown:
+                for breakdown_item in xp_breakdown:
+                    # Safely unpack the tuple
+                    level, xp_for_level, total_xp_req = breakdown_item
+                    
                     status = "✅ Completed" if level <= current_level else "🔒 Locked"
                     if level == current_level + 1:
                         status = "🎯 Next Goal"
