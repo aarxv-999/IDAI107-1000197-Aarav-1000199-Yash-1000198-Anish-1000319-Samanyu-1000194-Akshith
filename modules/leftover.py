@@ -1,7 +1,3 @@
-'''
-Enhanced leftover management and gamification module with proper AI recipe generation
-'''
-
 import pandas as pd
 from typing import List, Optional, Dict, Tuple
 import os
@@ -23,7 +19,6 @@ from modules.xp_utils import calculate_level_from_xp
 logger = logging.getLogger('leftover_combined')
 
 def load_leftovers(csv_path: str) -> List[str]:
-    '''Load leftover ingredients from CSV file'''
     try:
         df = pd.read_csv(csv_path)
         if 'ingredient' not in df.columns:
@@ -37,13 +32,11 @@ def load_leftovers(csv_path: str) -> List[str]:
         raise Exception(f"Error loading leftovers from CSV: {str(e)}")
 
 def parse_manual_leftovers(input_text: str) -> List[str]:
-    '''Parse manually entered ingredients'''
     ingredients = input_text.split(',')
     ingredients = [ing.strip() for ing in ingredients if ing.strip()]
     return ingredients
 
 def parse_expiry_date(expiry_string: str) -> datetime:
-    '''Parse expiry date from Firebase format'''
     try:
         if "Expiry date:" in expiry_string:
             date_part = expiry_string.replace("Expiry date:", "").strip()
@@ -56,7 +49,6 @@ def parse_expiry_date(expiry_string: str) -> datetime:
         return None
 
 def is_ingredient_valid(expiry_string: str) -> bool:
-    '''Check if ingredient is still valid (not expired)'''
     expiry_date = parse_expiry_date(expiry_string)
     if expiry_date is None:
         return False
@@ -65,7 +57,6 @@ def is_ingredient_valid(expiry_string: str) -> bool:
     return expiry_date.date() >= current_date.date()
 
 def filter_valid_ingredients(ingredients: List[Dict]) -> List[Dict]:
-    '''Filter out expired ingredients'''
     valid_ingredients = []
     expired_count = 0
     
@@ -80,7 +71,6 @@ def filter_valid_ingredients(ingredients: List[Dict]) -> List[Dict]:
     return valid_ingredients
 
 def fetch_ingredients_from_firebase() -> List[Dict]:
-    '''Fetch valid ingredients from Firebase'''
     try:
         from firebase_admin import firestore
         import firebase_admin
@@ -113,7 +103,6 @@ def fetch_ingredients_from_firebase() -> List[Dict]:
         raise Exception(f"Error fetching ingredients from Firebase: {str(e)}")
 
 def get_ingredients_by_expiry_priority(firebase_ingredients: List[Dict], max_ingredients: int = 10) -> Tuple[List[str], List[Dict]]:
-    '''Get ingredients prioritized by expiry date'''
     if not firebase_ingredients:
         return [], []
     
@@ -141,7 +130,6 @@ def get_ingredients_by_expiry_priority(firebase_ingredients: List[Dict], max_ing
     return ingredient_names, detailed_info
 
 def calculate_days_until_expiry(expiry_string: str) -> int:
-    '''Calculate days until expiry'''
     try:
         expiry_date = parse_expiry_date(expiry_string)
         if expiry_date is None:
@@ -154,7 +142,6 @@ def calculate_days_until_expiry(expiry_string: str) -> int:
         return -999
 
 def parse_firebase_ingredients(firebase_ingredients: List[Dict]) -> List[str]:
-    '''Parse Firebase ingredients into simple list'''
     ingredients = []
     for item in firebase_ingredients:
         if 'Ingredient' in item and item['Ingredient']:
@@ -163,24 +150,20 @@ def parse_firebase_ingredients(firebase_ingredients: List[Dict]) -> List[str]:
     return ingredients
 
 def get_restaurant_context() -> str:
-    '''Get restaurant context from Firebase for AI reference (NOT for direct suggestions)'''
     try:
-        # Get existing recipes and menu items for CONTEXT ONLY
         recipes = fetch_recipe_archive()
         menu_items = fetch_menu_items()
         
         context_info = []
         
-        # Extract cooking styles and techniques from existing recipes
         cooking_styles = set()
         common_spices = set()
         
-        for recipe in recipes[:10]:  # Limit to avoid token overflow
+        for recipe in recipes[:10]:
             name = recipe.get('name', '').lower()
             description = recipe.get('description', '').lower()
             ingredients = recipe.get('ingredients', [])
             
-            # Extract cooking styles
             if any(style in name or style in description for style in ['curry', 'masala', 'biryani', 'dal']):
                 cooking_styles.add('Indian')
             if any(style in name or style in description for style in ['pasta', 'pizza', 'risotto']):
@@ -188,21 +171,18 @@ def get_restaurant_context() -> str:
             if any(style in name or style in description for style in ['stir fry', 'fried rice', 'noodles']):
                 cooking_styles.add('Asian')
             
-            # Extract common spices/ingredients
             if isinstance(ingredients, list):
                 for ing in ingredients:
                     ing_str = str(ing).lower()
                     if any(spice in ing_str for spice in ['cumin', 'turmeric', 'garam masala', 'coriander']):
                         common_spices.add(ing_str)
         
-        # Build context string
         if cooking_styles:
             context_info.append(f"Restaurant specializes in: {', '.join(cooking_styles)} cuisine")
         
         if common_spices:
             context_info.append(f"Commonly used spices: {', '.join(list(common_spices)[:5])}")
         
-        # Add some example dish types from menu
         dish_types = set()
         for item in menu_items[:5]:
             name = item.get('name', '').lower()
@@ -223,7 +203,6 @@ def get_restaurant_context() -> str:
         return "General restaurant kitchen"
 
 def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str = "", priority_ingredients: List[Dict] = None) -> List[str]:
-    '''Generate NEW creative recipes using leftover ingredients with restaurant context'''
     if not leftovers:
         return []
 
@@ -235,7 +214,6 @@ def suggest_recipes(leftovers: List[str], max_suggestions: int = 3, notes: str =
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
 
-        # Get restaurant context for style reference
         restaurant_context = get_restaurant_context()
         
         ingredients_list = ", ".join(leftovers)
@@ -281,24 +259,19 @@ Example format:
         response = model.generate_content(prompt)
         response_text = response.text.strip()
         
-        # Parse the response
         recipe_lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         new_recipes = []
         
         for line in recipe_lines:
-            # Remove numbering if present
             if line and line[0].isdigit() and line[1:3] in ['. ', '- ', ') ']:
                 line = line[3:].strip()
             
-            # Clean up the line
             line = line.strip('"\'')
             
             if line and len(new_recipes) < max_suggestions:
-                # Add without emoji indicator
                 new_recipes.append(line)
         
         if not new_recipes:
-            # Return empty list if parsing fails - no fallback
             return []
         
         logger.info(f"Generated {len(new_recipes)} new creative recipes using leftovers")
@@ -306,17 +279,13 @@ Example format:
 
     except Exception as e:
         logger.error(f"Error generating new recipes: {str(e)}")
-        # Return empty list instead of fallback
         return []
 
-# Gamification functions
 def get_firestore_db():
-    """Get Firestore client"""
     init_firebase()
     return firestore.client()
 
 def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int = 5) -> List[Dict]:
-    """Generate completely random and different quiz questions each time - AI ONLY"""
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -326,12 +295,10 @@ def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int =
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
 
-        # Generate a random seed for completely different questions each time
         import random
         import time
         random_seed = int(time.time() * 1000) % 10000
         
-        # Completely random cooking topics - different each time
         all_cooking_topics = [
             "food safety and temperatures",
             "knife skills and cutting techniques", 
@@ -360,7 +327,6 @@ def generate_dynamic_quiz_questions(ingredients: List[str], num_questions: int =
             "dessert and confection making"
         ]
         
-        # Randomly select different topics each time
         random.shuffle(all_cooking_topics)
         selected_topics = all_cooking_topics[:num_questions]
         
@@ -398,7 +364,6 @@ Make each question completely unique and random - no patterns or similarities!''
         response = model.generate_content(prompt)
         response_text = response.text.strip()
 
-        # Clean up the response
         if "```json" in response_text:
             response_text = response_text.split("```json")[1].split("```")[0]
         elif "```" in response_text:
@@ -408,10 +373,8 @@ Make each question completely unique and random - no patterns or similarities!''
             questions = json.loads(response_text)
             
             if isinstance(questions, list) and len(questions) >= num_questions:
-                # Take exactly the requested number of questions
                 selected_questions = questions[:num_questions]
                 
-                # Validate each question has required fields
                 valid_questions = []
                 for q in selected_questions:
                     if (isinstance(q, dict) and 
@@ -441,7 +404,6 @@ Make each question completely unique and random - no patterns or similarities!''
         return []
 
 def calculate_quiz_score(answers: List[int], questions: List[Dict]) -> Tuple[int, int, int]:
-    """Calculate quiz score and XP"""
     correct_answers = 0
     xp_earned = 0
 
@@ -457,7 +419,6 @@ def calculate_quiz_score(answers: List[int], questions: List[Dict]) -> Tuple[int
     return correct_answers, len(questions), xp_earned
 
 def get_user_stats(user_id: str) -> Dict:
-    """Get user's gamification stats"""
     try:
         db = get_firestore_db()
         user_stats_ref = db.collection('user_stats').document(user_id)
@@ -497,7 +458,6 @@ def get_user_stats(user_id: str) -> Dict:
         }
 
 def update_user_stats(user_id, xp_gained, recipes_generated=0, quizzes_completed=0):
-    """Update user stats with XP and calculate new level using progressive system"""
     try:
         db = get_firestore_db()
         if not db:
@@ -516,15 +476,12 @@ def update_user_stats(user_id, xp_gained, recipes_generated=0, quizzes_completed
             current_recipes = 0
             current_quizzes = 0
         
-        # Calculate new totals
         new_total_xp = current_xp + xp_gained
         new_recipes = current_recipes + recipes_generated
         new_quizzes = current_quizzes + quizzes_completed
         
-        # Calculate new level using progressive system
         new_level = calculate_level_from_xp(new_total_xp)
         
-        # Update stats
         updated_stats = {
             'total_xp': new_total_xp,
             'level': new_level,
@@ -543,7 +500,6 @@ def update_user_stats(user_id, xp_gained, recipes_generated=0, quizzes_completed
         return False
 
 def check_achievements(quizzes: int, perfect_scores: int, new_level: int, old_level: int, current_achievements: List[str]) -> List[str]:
-    """Check for new achievements"""
     achievements = current_achievements.copy()
 
     quiz_milestones = [
@@ -582,12 +538,10 @@ def check_achievements(quizzes: int, perfect_scores: int, new_level: int, old_le
     return achievements
 
 def calculate_level(total_xp: int) -> int:
-    """Calculate user level based on XP"""
     import math
     return max(1, int(math.sqrt(total_xp / 100)) + 1)
 
 def get_xp_progress(current_xp: int, current_level: int) -> Tuple[int, int]:
-    """Calculate XP progress within current level"""
     previous_level_xp = ((current_level - 1) ** 2) * 100
     next_level_xp = (current_level ** 2) * 100
     current_level_xp = current_xp - previous_level_xp
@@ -596,7 +550,6 @@ def get_xp_progress(current_xp: int, current_level: int) -> Tuple[int, int]:
     return current_level_xp, xp_needed
 
 def get_leaderboard(limit: int = 10) -> List[Dict]:
-    """Get top users leaderboard"""
     try:
         db = get_firestore_db()
 
@@ -633,7 +586,6 @@ def get_leaderboard(limit: int = 10) -> List[Dict]:
         return []
 
 def award_recipe_xp(user_id: str, num_recipes: int) -> Dict:
-    """Award XP for generating recipes"""
     try:
         xp_per_recipe = 5
         total_xp = num_recipes * xp_per_recipe
