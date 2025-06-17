@@ -46,3 +46,16 @@ cd IDAI107-1000197_Aarav-1000199_Yash-1000198_Anish-1000319_Samanyu-1000194_Aksh
 pip install -r requirements.txt
 ```
 3. 
+
+
+
+## Usage Instructions
+## Contribution Guidelines
+We welcome contributions! Here’s how:
+
+1. Fork this repository.
+2. Create a new branch for your feature.
+3. Commit your changes with clear messages.
+4. Submit a pull request and describe your enhancement.
+5. Send us a mail at:
+
