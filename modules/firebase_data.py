@@ -1,7 +1,3 @@
-"""
-Firebase data access module for recipe archive and menu collections
-"""
-
 import logging
 from typing import List, Dict, Optional, Tuple
 import firebase_admin
@@ -11,12 +7,10 @@ from firebase_init import init_firebase
 logger = logging.getLogger(__name__)
 
 def get_main_firestore_db():
-    """Get the main Firestore client"""
     init_firebase()
     return firestore.client()
 
 def get_event_firestore_db():
-    """Get the event Firestore client"""
     try:
         if 'event_app' in [app.name for app in firebase_admin._apps.values()]:
             return firestore.client(app=firebase_admin.get_app(name='event_app'))
@@ -30,7 +24,6 @@ def get_event_firestore_db():
         return None
 
 def fetch_recipe_archive() -> List[Dict]:
-    """Fetch all recipes from the recipe_archive collection"""
     try:
         db = get_event_firestore_db()
         if not db:
@@ -54,7 +47,6 @@ def fetch_recipe_archive() -> List[Dict]:
         return []
 
 def fetch_menu_items() -> List[Dict]:
-    """Fetch all items from the menu collection"""
     try:
         db = get_event_firestore_db()
         if not db:
@@ -78,7 +70,6 @@ def fetch_menu_items() -> List[Dict]:
         return []
 
 def search_recipes_by_ingredients(ingredients: List[str], limit: int = 10) -> List[Dict]:
-    """Search recipes that contain any of the given ingredients"""
     try:
         recipes = fetch_recipe_archive()
         if not recipes:
@@ -92,24 +83,20 @@ def search_recipes_by_ingredients(ingredients: List[str], limit: int = 10) -> Li
             recipe_name = recipe.get('name', '').lower()
             recipe_description = recipe.get('description', '').lower()
             
-            # Convert recipe ingredients to lowercase for comparison
             if isinstance(recipe_ingredients, list):
                 recipe_ingredients_lower = [str(ing).lower() for ing in recipe_ingredients]
             else:
                 recipe_ingredients_lower = [str(recipe_ingredients).lower()]
             
-            # Check if any ingredient matches
             ingredient_match = any(
                 any(search_ing in recipe_ing for recipe_ing in recipe_ingredients_lower)
                 for search_ing in ingredients_lower
             )
             
-            # Also check recipe name and description
             name_match = any(ing in recipe_name for ing in ingredients_lower)
             desc_match = any(ing in recipe_description for ing in ingredients_lower)
             
             if ingredient_match or name_match or desc_match:
-                # Calculate match score
                 match_score = 0
                 for ing in ingredients_lower:
                     if any(ing in recipe_ing for recipe_ing in recipe_ingredients_lower):
@@ -122,7 +109,6 @@ def search_recipes_by_ingredients(ingredients: List[str], limit: int = 10) -> Li
                 recipe['match_score'] = match_score
                 matching_recipes.append(recipe)
         
-        # Sort by match score (highest first)
         matching_recipes.sort(key=lambda x: x.get('match_score', 0), reverse=True)
         
         return matching_recipes[:limit]
@@ -132,7 +118,6 @@ def search_recipes_by_ingredients(ingredients: List[str], limit: int = 10) -> Li
         return []
 
 def search_menu_by_ingredients(ingredients: List[str], limit: int = 10) -> List[Dict]:
-    """Search menu items that contain any of the given ingredients"""
     try:
         menu_items = fetch_menu_items()
         if not menu_items:
@@ -146,24 +131,20 @@ def search_menu_by_ingredients(ingredients: List[str], limit: int = 10) -> List[
             item_description = item.get('description', '').lower()
             item_ingredients = item.get('ingredients', [])
             
-            # Convert item ingredients to lowercase for comparison
             if isinstance(item_ingredients, list):
                 item_ingredients_lower = [str(ing).lower() for ing in item_ingredients]
             else:
                 item_ingredients_lower = [str(item_ingredients).lower()]
             
-            # Check if any ingredient matches
             ingredient_match = any(
                 any(search_ing in item_ing for item_ing in item_ingredients_lower)
                 for search_ing in ingredients_lower
             )
             
-            # Also check item name and description
             name_match = any(ing in item_name for ing in ingredients_lower)
             desc_match = any(ing in item_description for ing in ingredients_lower)
             
             if ingredient_match or name_match or desc_match:
-                # Calculate match score
                 match_score = 0
                 for ing in ingredients_lower:
                     if any(ing in item_ing for item_ing in item_ingredients_lower):
@@ -176,7 +157,6 @@ def search_menu_by_ingredients(ingredients: List[str], limit: int = 10) -> List[
                 item['match_score'] = match_score
                 matching_items.append(item)
         
-        # Sort by match score (highest first)
         matching_items.sort(key=lambda x: x.get('match_score', 0), reverse=True)
         
         return matching_items[:limit]
@@ -186,15 +166,11 @@ def search_menu_by_ingredients(ingredients: List[str], limit: int = 10) -> List[
         return []
 
 def get_popular_recipes(limit: int = 20) -> List[Dict]:
-    """Get popular recipes from the archive"""
     try:
         recipes = fetch_recipe_archive()
         if not recipes:
             return []
         
-        # Sort by popularity indicators (you can adjust this logic)
-        # For now, we'll use recipe name length as a simple heuristic
-        # In a real system, you'd have popularity metrics
         popular_recipes = sorted(recipes, key=lambda x: len(x.get('name', '')), reverse=True)
         
         return popular_recipes[:limit]
@@ -204,7 +180,6 @@ def get_popular_recipes(limit: int = 20) -> List[Dict]:
         return []
 
 def get_menu_categories() -> List[str]:
-    """Get all unique categories from menu items"""
     try:
         menu_items = fetch_menu_items()
         if not menu_items:
@@ -223,7 +198,6 @@ def get_menu_categories() -> List[str]:
         return []
 
 def get_recipes_by_category(category: str, limit: int = 10) -> List[Dict]:
-    """Get recipes filtered by category"""
     try:
         recipes = fetch_recipe_archive()
         if not recipes:
@@ -242,7 +216,6 @@ def get_recipes_by_category(category: str, limit: int = 10) -> List[Dict]:
         return []
 
 def format_recipe_for_display(recipe: Dict) -> str:
-    """Format a recipe dictionary for display"""
     try:
         name = recipe.get('name', 'Unnamed Recipe')
         description = recipe.get('description', '')
@@ -264,7 +237,6 @@ def format_recipe_for_display(recipe: Dict) -> str:
         return recipe.get('name', 'Recipe')
 
 def format_menu_item_for_display(item: Dict) -> str:
-    """Format a menu item dictionary for display"""
     try:
         name = item.get('name', 'Unnamed Item')
         description = item.get('description', '')
