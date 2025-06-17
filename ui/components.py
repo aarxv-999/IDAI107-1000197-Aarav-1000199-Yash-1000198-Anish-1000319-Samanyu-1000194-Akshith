@@ -463,17 +463,14 @@ def display_user_stats_sidebar(user_id):
         from modules.xp_utils import get_xp_progress, calculate_level_from_xp
         user_stats_result = get_user_stats(user_id)
         
-        if isinstance(user_stats_result, tuple):
-            values = list(user_stats_result)
-            total_xp = values[0] if len(values) > 0 else 0
-            current_level = values[1] if len(values) > 1 else 1
-            additional_stats = values[2] if len(values) > 2 else {}
-        elif isinstance(user_stats_result, dict):
+        # Fix: Handle dictionary return type properly
+        if isinstance(user_stats_result, dict):
             total_xp = user_stats_result.get('total_xp', 0)
             current_level = user_stats_result.get('level', 1)
             additional_stats = user_stats_result
         else:
-            total_xp = user_stats_result if isinstance(user_stats_result, (int, float)) else 0
+            # Fallback for unexpected return types
+            total_xp = 0
             current_level = 1
             additional_stats = {}
         
@@ -553,15 +550,13 @@ def display_gamification_dashboard(user_id):
         
         user_stats_result = get_user_stats(user_id)
         
+        # Fix: Handle dictionary return type properly
         if isinstance(user_stats_result, dict):
             total_xp = user_stats_result.get('total_xp', 0)
             current_level = user_stats_result.get('level', 1)
             user_stats = user_stats_result
-        elif isinstance(user_stats_result, (tuple, list)):
-            total_xp = user_stats_result[0] if len(user_stats_result) > 0 else 0
-            current_level = user_stats_result[1] if len(user_stats_result) > 1 else 1
-            user_stats = user_stats_result[2] if len(user_stats_result) > 2 else {}
         else:
+            # Fallback for unexpected return types
             total_xp = 0
             current_level = 1
             user_stats = {}
@@ -597,11 +592,15 @@ def display_gamification_dashboard(user_id):
         breakdown_data = []
 
         for item in xp_breakdown:
-            if len(item) >= 3:
-                level, xp_for_level, total_xp_req = item[:3]
+            # Fix: Handle tuple unpacking properly
+            if isinstance(item, (tuple, list)) and len(item) >= 3:
+                level = item[0]
+                xp_for_level = item[1]
+                total_xp_req = item[2]
             else:
                 logger.error(f"Invalid XP breakdown format: {item}")
                 continue
+                
             status = "Completed" if level <= current_level else "Locked"
 
             if level == current_level + 1:
