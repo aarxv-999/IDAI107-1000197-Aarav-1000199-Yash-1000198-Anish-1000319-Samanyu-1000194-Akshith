@@ -50,6 +50,10 @@ pip install -r requirements.txt
 
 
 ## Usage Instructions
+- Login to the dashboard as any of the roles(Admin, Chef, Manager, Staff, Customer)
+- 
+
+
 ## Contribution Guidelines
 We welcome contributions! Here’s how:
 
