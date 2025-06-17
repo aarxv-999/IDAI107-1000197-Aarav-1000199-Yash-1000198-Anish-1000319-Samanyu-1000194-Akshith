@@ -9,7 +9,7 @@ from datetime import datetime, date
 
 from firebase_admin import firestore
 from firebase_init import init_firebase
-from modules.firebase_data import (
+from firebase_data import (
     search_recipes_by_ingredients, search_menu_by_ingredients,
     format_recipe_for_display, format_menu_item_for_display,
     get_popular_recipes, fetch_recipe_archive, fetch_menu_items
