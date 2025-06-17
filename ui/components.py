@@ -591,8 +591,13 @@ def display_gamification_dashboard(user_id):
 
         breakdown_data = []
 
-        for level, xp_for_level, total_xp_req in xp_breakdown:
-            status = "✅ Completed" if level <= current_level else "Locked"
+        for item in xp_breakdown:
+            if len(item) >= 3:
+                level, xp_for_level, total_xp_req = item[:3]
+            else:
+                logger.error(f"Invalid XP breakdown format: {item}")
+                continue
+            status = "Completed" if level <= current_level else "Locked"
 
             if level == current_level + 1:
                 status = "Next Goal"
