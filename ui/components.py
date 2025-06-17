@@ -549,10 +549,23 @@ def display_gamification_dashboard(user_id):
         from modules.leftover import get_user_stats, get_leaderboard
         from modules.xp_utils import get_xp_progress, calculate_level_from_xp, get_xp_breakdown_for_levels
         
-        user_stats = get_user_stats(user_id)
-        total_xp = user_stats.get('total_xp', 0)        
-        current_level = calculate_level_from_xp(total_xp)        
-        current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)        
+        user_stats_result = get_user_stats(user_id)
+        
+        if isinstance(user_stats_result, dict):
+            total_xp = user_stats_result.get('total_xp', 0)
+            current_level = user_stats_result.get('level', 1)
+            user_stats = user_stats_result
+        elif isinstance(user_stats_result, (tuple, list)):
+            total_xp = user_stats_result[0] if len(user_stats_result) > 0 else 0
+            current_level = user_stats_result[1] if len(user_stats_result) > 1 else 1
+            user_stats = user_stats_result[2] if len(user_stats_result) > 2 else {}
+        else:
+            total_xp = 0
+            current_level = 1
+            user_stats = {}
+
+        current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
+        
         st.subheader("Your Progress")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
