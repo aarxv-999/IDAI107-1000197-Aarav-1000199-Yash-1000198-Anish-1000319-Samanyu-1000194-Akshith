@@ -1,8 +1,3 @@
-"""
-Chef Components Module for Smart Restaurant Menu Management System
-Handles chef recipe submissions, AI rating generation, XP rewards, and chef leaderboards
-"""
-
 import streamlit as st
 import logging
 from datetime import datetime, timedelta
@@ -14,21 +9,13 @@ import firebase_admin
 from typing import List, Dict, Tuple, Optional
 import pandas as pd
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# ============================================================================
-# DATABASE CONNECTION FUNCTIONS
-# ============================================================================
-
 def get_firestore_client():
-    """Get Firestore client for chef submissions"""
     try:
-        # Use the main Firebase app (default) for chef submissions
         if firebase_admin._apps:
             return firestore.client()
         else:
-            # Initialize main Firebase if not already done
             from firebase_init import init_firebase
             init_firebase()
             return firestore.client()
@@ -36,29 +23,21 @@ def get_firestore_client():
         logger.error(f"Error getting Firestore client: {str(e)}")
         return None
 
-# ============================================================================
-# MAIN RENDER FUNCTIONS
-# ============================================================================
-
 def render_chef_recipe_suggestions():
-    """Main function to render chef recipe suggestions interface"""
-    st.title("👨‍🍳 Chef Recipe Submissions")
+    st.title("Chef Recipe Submissions")
     st.markdown("Submit your original recipes and get AI feedback with XP rewards!")
     
-    # Get database connection
     db = get_firestore_client()
     if not db:
         st.error("Database connection failed. Please try again later.")
         return
     
-    # Check user authentication
     user = st.session_state.get('user', {})
     if not user or not user.get('user_id'):
         st.error("Please log in to access chef features.")
         return
     
-    # Create tabs for different chef functions
-    tab1, tab2, tab3, tab4 = st.tabs(["📝 Submit Recipe", "📊 My Submissions", "🏆 Chef Leaderboard", "📈 Analytics"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Submit Recipe", "My Submissions", "Chef Leaderboard", "Analytics"])
     
     with tab1:
         render_chef_submission(db)
@@ -73,29 +52,25 @@ def render_chef_recipe_suggestions():
         render_chef_analytics(db)
 
 def render_chef_submission(db):
-    """Render the chef recipe submission form"""
     st.subheader("Submit Your Recipe")
     
-    # Get current user
     user = st.session_state.get('user', {})
     if not user or not user.get('user_id'):
         st.error("Please log in to submit recipes.")
         return
     
-    # Check if user is a chef (allow all roles for now, but show different messaging)
     user_role = user.get('role', 'user')
     if user_role != 'chef':
         st.info(f"You're logged in as '{user_role}'. Anyone can submit recipes, but chefs get special recognition!")
     
-    # Show XP information
-    with st.expander("💎 XP Rewards System", expanded=False):
+    with st.expander("XP Rewards System", expanded=False):
         st.markdown("""
         **Earn XP based on AI recipe ratings:**
-        - ⭐ 1 Star: 5 XP
-        - ⭐⭐ 2 Stars: 10 XP  
-        - ⭐⭐⭐ 3 Stars: 15 XP
-        - ⭐⭐⭐⭐ 4 Stars: 30 XP (20 base + 10 bonus)
-        - ⭐⭐⭐⭐⭐ 5 Stars: 45 XP (25 base + 20 bonus)
+        - 1 Star: 5 XP
+        - 2 Stars: 10 XP  
+        - 3 Stars: 15 XP
+        - 4 Stars: 30 XP (20 base + 10 bonus)
+        - 5 Stars: 45 XP (25 base + 20 bonus)
         
         **AI evaluates recipes based on:**
         - Creativity and uniqueness (25%)
@@ -107,7 +82,6 @@ def render_chef_submission(db):
     with st.form("chef_recipe_submission"):
         st.markdown("### Recipe Details")
         
-        # Basic recipe information
         col1, col2 = st.columns(2)
         
         with col1:
@@ -120,6 +94,7 @@ def render_chef_submission(db):
             cook_time = st.selectbox(
                 "Cooking Time *",
                 ["Under 15 minutes", "15-30 minutes", "30-45 minutes", "45 minutes - 1 hour", "1-2 hours", "2+ hours"],
+                help="Estimated total cooking
                 help="Estimated total cooking time"
             )
             
@@ -162,7 +137,6 @@ def render_chef_submission(db):
                 help="Your name as it will appear on the recipe"
             )
         
-        # Recipe description
         description = st.text_area(
             "Recipe Description *",
             placeholder="Describe your dish, its flavors, inspiration, and what makes it special. Include any background story or cultural significance...",
@@ -170,7 +144,6 @@ def render_chef_submission(db):
             help="Provide a detailed description of your recipe"
         )
         
-        # Ingredients
         st.markdown("### Ingredients")
         ingredients = st.text_area(
             "Ingredients List *",
@@ -179,7 +152,6 @@ def render_chef_submission(db):
             help="List all ingredients with exact quantities and preparation notes"
         )
         
-        # Cooking instructions
         st.markdown("### Instructions")
         instructions = st.text_area(
             "Step-by-Step Instructions *",
@@ -188,7 +160,6 @@ def render_chef_submission(db):
             help="Detailed step-by-step cooking instructions with timing"
         )
         
-        # Additional information
         col1, col2 = st.columns(2)
         
         with col1:
@@ -220,7 +191,6 @@ def render_chef_submission(db):
                 help="Suggest possible variations or substitutions"
             )
         
-        # Chef's notes
         notes = st.text_area(
             "Chef's Notes & Tips (Optional)",
             placeholder="Share any professional tips, tricks, or personal insights that make this recipe special...",
@@ -228,11 +198,9 @@ def render_chef_submission(db):
             help="Additional tips and insights from your experience"
         )
         
-        # Submit button
-        submitted = st.form_submit_button("🚀 Submit Recipe for AI Review", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("Submit Recipe for AI Review", type="primary", use_container_width=True)
         
         if submitted:
-            # Validation
             required_fields = {
                 'Recipe Name': dish_name,
                 'Description': description,
@@ -249,22 +217,15 @@ def render_chef_submission(db):
             if missing_fields:
                 st.error(f"Please fill in the following required fields: {', '.join(missing_fields)}")
             else:
-                # Process the submission
                 with st.spinner("Submitting recipe and generating AI rating..."):
                     process_chef_submission(db, chef_name, dish_name, description, ingredients, cook_time, cuisine, diet, category)
 
 def process_chef_submission(db, chef_name, dish_name, description, ingredients, cook_time, cuisine, diet, category):
-    """
-    Processes the chef's recipe submission, including saving the recipe,
-    generating AI rating, awarding XP, and displaying notifications.
-    """
-    # Get current user
     user = st.session_state.get('user', {})
     if not user or not user.get('user_id'):
         st.error("User session error. Please log in again.")
         return
 
-    # Get additional form data from session state or form
     instructions = st.session_state.get('instructions', '')
     notes = st.session_state.get('notes', '')
     difficulty = st.session_state.get('difficulty', 'Intermediate')
@@ -275,7 +236,6 @@ def process_chef_submission(db, chef_name, dish_name, description, ingredients, 
     variations = st.session_state.get('variations', '')
 
     try:
-        # Prepare recipe data for database
         recipe_data = {
             'name': dish_name,
             'description': description,
@@ -299,26 +259,23 @@ def process_chef_submission(db, chef_name, dish_name, description, ingredients, 
             'status': 'submitted',
             'source': 'Chef Submission',
             'notes': notes,
-            'rating': None,  # Will be set after AI evaluation
+            'rating': None,
             'ai_feedback': None,
             'views': 0,
             'likes': 0,
             'featured': False
         }
         
-        # Save to recipes collection
         doc_ref = db.collection('recipes').add(recipe_data)
         recipe_id = doc_ref[1].id
         
         logger.info(f"Recipe '{dish_name}' saved to database with ID: {recipe_id}")
         
-        # Generate AI rating and feedback for the recipe
         try:
             rating, feedback, detailed_scores = generate_ai_recipe_rating_and_feedback(
                 dish_name, description, ingredients, instructions, cook_time, cuisine, category, difficulty
             )
             
-            # Update the recipe with the rating and feedback
             db.collection('recipes').document(recipe_id).update({
                 'rating': rating,
                 'ai_feedback': feedback,
@@ -326,16 +283,13 @@ def process_chef_submission(db, chef_name, dish_name, description, ingredients, 
                 'evaluation_date': firestore.SERVER_TIMESTAMP
             })
             
-            # Display results
-            st.success(f"✅ Recipe '{dish_name}' submitted successfully!")
+            st.success(f"Recipe '{dish_name}' submitted successfully!")
             
-            # Show AI rating with stars
             star_display = "⭐" * rating + "☆" * (5 - rating)
-            st.info(f"🤖 **AI Rating:** {rating}/5 {star_display}")
+            st.info(f"AI Rating: {rating}/5 {star_display}")
             
-            # Show detailed scores
             if detailed_scores:
-                st.markdown("### 📊 Detailed AI Evaluation")
+                st.markdown("### Detailed AI Evaluation")
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("Creativity", f"{detailed_scores.get('creativity', 0)}/5")
@@ -346,29 +300,22 @@ def process_chef_submission(db, chef_name, dish_name, description, ingredients, 
                 with col4:
                     st.metric("Appeal", f"{detailed_scores.get('appeal', 0)}/5")
             
-            # Show AI feedback
             if feedback:
-                st.markdown("### 📝 AI Feedback & Suggestions")
+                st.markdown("### AI Feedback & Suggestions")
                 st.write(feedback)
             
-            # Award XP based on rating
             award_chef_submission_xp(user['user_id'], rating, chef_name, dish_name)
             
         except Exception as e:
             logger.error(f"Error generating AI rating: {str(e)}")
-            st.success(f"✅ Recipe '{dish_name}' submitted successfully!")
+            st.success(f"Recipe '{dish_name}' submitted successfully!")
             st.warning("Recipe saved, but AI rating could not be generated at this time.")
 
     except Exception as e:
         st.error(f"Error saving recipe to database: {str(e)}")
         logger.exception("Error during recipe database save")
 
-# ============================================================================
-# AI RATING AND FEEDBACK FUNCTIONS
-# ============================================================================
-
 def generate_ai_recipe_rating_and_feedback(dish_name, description, ingredients, instructions, cook_time, cuisine, category, difficulty):
-    """Generate AI rating and detailed feedback for the submitted recipe"""
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -440,14 +387,12 @@ Be professional, encouraging, and constructive while providing honest assessment
         response = model.generate_content(prompt)
         response_text = response.text.strip()
         
-        # Parse rating and feedback
         try:
             lines = response_text.split('\n')
             detailed_scores = {}
-            overall_rating = 3  # default
+            overall_rating = 3
             feedback = "No feedback available."
             
-            # Parse individual scores
             for line in lines:
                 line = line.strip()
                 if line.startswith('CREATIVITY:'):
@@ -485,7 +430,6 @@ Be professional, encouraging, and constructive while providing honest assessment
                         if not feedback:
                             feedback = "No detailed feedback provided."
             
-            # Validate scores
             for key in ['creativity', 'ingredients', 'technique', 'appeal']:
                 if key not in detailed_scores:
                     detailed_scores[key] = 3
@@ -502,41 +446,30 @@ Be professional, encouraging, and constructive while providing honest assessment
         logger.error(f"Error generating AI rating and feedback: {str(e)}")
         return 3, "AI rating and feedback unavailable due to technical error.", {'creativity': 3, 'ingredients': 3, 'technique': 3, 'appeal': 3}
 
-# ============================================================================
-# XP AND GAMIFICATION FUNCTIONS
-# ============================================================================
-
 def award_chef_submission_xp(user_id, rating, chef_name, dish_name):
-    """Award XP based on the AI rating received"""
     try:
-        # Calculate XP based on rating: 1 star = 5 XP, 2 stars = 10 XP, etc.
         base_xp_per_star = 5
         rating_xp = rating * base_xp_per_star
         
-        # Bonus XP for high ratings
         bonus_xp = 0
         if rating >= 4:
-            bonus_xp = 10  # Bonus for 4-5 star recipes
+            bonus_xp = 10
         if rating == 5:
-            bonus_xp = 20  # Extra bonus for perfect 5-star recipes
+            bonus_xp = 20
         
         total_xp = rating_xp + bonus_xp
         
-        # Update user stats with XP
         from modules.leftover import update_user_stats
         update_user_stats(user_id=user_id, xp_gained=total_xp, recipes_generated=1)
         
-        # Show XP notification
         from modules.components import show_xp_notification
         show_xp_notification(total_xp, f"chef recipe submission ({rating}⭐)")
         
-        # Show detailed XP breakdown
         if bonus_xp > 0:
-            st.success(f"🎉 **XP Earned:** {total_xp} total ({rating_xp} base + {bonus_xp} bonus for {rating}⭐ rating)")
+            st.success(f"XP Earned: {total_xp} total ({rating_xp} base + {bonus_xp} bonus for {rating}⭐ rating)")
         else:
-            st.success(f"🎉 **XP Earned:** {total_xp} XP for {rating}⭐ rating")
+            st.success(f"XP Earned: {total_xp} XP for {rating}⭐ rating")
         
-        # Show achievement notifications
         check_chef_achievements(user_id, rating)
             
         logger.info(f"Awarded {total_xp} XP to chef {chef_name} (ID: {user_id}) for {rating}-star recipe '{dish_name}'")
@@ -546,58 +479,48 @@ def award_chef_submission_xp(user_id, rating, chef_name, dish_name):
         st.warning("Recipe saved successfully, but there was an issue awarding XP.")
 
 def check_chef_achievements(user_id, rating):
-    """Check and display chef-specific achievements"""
     try:
         db = get_firestore_client()
         if not db:
             return
         
-        # Get user's recipe submissions - simpler query
         user_recipes_ref = db.collection('recipes').where('chef_user_id', '==', user_id)
         all_user_recipes = list(user_recipes_ref.stream())
         
-        # Filter for chef submissions after fetching
         user_recipes = [doc for doc in all_user_recipes if doc.to_dict().get('source') == 'Chef Submission']
         
         total_submissions = len(user_recipes)
         five_star_count = sum(1 for doc in user_recipes if doc.to_dict().get('rating') == 5)
         four_plus_star_count = sum(1 for doc in user_recipes if doc.to_dict().get('rating', 0) >= 4)
         
-        # Check for achievements
         achievements = []
         
         if total_submissions == 1:
-            achievements.append("🍳 First Recipe - Welcome to the kitchen!")
+            achievements.append("First Recipe - Welcome to the kitchen!")
         elif total_submissions == 5:
-            achievements.append("👨‍🍳 Recipe Enthusiast - 5 recipes submitted!")
+            achievements.append("Recipe Enthusiast - 5 recipes submitted!")
         elif total_submissions == 10:
-            achievements.append("🏆 Prolific Chef - 10 recipes and counting!")
+            achievements.append("Prolific Chef - 10 recipes and counting!")
         
         if rating == 5 and five_star_count == 1:
-            achievements.append("⭐ Perfect Recipe - Your first 5-star dish!")
+            achievements.append("Perfect Recipe - Your first 5-star dish!")
         elif five_star_count == 3:
-            achievements.append("🌟 Master Chef - 3 perfect recipes!")
+            achievements.append("Master Chef - 3 perfect recipes!")
         elif five_star_count == 5:
-            achievements.append("💎 Culinary Genius - 5 perfect recipes!")
+            achievements.append("Culinary Genius - 5 perfect recipes!")
         
         if four_plus_star_count >= 5:
-            achievements.append("🎖️ Consistent Excellence - 5+ high-rated recipes!")
+            achievements.append("Consistent Excellence - 5+ high-rated recipes!")
         
-        # Display achievements
         for achievement in achievements:
             st.balloons()
-            st.success(f"🏆 **Achievement Unlocked:** {achievement}")
+            st.success(f"Achievement Unlocked: {achievement}")
         
     except Exception as e:
         logger.error(f"Error checking chef achievements: {str(e)}")
 
-# ============================================================================
-# HISTORY AND ANALYTICS FUNCTIONS
-# ============================================================================
-
 def render_chef_submissions_history(db):
-    """Display chef's submission history"""
-    st.subheader("📊 Your Recipe Submissions")
+    st.subheader("Your Recipe Submissions")
     
     user = st.session_state.get('user', {})
     if not user or not user.get('user_id'):
@@ -605,22 +528,17 @@ def render_chef_submissions_history(db):
         return
     
     try:
-        # Get user's submissions - SIMPLER QUERY WITHOUT ORDERING
-        # This avoids the need for a composite index
         submissions_ref = db.collection('recipes').where('chef_user_id', '==', user['user_id'])
         submissions = list(submissions_ref.stream())
         
-        # Filter for chef submissions after fetching
         submissions = [doc for doc in submissions if doc.to_dict().get('source') == 'Chef Submission']
         
-        # Sort in Python instead of in the query
         submissions.sort(key=lambda x: x.to_dict().get('submitted_at', datetime.min), reverse=True)
         
         if not submissions:
             st.info("You haven't submitted any recipes yet. Use the 'Submit Recipe' tab to get started!")
             return
         
-        # Display statistics
         total_submissions = len(submissions)
         ratings = [doc.to_dict().get('rating', 0) for doc in submissions if doc.to_dict().get('rating')]
         total_rating = sum(ratings)
@@ -628,7 +546,6 @@ def render_chef_submissions_history(db):
         five_star_count = sum(1 for rating in ratings if rating == 5)
         four_plus_count = sum(1 for rating in ratings if rating >= 4)
         
-        # Statistics display
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Total Submissions", total_submissions)
@@ -639,7 +556,6 @@ def render_chef_submissions_history(db):
         with col4:
             st.metric("4+ ⭐ Recipes", four_plus_count)
         
-        # Filter options
         st.markdown("### Filter & Sort")
         col1, col2, col3 = st.columns(3)
         
@@ -650,19 +566,15 @@ def render_chef_submissions_history(db):
         with col3:
             sort_by = st.selectbox("Sort by", ["Newest First", "Oldest First", "Highest Rated", "Lowest Rated"])
         
-        # Apply filters and sorting
         filtered_submissions = submissions.copy()
         
-        # Apply rating filter
         if rating_filter != "All":
             target_rating = int(rating_filter[0])
             filtered_submissions = [doc for doc in filtered_submissions if doc.to_dict().get('rating') == target_rating]
         
-        # Apply category filter
         if category_filter != "All":
             filtered_submissions = [doc for doc in filtered_submissions if doc.to_dict().get('category') == category_filter]
         
-        # Apply sorting
         if sort_by == "Oldest First":
             filtered_submissions.reverse()
         elif sort_by == "Highest Rated":
@@ -670,14 +582,12 @@ def render_chef_submissions_history(db):
         elif sort_by == "Lowest Rated":
             filtered_submissions.sort(key=lambda x: x.to_dict().get('rating', 0))
         
-        # Display submissions
         st.markdown(f"### Your Recipes ({len(filtered_submissions)} shown)")
         
         for doc in filtered_submissions:
             recipe = doc.to_dict()
             
-            # Recipe card - REMOVED NESTED EXPANDERS
-            recipe_title = f"🍽️ {recipe.get('name', 'Unnamed Recipe')} - {recipe.get('rating', 'No rating')}⭐"
+            recipe_title = f"{recipe.get('name', 'Unnamed Recipe')} - {recipe.get('rating', 'No rating')}⭐"
             
             with st.container():
                 st.markdown(f"#### {recipe_title}")
@@ -693,7 +603,6 @@ def render_chef_submissions_history(db):
                     if recipe.get('diet'):
                         st.write(f"**Dietary:** {', '.join(recipe['diet'])}")
                     
-                    # Show AI feedback directly without nested expander
                     if recipe.get('ai_feedback'):
                         st.markdown("**AI Feedback:**")
                         st.write(recipe['ai_feedback'])
@@ -705,7 +614,6 @@ def render_chef_submissions_history(db):
                         st.write(f"**Rating:** {rating}/5")
                         st.write(star_display)
                         
-                        # Show detailed scores if available
                         detailed_scores = recipe.get('ai_detailed_scores', {})
                         if detailed_scores:
                             st.write("**Detailed Scores:**")
@@ -716,7 +624,6 @@ def render_chef_submissions_history(db):
                     if submitted_at:
                         st.write(f"**Submitted:** {submitted_at.strftime('%Y-%m-%d %H:%M')}")
                     
-                    # Action buttons
                     if st.button(f"View Full Recipe", key=f"view_{doc.id}"):
                         show_full_recipe_modal(recipe)
                 
@@ -727,9 +634,8 @@ def render_chef_submissions_history(db):
         st.error("Error loading your submissions. Please try again later.")
 
 def show_full_recipe_modal(recipe):
-    """Display full recipe details in a modal-like format"""
     st.markdown("---")
-    st.markdown(f"# 🍽️ {recipe.get('name', 'Recipe')}")
+    st.markdown(f"# {recipe.get('name', 'Recipe')}")
     
     col1, col2 = st.columns([2, 1])
     
@@ -771,23 +677,18 @@ def show_full_recipe_modal(recipe):
     st.markdown("---")
 
 def render_chef_leaderboard(db):
-    """Display chef leaderboard based on recipe ratings"""
-    st.subheader("🏆 Chef Leaderboard")
+    st.subheader("Chef Leaderboard")
     
     try:
-        # Get all recipes first, then filter for chef submissions
-        # This avoids the need for a composite index
         recipes_ref = db.collection('recipes')
         all_recipes = list(recipes_ref.stream())
         
-        # Filter for chef submissions after fetching
         recipes = [doc for doc in all_recipes if doc.to_dict().get('source') == 'Chef Submission']
         
         if not recipes:
             st.info("No chef submissions found yet.")
             return
         
-        # Calculate chef statistics
         chef_stats = {}
         
         for doc in recipes:
@@ -814,24 +715,20 @@ def render_chef_leaderboard(db):
             if rating >= 4:
                 chef_stats[chef_name]['four_plus_count'] += 1
             
-            # Track recent recipes
             chef_stats[chef_name]['recent_recipes'].append({
                 'name': recipe.get('name', 'Unknown'),
                 'rating': rating,
                 'date': recipe.get('submitted_at')
             })
         
-        # Calculate averages and sort recent recipes
         for chef in chef_stats:
             if chef_stats[chef]['total_recipes'] > 0:
                 chef_stats[chef]['avg_rating'] = chef_stats[chef]['total_rating'] / chef_stats[chef]['total_recipes']
             
-            # Sort recent recipes by date (most recent first)
             chef_stats[chef]['recent_recipes'].sort(key=lambda x: x['date'] or datetime.min, reverse=True)
-            chef_stats[chef]['recent_recipes'] = chef_stats[chef]['recent_recipes'][:3]  # Keep only 3 most recent
+            chef_stats[chef]['recent_recipes'] = chef_stats[chef]['recent_recipes'][:3]
         
-        # Create different leaderboard views
-        tab1, tab2, tab3 = st.tabs(["🏆 Top Rated", "📊 Most Active", "⭐ Perfect Scores"])
+        tab1, tab2, tab3 = st.tabs(["Top Rated", "Most Active", "Perfect Scores"])
         
         with tab1:
             st.markdown("### Top Chefs by Average Rating")
@@ -868,9 +765,8 @@ def render_chef_leaderboard(db):
         st.error("Error loading leaderboard. Please try again later.")
 
 def display_leaderboard(sorted_chefs, metric_type):
-    """Display leaderboard with specified metric"""
     for i, (chef_name, stats) in enumerate(sorted_chefs):
-        if stats['total_recipes'] == 0:  # Skip chefs with no recipes
+        if stats['total_recipes'] == 0:
             continue
             
         rank_emoji = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
@@ -883,9 +779,8 @@ def display_leaderboard(sorted_chefs, metric_type):
             
             with col2:
                 st.write(f"**{chef_name}**")
-                # Show recent recipes
                 if stats['recent_recipes']:
-                    recent = stats['recent_recipes'][0]  # Most recent
+                    recent = stats['recent_recipes'][0]
                     st.caption(f"Latest: {recent['name']} ({recent['rating']}⭐)")
             
             with col3:
@@ -897,12 +792,11 @@ def display_leaderboard(sorted_chefs, metric_type):
                     st.metric("5⭐ Recipes", stats['five_star_count'])
             
             with col4:
-                st.write(f"📊 {stats['total_recipes']} recipes")
-                st.write(f"⭐ {stats['four_plus_count']} high-rated")
+                st.write(f"{stats['total_recipes']} recipes")
+                st.write(f"{stats['four_plus_count']} high-rated")
 
 def render_chef_analytics(db):
-    """Display chef analytics and insights"""
-    st.subheader("📈 Chef Analytics")
+    st.subheader("Chef Analytics")
     
     user = st.session_state.get('user', {})
     if not user or not user.get('user_id'):
@@ -910,18 +804,15 @@ def render_chef_analytics(db):
         return
     
     try:
-        # Get user's submissions - simpler query
         submissions_ref = db.collection('recipes').where('chef_user_id', '==', user['user_id'])
         all_submissions = list(submissions_ref.stream())
         
-        # Filter for chef submissions after fetching
         submissions = [doc for doc in all_submissions if doc.to_dict().get('source') == 'Chef Submission']
         
         if not submissions:
             st.info("Submit some recipes to see your analytics!")
             return
         
-        # Prepare data for analysis
         recipe_data = []
         for doc in submissions:
             recipe = doc.to_dict()
@@ -940,7 +831,6 @@ def render_chef_analytics(db):
         
         df = pd.DataFrame(recipe_data)
         
-        # Overall performance metrics
         st.markdown("### Performance Overview")
         col1, col2, col3, col4 = st.columns(4)
         
@@ -960,7 +850,6 @@ def render_chef_analytics(db):
             improvement_trend = "📈" if len(df) > 1 and df.tail(3)['rating'].mean() > df.head(3)['rating'].mean() else "📊"
             st.metric("Trend", improvement_trend)
         
-        # Charts and visualizations
         if not df.empty:
             col1, col2 = st.columns(2)
             
@@ -980,7 +869,6 @@ def render_chef_analytics(db):
                 else:
                     st.info("Not enough data for category analysis")
         
-        # Detailed scores radar chart (if available)
         if any(df[['creativity', 'ingredients', 'technique', 'appeal']].sum()):
             st.markdown("### Skill Analysis")
             col1, col2 = st.columns(2)
@@ -1001,13 +889,12 @@ def render_chef_analytics(db):
                 lowest_skill = min(avg_scores, key=avg_scores.get)
                 highest_skill = max(avg_scores, key=avg_scores.get)
                 
-                st.write(f"🎯 **Focus on:** {lowest_skill} (your lowest score)")
-                st.write(f"⭐ **Strength:** {highest_skill} (your highest score)")
+                st.write(f"Focus on: {lowest_skill} (your lowest score)")
+                st.write(f"Strength: {highest_skill} (your highest score)")
                 
                 if avg_scores[lowest_skill] < 3:
-                    st.write(f"💡 **Tip:** Consider taking cooking classes or watching tutorials focused on {lowest_skill.lower()}")
+                    st.write(f"Tip: Consider taking cooking classes or watching tutorials focused on {lowest_skill.lower()}")
         
-        # Recent performance trend
         if len(df) >= 5:
             st.markdown("### Recent Performance Trend")
             df_sorted = df.sort_values('submitted_at') if 'submitted_at' in df.columns else df
@@ -1015,28 +902,22 @@ def render_chef_analytics(db):
             
             st.line_chart(pd.DataFrame({'Rating': recent_ratings}))
             
-            # Performance insights
             if len(recent_ratings) >= 5:
                 recent_avg = sum(recent_ratings[-5:]) / 5
                 earlier_avg = sum(recent_ratings[-10:-5]) / 5 if len(recent_ratings) >= 10 else recent_avg
                 
                 if recent_avg > earlier_avg:
-                    st.success("📈 Your recent recipes are improving! Keep up the great work!")
+                    st.success("Your recent recipes are improving! Keep up the great work!")
                 elif recent_avg < earlier_avg:
-                    st.info("📊 Consider reviewing your recent recipes and applying lessons from your higher-rated dishes.")
+                    st.info("Consider reviewing your recent recipes and applying lessons from your higher-rated dishes.")
                 else:
-                    st.info("📊 Your performance is consistent. Try experimenting with new techniques to reach the next level!")
+                    st.info("Your performance is consistent. Try experimenting with new techniques to reach the next level!")
         
     except Exception as e:
         logger.error(f"Error loading chef analytics: {str(e)}")
         st.error("Error loading analytics. Please try again later.")
 
-# ============================================================================
-# UTILITY FUNCTIONS
-# ============================================================================
-
 def get_chef_statistics(db, chef_user_id):
-    """Get comprehensive statistics for a specific chef"""
     try:
         submissions_ref = db.collection('recipes').where('chef_user_id', '==', chef_user_id).where('source', '==', 'Chef Submission')
         submissions = list(submissions_ref.stream())
@@ -1065,7 +946,6 @@ def get_chef_statistics(db, chef_user_id):
         return None
 
 def validate_recipe_data(recipe_data):
-    """Validate recipe data before submission"""
     required_fields = ['name', 'description', 'ingredients', 'instructions', 'chef_name']
     missing_fields = []
     
@@ -1075,10 +955,5 @@ def validate_recipe_data(recipe_data):
     
     return len(missing_fields) == 0, missing_fields
 
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
-
 if __name__ == "__main__":
-    # This module is meant to be imported, not run directly
     logger.info("Chef Components module loaded successfully")
