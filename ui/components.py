@@ -343,6 +343,10 @@ def render_auth_ui():
         st.sidebar.write(f"**Role:** {user['role'].title()}")
         st.sidebar.write(f"**Username:** @{user['username']}")
         
+        # Display user stats in sidebar - FIXED VERSION
+        if user and user.get('user_id'):
+            display_user_stats_sidebar(user['user_id'])
+        
         if st.sidebar.button("Logout", use_container_width=True):
             st.session_state.is_authenticated = False
             st.session_state.user = None
@@ -391,12 +395,46 @@ def is_user_role(required_role):
         return False
     return user.get('role') == required_role
 
+# FIXED: Simple XP calculation functions (fallback when xp_utils is not available)
+def simple_calculate_level_from_xp(total_xp):
+    """Simple level calculation - fallback function"""
+    if total_xp < 100:
+        return 1
+    elif total_xp < 300:
+        return 2
+    elif total_xp < 600:
+        return 3
+    elif total_xp < 1000:
+        return 4
+    elif total_xp < 1500:
+        return 5
+    else:
+        return min(10, 5 + (total_xp - 1500) // 500)
+
+def simple_get_xp_progress(total_xp, current_level):
+    """Simple XP progress calculation - fallback function"""
+    level_thresholds = [0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500, 5500]
+    
+    if current_level >= len(level_thresholds):
+        return total_xp, 0, 100
+    
+    current_level_start = level_thresholds[current_level - 1] if current_level > 1 else 0
+    next_level_start = level_thresholds[current_level] if current_level < len(level_thresholds) else level_thresholds[-1] + 1000
+    
+    current_level_xp = total_xp - current_level_start
+    xp_needed_for_next = max(0, next_level_start - total_xp)
+    
+    level_xp_requirement = next_level_start - current_level_start
+    progress_percentage = (current_level_xp / level_xp_requirement) * 100 if level_xp_requirement > 0 else 100
+    progress_percentage = max(0, min(100, progress_percentage))
+    
+    return current_level_xp, xp_needed_for_next, progress_percentage
+
 # Gamification Components
 def display_user_stats_sidebar(user_id):
-    """Display user gamification stats in sidebar as expandable section with progressive XP system"""
+    """Display user gamification stats in sidebar as expandable section with progressive XP system - FIXED VERSION"""
     try:
         from modules.leftover import get_user_stats
-        from modules.xp_utils import get_xp_progress, calculate_level_from_xp
         
         # Get user stats from main Firebase (same as authentication)
         user_stats = get_user_stats(user_id)
@@ -408,11 +446,24 @@ def display_user_stats_sidebar(user_id):
             # Extract stats with safe defaults
             total_xp = max(0, user_stats.get('total_xp', 0))
             
-            # Calculate level using progressive system
-            current_level = calculate_level_from_xp(total_xp)
-            
-            # Get progress information
-            current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
+            # Try to import XP utils, fall back to simple calculation if not available
+            try:
+                from modules.xp_utils import get_xp_progress, calculate_level_from_xp
+                
+                # Calculate level using progressive system
+                current_level = calculate_level_from_xp(total_xp)
+                
+                # Get progress information
+                current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
+                
+                logger.info(f"Using XP utils for user {user_id}")
+                
+            except Exception as xp_error:
+                logger.warning(f"XP utils not available, using simple calculation: {str(xp_error)}")
+                
+                # Use simple fallback calculations
+                current_level = simple_calculate_level_from_xp(total_xp)
+                current_level_xp, xp_needed_for_next, progress_percentage = simple_get_xp_progress(total_xp, current_level)
             
             # Display metrics
             col1, col2 = st.columns(2)
@@ -447,7 +498,7 @@ def display_user_stats_sidebar(user_id):
                 st.session_state.selected_feature = "Gamification Hub"
                 st.rerun()
         
-        logger.info(f"Displayed progressive stats for user {user_id}: Level {current_level}, XP {total_xp}, Progress {progress_percentage:.1f}%")
+        logger.info(f"Displayed stats for user {user_id}: Level {current_level}, XP {total_xp}")
         
     except Exception as e:
         logger.error(f"Error displaying user stats: {str(e)}")
@@ -458,22 +509,37 @@ def show_xp_notification(xp_amount, activity_type):
     st.success(f"+{xp_amount} XP earned for {activity_type}!")
 
 def display_gamification_dashboard(user_id):
-    """Display comprehensive gamification dashboard with progressive XP system"""
+    """Display comprehensive gamification dashboard with progressive XP system - FIXED VERSION"""
     st.title("Gamification Hub")
     
     try:
         from modules.leftover import get_user_stats, get_leaderboard
-        from modules.xp_utils import get_xp_progress, calculate_level_from_xp, get_xp_breakdown_for_levels
         
         # Get user stats from main Firebase
         user_stats = get_user_stats(user_id)
         total_xp = user_stats.get('total_xp', 0)
         
-        # Calculate level using progressive system
-        current_level = calculate_level_from_xp(total_xp)
-        
-        # Get progress information
-        current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
+        # Try to import XP utils, fall back to simple calculation if not available
+        try:
+            from modules.xp_utils import get_xp_progress, calculate_level_from_xp, get_xp_breakdown_for_levels
+            
+            # Calculate level using progressive system
+            current_level = calculate_level_from_xp(total_xp)
+            
+            # Get progress information
+            current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
+            
+            use_advanced_features = True
+            logger.info(f"Using advanced XP utils for gamification dashboard")
+            
+        except Exception as xp_error:
+            logger.warning(f"XP utils not available, using simple calculation: {str(xp_error)}")
+            
+            # Use simple fallback calculations
+            current_level = simple_calculate_level_from_xp(total_xp)
+            current_level_xp, xp_needed_for_next, progress_percentage = simple_get_xp_progress(total_xp, current_level)
+            
+            use_advanced_features = False
         
         # Overview metrics
         st.subheader("Your Progress")
@@ -506,29 +572,38 @@ def display_gamification_dashboard(user_id):
         with col2:
             st.info(f"**Next Level:** {current_level + 1}\n**XP needed:** {xp_needed_for_next}")
         
-        # XP Requirements Table
-        st.subheader("Level Requirements")
-        
-        # Show XP breakdown for next few levels
-        max_display_level = min(current_level + 5, 15)
-        xp_breakdown = get_xp_breakdown_for_levels(max_display_level)
-        
-        # Create DataFrame for display
-        breakdown_data = []
-        for level, xp_for_level, total_xp_req in xp_breakdown:
-            status = "✅ Completed" if level <= current_level else "🔒 Locked"
-            if level == current_level + 1:
-                status = "🎯 Next Goal"
+        # XP Requirements Table (only if advanced features available)
+        if use_advanced_features:
+            st.subheader("Level Requirements")
             
-            breakdown_data.append({
-                "Level": level,
-                "XP for Level": f"{xp_for_level:,}",
-                "Total XP Required": f"{total_xp_req:,}",
-                "Status": status
-            })
-        
-        df = pd.DataFrame(breakdown_data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+            try:
+                # Show XP breakdown for next few levels
+                max_display_level = min(current_level + 5, 15)
+                xp_breakdown = get_xp_breakdown_for_levels(max_display_level)
+                
+                # Create DataFrame for display
+                breakdown_data = []
+                for level, xp_for_level, total_xp_req in xp_breakdown:
+                    status = "✅ Completed" if level <= current_level else "🔒 Locked"
+                    if level == current_level + 1:
+                        status = "🎯 Next Goal"
+                    
+                    breakdown_data.append({
+                        "Level": level,
+                        "XP for Level": f"{xp_for_level:,}",
+                        "Total XP Required": f"{total_xp_req:,}",
+                        "Status": status
+                    })
+                
+                df = pd.DataFrame(breakdown_data)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+                
+            except Exception as e:
+                logger.error(f"Error displaying XP breakdown: {str(e)}")
+                st.info("XP breakdown temporarily unavailable")
+        else:
+            st.subheader("Simple Level System")
+            st.info("Using simplified level calculation. Advanced features temporarily unavailable.")
         
         # Achievements section
         st.subheader("Achievements")
