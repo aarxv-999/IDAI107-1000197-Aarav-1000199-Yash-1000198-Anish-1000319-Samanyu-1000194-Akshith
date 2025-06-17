@@ -8,8 +8,8 @@ from ui.components import (
     render_auth_ui, initialize_session_state, auth_required, get_current_user, is_user_role
 )
 from ui.components import (  # Import gamification UI functions
-    render_cooking_quiz, display_gamification_dashboard,
-    award_recipe_generation_xp, display_daily_challenge, show_xp_notification
+    render_cooking_quiz, display_daily_challenge,
+    award_recipe_generation_xp, show_xp_notification
 )
 from modules.leftover import suggest_recipes  # Import logic functions
 from modules.leftover import get_user_stats, award_recipe_xp  # Import gamification logic
@@ -56,19 +56,17 @@ def check_feature_access(feature_name):
     
     user_role = user['role']
     
-    # Define feature access by role
+    # Define feature access by role - REMOVED GAMIFICATION HUB
     role_access = {
         'user': [
             'Visual Menu Search',
-            'Event Planning ChatBot',
-            'Gamification Hub'
+            'Event Planning ChatBot'
         ],
         'staff': [
             'Leftover Management',
             'Ingredients Management', 
             'Visual Menu Search',
             'Promotion Generator',
-            'Gamification Hub',
             'Event Planning ChatBot'
         ],
         'chef': [
@@ -76,7 +74,6 @@ def check_feature_access(feature_name):
             'Chef Recipe Suggestions',
             'Ingredients Management',
             'Visual Menu Search',
-            'Gamification Hub',
             'Event Planning ChatBot'
         ],
         'admin': [
@@ -85,7 +82,6 @@ def check_feature_access(feature_name):
             'Promotion Generator',
             'Chef Recipe Suggestions',
             'Visual Menu Search',
-            'Gamification Hub',
             'Event Planning ChatBot'
         ]
     }
@@ -100,7 +96,6 @@ def get_inaccessible_features_message(user_role):
         'Promotion Generator': 'Staff and Admin only',
         'Chef Recipe Suggestions': 'Chef and Admin only',
         'Visual Menu Search': 'Available to all users',
-        'Gamification Hub': 'Available to all users',
         'Event Planning ChatBot': 'Available to all users'
     }
     
@@ -333,21 +328,6 @@ def ingredients_management():
         st.error("Ingredients management feature is not available. Please check the module installation.")
 
 @auth_required
-def gamification_hub():
-    """Gamification hub feature"""
-    user = get_current_user()
-    if user and user.get('user_id'):
-        try:
-            display_gamification_dashboard(user['user_id'])
-        except Exception as e:
-            logging.error(f"Error displaying gamification dashboard: {str(e)}")
-            st.error("Unable to load gamification dashboard")
-            st.markdown("### 🎮 Gamification Hub")
-            st.markdown("Your gamification stats are temporarily unavailable.")
-    else:
-        st.warning("Please log in to view your gamification stats")
-
-@auth_required
 def event_planning():
     """Event Planning ChatBot feature"""
     # Call the integrated event planner function
@@ -393,7 +373,7 @@ def main():
     # Check Event Firebase configuration
     check_event_firebase_config()
 
-    # Render authentication UI in sidebar - THIS WILL NOW CALL THE FIXED display_user_stats_sidebar
+    # Render authentication UI in sidebar - THIS WILL NOW SHOW ALL GAMIFICATION IN SIDEBAR
     auth_status = render_auth_ui()
 
     # Main content
@@ -403,22 +383,23 @@ def main():
         Welcome to the AI-powered smart restaurant system! 
         
         **The current features are:**
-        1. Leftover management: Generates recipes from the ingredients about to expire soon to minimize waste
-        2. Menu generator: Menu generator with lots of customization options, to generate the menu for a whole week
-        3. Event Planning: An AI powered chatbot assisting users plan their events and staff members execute them. 
-        4. AI driven promotions generator: Generate high quality marketing campaigns with the help of AI
-        5. Visual menu search & Personalized recipe recommender
-        6. Full ingredient management & direct connection to Firestore 
+        1. **Leftover Management:** Generates recipes from ingredients about to expire soon to minimize waste
+        2. **Ingredients Management:** Complete CRUD operations for ingredient inventory with AI suggestions
+        3. **Event Planning:** An AI powered chatbot assisting users plan their events and staff members execute them
+        4. **AI Driven Promotions:** Generate high quality marketing campaigns with the help of AI
+        5. **Visual Menu Search:** Personalized recipe recommender with AI-powered dish detection
+        6. **Chef Recipe Suggestions:** AI-powered menu generation with chef submissions and analytics
+        7. **Gamification System:** Earn XP, level up, and compete with other users (available in sidebar when logged in)
+        
         Please log in or register to access all features.
         ''')
         return
 
-    # List of all available features
+    # List of all available features - REMOVED GAMIFICATION HUB
     all_features = [
         "Dashboard",
         "Ingredients Management",
         "Leftover Management",
-        "Gamification Hub", 
         "Event Planning ChatBot",
         "Promotion Generator", 
         "Chef Recipe Suggestions",
@@ -478,15 +459,13 @@ def main():
             st.warning("Please log in to take quizzes")
         return
 
-    # Display the selected feature
+    # Display the selected feature - REMOVED GAMIFICATION HUB
     if selected_feature == "Dashboard":
         dashboard()
     elif selected_feature == "Ingredients Management":
         ingredients_management()
     elif selected_feature == "Leftover Management":
         leftover_management()
-    elif selected_feature == "Gamification Hub":
-        gamification_hub()
     elif selected_feature == "Event Planning ChatBot":
         event_planning()
     elif selected_feature == "Promotion Generator":
