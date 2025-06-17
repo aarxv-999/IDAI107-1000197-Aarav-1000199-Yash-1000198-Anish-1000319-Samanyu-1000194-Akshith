@@ -357,9 +357,9 @@ def render_auth_ui():
             "Ingredients Management",
             "Leftover Management", 
             "Chef Recipe Suggestions",
-            "Visual Menu Display",
-            "Marketing Campaign Creator",
-            "Event Planner",
+            "Visual Menu Search",
+            "Promotion Generator",
+            "Event Planning ChatBot",
         ]
 
         selected_feature = st.sidebar.selectbox(
