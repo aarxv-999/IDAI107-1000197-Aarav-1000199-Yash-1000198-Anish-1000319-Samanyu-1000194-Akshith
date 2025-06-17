@@ -360,7 +360,6 @@ def render_auth_ui():
             "Visual Menu Display",
             "Marketing Campaign Creator",
             "Event Planner",
-            "Analytics Dashboard"
         ]
 
         selected_feature = st.sidebar.selectbox(
