@@ -49,18 +49,16 @@ logging.basicConfig(level=logging.INFO,
 
 # Updated feature access control based on new requirements
 def check_feature_access(feature_name):
-    """Check if the current user has access to a specific feature"""
+    #this is the feature that will check for the roles that the users have. 
     user = get_current_user()
     if not user:
         return False
-    
     user_role = user['role']
-    
-    # Define feature access by role
     role_access = {
         'user': [
             'Visual Menu Search',
             'Event Planning ChatBot',
+            'Promotion Generator',  # Added this line
             'Gamification Hub'
         ],
         'staff': [
@@ -89,7 +87,6 @@ def check_feature_access(feature_name):
             'Event Planning ChatBot'
         ]
     }
-    
     return feature_name in role_access.get(user_role, [])
     
 def get_inaccessible_features_message(user_role):
