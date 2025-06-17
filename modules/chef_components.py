@@ -94,7 +94,6 @@ def render_chef_submission(db):
             cook_time = st.selectbox(
                 "Cooking Time *",
                 ["Under 15 minutes", "15-30 minutes", "30-45 minutes", "45 minutes - 1 hour", "1-2 hours", "2+ hours"],
-                help="Estimated total cooking
                 help="Estimated total cooking time"
             )
             
