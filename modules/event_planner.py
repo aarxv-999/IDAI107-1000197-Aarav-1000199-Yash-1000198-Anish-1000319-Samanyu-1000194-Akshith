@@ -17,7 +17,7 @@ from modules.leftover import (
     get_user_stats, calculate_level, get_firestore_db,
     generate_dynamic_quiz_questions, calculate_quiz_score, update_user_stats
 )
-from modules.firebase_data import (
+from firebase_data import (
     fetch_recipe_archive, fetch_menu_items, get_popular_recipes,
     format_recipe_for_display, format_menu_item_for_display
 )
