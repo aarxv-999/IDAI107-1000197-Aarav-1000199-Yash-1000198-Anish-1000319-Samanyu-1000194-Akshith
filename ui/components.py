@@ -71,7 +71,7 @@ def validate_password(password):
 
 def validate_staff_code(code):
     """Validate staff access code"""
-    return code == "staffcode123" #<- this is  temporary code, but this can be changed later. in the future there can also be different codes for different roles
+    return code == "staffcode123"
 
 def authenticate_user(login_identifier, password):
     """Authenticate user against MAIN Firebase using email or username"""
@@ -83,7 +83,7 @@ def authenticate_user(login_identifier, password):
         users_ref = db.collection('users')        
         user_doc = None        
         if validate_email(login_identifier):
-            query = users_ref.where('email', '==', login_identifier).where('password_hash', '==', hashed_password) # this is to find if the user registered with email or just username
+            query = users_ref.where('email', '==', login_identifier).where('password_hash', '==', hashed_password)
         else:
             query = users_ref.where('username', '==', login_identifier).where('password_hash', '==', hashed_password)
         docs = list(query.stream())
@@ -281,7 +281,7 @@ def render_signup_form():
 
     is_staff = st.checkbox("Restaurant staff?")
 
-    selected_role = "user"  # user is the default role given to all members, is assumed to be a customer. 
+    selected_role = "user"
     staff_code_valid = False
 
     if is_staff:
@@ -440,7 +440,6 @@ def render_auth_ui():
         
         return False
 
-###################################################################################
 def auth_required(func):
     def wrapper(*args, **kwargs):
         if not st.session_state.is_authenticated:
@@ -567,6 +566,7 @@ def display_gamification_dashboard(user_id):
             current_level = 1
             user_stats = {}
 
+        current_level = calculate_level_from_xp(total_xp)
         progress_info = get_xp_progress(total_xp, current_level)
         current_level_xp = progress_info['current_level_xp']
         xp_needed_for_next = progress_info['xp_needed_for_next']
