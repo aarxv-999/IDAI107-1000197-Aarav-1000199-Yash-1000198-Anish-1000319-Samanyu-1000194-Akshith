@@ -357,7 +357,6 @@ def render_auth_ui():
             "Ingredients Management",
             "Leftover Management", 
             "Chef Recipe Suggestions",
-            "Cooking Quiz",
             "Visual Menu Display",
             "Marketing Campaign Creator",
             "Event Planner",
