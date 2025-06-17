@@ -486,7 +486,10 @@ def display_user_stats_sidebar(user_id):
         with st.sidebar.expander("Your Stats & Progress", expanded=False):
             try:
                 current_level = calculate_level_from_xp(total_xp)
-                current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
+                progress_info = get_xp_progress(total_xp, current_level)
+                current_level_xp = progress_info['current_level_xp']
+                xp_needed_for_next = progress_info['xp_needed_for_next']
+                progress_percentage = progress_info['progress_percentage']
             except (ImportError, Exception) as e:
                 logger.warning(f"XP utils not available, using simple calculation: {str(e)}")
                 current_level = max(1, int(total_xp / 100) + 1)
@@ -564,7 +567,10 @@ def display_gamification_dashboard(user_id):
             current_level = 1
             user_stats = {}
 
-        current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
+        progress_info = get_xp_progress(total_xp, current_level)
+        current_level_xp = progress_info['current_level_xp']
+        xp_needed_for_next = progress_info['xp_needed_for_next']
+        progress_percentage = progress_info['progress_percentage']
         
         st.subheader("Your Progress")
         col1, col2, col3, col4 = st.columns(4)
@@ -587,7 +593,6 @@ def display_gamification_dashboard(user_id):
         st.subheader("Level Requirements")        
         max_display_level = min(current_level + 5, 15)
         xp_breakdown = get_xp_breakdown_for_levels(max_display_level)
-
 
         breakdown_data = []
 
