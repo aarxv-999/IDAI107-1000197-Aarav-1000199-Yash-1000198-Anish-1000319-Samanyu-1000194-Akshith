@@ -1,14 +1,8 @@
-"""
-Firebase initialization module.
-Sets up the Firebase Admin SDK connection for the application.
-"""
-
 import firebase_admin
 from firebase_admin import credentials
 import streamlit as st
 
 def init_firebase():
-    """Initialize Firebase Admin SDK with credentials from Streamlit secrets."""
     if not firebase_admin._apps:
         try:
             cred = credentials.Certificate({
