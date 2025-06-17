@@ -1,7 +1,3 @@
-"""
-Enhanced Event Planning Chatbot with Firebase integration and XP rewards
-"""
-
 import streamlit as st
 import google.generativeai as genai
 import os
@@ -30,7 +26,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger('event_planner')
 
 def init_event_firebase():
-    """Initialize the Firebase Admin SDK for event data"""
     if not firebase_admin._apps or 'event_app' not in [app.name for app in firebase_admin._apps.values()]:
         try:
             cred = credentials.Certificate({
@@ -55,13 +50,11 @@ def init_event_firebase():
     return True
 
 def get_event_db():
-    """Get Firestore client for event data"""
     if init_event_firebase():
         return firestore.client(app=firebase_admin.get_app(name='event_app'))
     return None
 
 def configure_ai_model():
-    """Configure and return the Gemini AI model"""
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -80,20 +73,13 @@ def configure_ai_model():
         return None
 
 def analyze_prompt_quality(prompt: str) -> Dict[str, Any]:
-    """
-    Analyze the quality and detail level of the user's event planning prompt.
-    Returns a dictionary with quality metrics and XP calculation.
-    """
     quality_score = 0
     details_found = []
     
-    # Convert to lowercase for analysis
     prompt_lower = prompt.lower()
     
-    # Base points for submitting any prompt
     base_xp = 8
     
-    # Length analysis (more detailed prompts get more points)
     word_count = len(prompt.split())
     if word_count >= 50:
         quality_score += 15
@@ -105,7 +91,6 @@ def analyze_prompt_quality(prompt: str) -> Dict[str, Any]:
         quality_score += 5
         details_found.append("Good description length")
     
-    # Specific details mentioned
     detail_keywords = {
         'guest_count': ['guests', 'people', 'persons', 'attendees', 'participants'],
         'event_type': ['birthday', 'wedding', 'corporate', 'anniversary', 'graduation', 'party', 'celebration'],
@@ -122,19 +107,16 @@ def analyze_prompt_quality(prompt: str) -> Dict[str, Any]:
             quality_score += 3
             details_found.append(f"Specified {category.replace('_', ' ')}")
     
-    # Bonus for specific numbers (guest count, budget, etc.)
     numbers_found = re.findall(r'\d+', prompt)
     if numbers_found:
         quality_score += 5
         details_found.append("Included specific numbers")
     
-    # Bonus for questions or considerations
     question_words = ['how', 'what', 'when', 'where', 'should', 'would', 'could', 'can']
     if any(word in prompt_lower for word in question_words):
         quality_score += 3
         details_found.append("Asked thoughtful questions")
     
-    # Bonus for mentioning multiple aspects
     aspects = ['menu', 'decoration', 'seating', 'entertainment', 'music', 'photography']
     mentioned_aspects = [aspect for aspect in aspects if aspect in prompt_lower]
     if len(mentioned_aspects) >= 3:
@@ -144,13 +126,10 @@ def analyze_prompt_quality(prompt: str) -> Dict[str, Any]:
         quality_score += 5
         details_found.append("Considered multiple aspects")
     
-    # Calculate total XP
     total_xp = base_xp + quality_score
     
-    # Cap the maximum XP to prevent exploitation
     total_xp = min(total_xp, 50)
     
-    # Determine quality level
     if total_xp >= 35:
         quality_level = "Exceptional"
     elif total_xp >= 25:
@@ -172,20 +151,15 @@ def analyze_prompt_quality(prompt: str) -> Dict[str, Any]:
     }
 
 def award_event_planning_xp(user_id: str, prompt: str, event_plan_success: bool = True):
-    """Award XP for event planning based on prompt quality"""
     try:
-        # Analyze prompt quality
         quality_analysis = analyze_prompt_quality(prompt)
         
-        # Reduce XP if event plan generation failed
         if not event_plan_success:
             quality_analysis['total_xp'] = max(5, quality_analysis['total_xp'] // 2)
             quality_analysis['quality_level'] = "Partial (generation failed)"
         
-        # Award XP using the existing system
         update_user_stats(user_id, quality_analysis['total_xp'])
         
-        # Show detailed XP notification
         show_event_xp_notification(quality_analysis)
         
         logger.info(f"Awarded {quality_analysis['total_xp']} XP to user {user_id} for {quality_analysis['quality_level']} event planning prompt")
@@ -197,13 +171,11 @@ def award_event_planning_xp(user_id: str, prompt: str, event_plan_success: bool 
         return None
 
 def show_event_xp_notification(quality_analysis: Dict[str, Any]):
-    """Show detailed XP notification for event planning"""
     total_xp = quality_analysis['total_xp']
     quality_level = quality_analysis['quality_level']
     details_found = quality_analysis['details_found']
     
-    # Create expandable notification
-    with st.expander(f"🎉 +{total_xp} XP Earned! ({quality_level} Event Planning)", expanded=True):
+    with st.expander(f"+{total_xp} XP Earned! ({quality_level} Event Planning)", expanded=True):
         col1, col2 = st.columns(2)
         
         with col1:
@@ -219,10 +191,9 @@ def show_event_xp_notification(quality_analysis: Dict[str, Any]):
             for detail in details_found:
                 st.write(f"✅ {detail}")
         
-        # XP improvement tips
         if quality_analysis['quality_level'] in ['Basic', 'Fair']:
             st.info("""
-            💡 **Tips for more XP:**
+            Tips for more XP:
             - Include specific guest count
             - Mention event type and theme
             - Add dietary preferences or special requirements
@@ -231,70 +202,58 @@ def show_event_xp_notification(quality_analysis: Dict[str, Any]):
             """)
 
 def clean_text_for_pdf(text: str) -> str:
-    """Clean text to remove Unicode characters that can't be encoded in latin-1"""
     if not text:
         return ""
     
-    # Replace common Unicode characters with ASCII equivalents
     replacements = {
-        '\u2022': '-',  # bullet point
-        '\u2013': '-',  # en dash
-        '\u2014': '--', # em dash
-        '\u2018': "'",  # left single quotation mark
-        '\u2019': "'",  # right single quotation mark
-        '\u201c': '"',  # left double quotation mark
-        '\u201d': '"',  # right double quotation mark
-        '\u2026': '...', # horizontal ellipsis
-        '\u00a0': ' ',  # non-breaking space
-        '\u00b0': ' degrees', # degree symbol
-        '\u20b9': 'Rs. ', # Indian Rupee symbol
-        '\u00ae': '(R)', # registered trademark
-        '\u00a9': '(C)', # copyright
-        '\u2122': '(TM)', # trademark
+        '\u2022': '-',
+        '\u2013': '-',
+        '\u2014': '--',
+        '\u2018': "'",
+        '\u2019': "'",
+        '\u201c': '"',
+        '\u201d': '"',
+        '\u2026': '...',
+        '\u00a0': ' ',
+        '\u00b0': ' degrees',
+        '\u20b9': 'Rs. ',
+        '\u00ae': '(R)',
+        '\u00a9': '(C)',
+        '\u2122': '(TM)',
     }
     
-    # Apply replacements
     for unicode_char, replacement in replacements.items():
         text = text.replace(unicode_char, replacement)
     
-    # Remove any remaining non-ASCII characters
     try:
-        # Try to encode as latin-1, replace problematic characters
         text = text.encode('latin-1', errors='replace').decode('latin-1')
     except Exception:
-        # If that fails, keep only ASCII characters
         text = ''.join(char for char in text if ord(char) < 128)
     
     return text
 
 def get_firebase_menu_suggestions(guest_count: int, event_type: str = "") -> List[str]:
-    """Get menu suggestions from Firebase recipe archive and menu collections"""
     try:
-        # Get recipes from archive
         recipes = fetch_recipe_archive()
         menu_items = fetch_menu_items()
         
         suggestions = []
         
-        # Add popular recipes
         if recipes:
-            popular_recipes = recipes[:5]  # Get first 5 recipes
+            popular_recipes = recipes[:5]
             for recipe in popular_recipes:
                 formatted = format_recipe_for_display(recipe)
                 suggestions.append(f"Recipe: {formatted}")
         
-        # Add menu items
         if menu_items:
-            popular_menu = menu_items[:5]  # Get first 5 menu items
+            popular_menu = menu_items[:5]
             for item in popular_menu:
                 formatted = format_menu_item_for_display(item)
                 suggestions.append(f"Menu: {formatted}")
         
-        # If we have suggestions, return them
         if suggestions:
-            return suggestions[:8]  # Return up to 8 suggestions
+            return suggestions[:8]
         
-        # Fallback suggestions if Firebase is empty
         return [
             "Vegetable Biryani with Raita",
             "Paneer Butter Masala with Naan",
@@ -306,7 +265,6 @@ def get_firebase_menu_suggestions(guest_count: int, event_type: str = "") -> Lis
         
     except Exception as e:
         logger.error(f"Error getting Firebase menu suggestions: {str(e)}")
-        # Return fallback suggestions
         return [
             "Vegetable Biryani with Raita",
             "Paneer Butter Masala with Naan",
@@ -315,22 +273,18 @@ def get_firebase_menu_suggestions(guest_count: int, event_type: str = "") -> Lis
         ]
 
 def generate_event_plan(query: str, user_id: str, user_role: str) -> Dict:
-    """Generate event plan with Firebase integration"""
     model = configure_ai_model()
     if not model:
         return {'error': 'AI model configuration failed', 'success': False}
 
-    # Extract guest count
     guest_count = 20
     guest_matches = re.findall(r'(\d+)\s+(?:people|guests|persons)', query)
     if guest_matches:
         guest_count = int(guest_matches[0])
 
-    # Get menu suggestions from Firebase
     firebase_menu_suggestions = get_firebase_menu_suggestions(guest_count, query)
     menu_context = "\n".join([f"- {item}" for item in firebase_menu_suggestions])
 
-    # Calculate costs
     food_cost_per_person = 500
     total_food_cost = food_cost_per_person * guest_count
     decoration_cost = min(5000, guest_count * 200)
@@ -409,7 +363,6 @@ IMPORTANT:
         json_text = response_text[start_idx:end_idx + 1]
         event_plan = json.loads(json_text)
         
-        # Clean all text fields in the event plan for PDF compatibility
         event_plan = clean_event_plan_text(event_plan)
         
         event_plan['date'] = datetime.now().strftime("%Y-%m-%d")
@@ -428,7 +381,6 @@ IMPORTANT:
         return {'error': str(e), 'success': False}
 
 def clean_event_plan_text(event_plan: Dict) -> Dict:
-    """Recursively clean all text in the event plan for PDF compatibility"""
     if isinstance(event_plan, dict):
         cleaned = {}
         for key, value in event_plan.items():
@@ -442,12 +394,10 @@ def clean_event_plan_text(event_plan: Dict) -> Dict:
         return event_plan
 
 def create_event_pdf(event_plan: Dict) -> bytes:
-    """Create PDF with proper Unicode handling and error prevention"""
     try:
         pdf = FPDF()
         pdf.add_page()
         
-        # Clean the theme name for the title
         theme_name = clean_text_for_pdf(event_plan.get('theme', {}).get('name', 'Event Plan'))
         
         pdf.set_font("Arial", "B", 16)
@@ -458,13 +408,11 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         pdf.cell(0, 8, f"Date: {event_plan.get('date', datetime.now().strftime('%Y-%m-%d'))}", ln=True)
         pdf.cell(0, 8, f"Guests: {event_plan.get('guest_count', 'Not specified')}", ln=True)
         
-        # Add Firebase integration note
         if event_plan.get('firebase_menu_used', False):
             pdf.cell(0, 8, "Menu: Based on restaurant database", ln=True)
         
         pdf.ln(5)
         
-        # Theme section
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "THEME", ln=True)
         pdf.set_font("Arial", "", 11)
@@ -473,7 +421,6 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         pdf.multi_cell(0, 6, theme_description)
         pdf.ln(3)
         
-        # Budget section
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "BUDGET (INR)", ln=True)
         pdf.set_font("Arial", "", 11)
@@ -489,7 +436,6 @@ def create_event_pdf(event_plan: Dict) -> bytes:
                 pdf.cell(0, 5, f"- {item_name}: Rs. {item.get('cost', 0):,}", ln=True)
             pdf.ln(3)
         
-        # Seating section
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "SEATING", ln=True)
         pdf.set_font("Arial", "", 11)
@@ -498,7 +444,6 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         pdf.multi_cell(0, 6, seating_layout)
         pdf.ln(3)
         
-        # Decoration section
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "DECORATION", ln=True)
         pdf.set_font("Arial", "", 11)
@@ -508,7 +453,6 @@ def create_event_pdf(event_plan: Dict) -> bytes:
             pdf.cell(0, 5, f"- {clean_item}", ln=True)
         pdf.ln(3)
         
-        # Menu section
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "MENU (FROM RESTAURANT DATABASE)", ln=True)
         pdf.set_font("Arial", "", 11)
@@ -518,7 +462,6 @@ def create_event_pdf(event_plan: Dict) -> bytes:
             pdf.cell(0, 5, f"- {clean_item}", ln=True)
         pdf.ln(3)
         
-        # Invitation section
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, "INVITATION", ln=True)
         pdf.set_font("Arial", "", 11)
@@ -526,28 +469,21 @@ def create_event_pdf(event_plan: Dict) -> bytes:
         invitation_text = clean_text_for_pdf(event_plan.get('invitation', 'No invitation text available'))
         pdf.multi_cell(0, 6, invitation_text)
         
-        # Generate PDF bytes with proper encoding - FIXED SECTION
         pdf_output = pdf.output(dest="S")
         
-        # Handle the output based on FPDF version
         if isinstance(pdf_output, str):
-            # Older FPDF versions return string
             return pdf_output.encode("latin-1")
         elif isinstance(pdf_output, bytearray):
-            # Handle bytearray output
             return bytes(pdf_output)
         else:
-            # Newer FPDF versions return bytes
             return pdf_output
             
     except Exception as e:
         logger.error(f"Error creating PDF: {str(e)}")
-        # Return empty bytes if PDF creation fails
         return b""
 
 def event_planner():
-    """Enhanced main event planner function with Firebase integration"""
-    st.title("🎉 Event Planning Assistant")
+    st.title("Event Planning Assistant")
     
     if 'user' not in st.session_state or not st.session_state.user:
         st.warning("Please log in to access Event Planning")
@@ -557,9 +493,8 @@ def event_planner():
     user_role = user.get('role', 'user')
     user_id = user.get('user_id', '')
     
-    # Show XP information for event planning
     st.info("""
-    🎯 **Earn XP for Event Planning:**
+    Earn XP for Event Planning:
     - Base: +8 XP for any event plan
     - Detailed descriptions: +5-15 XP bonus
     - Specific requirements: +3 XP each
@@ -567,35 +502,31 @@ def event_planner():
     - Maximum: 50 XP per event plan
     """)
     
-    # Show Firebase integration status
     try:
         recipes = fetch_recipe_archive()
         menu_items = fetch_menu_items()
         
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("📚 Recipe Archive", len(recipes))
+            st.metric("Recipe Archive", len(recipes))
         with col2:
-            st.metric("🍽️ Menu Items", len(menu_items))
+            st.metric("Menu Items", len(menu_items))
         
         if recipes or menu_items:
-            st.success("✅ Connected to restaurant database")
+            st.success("Connected to restaurant database")
         else:
-            st.info("ℹ️ Restaurant database is empty")
+            st.info("Restaurant database is empty")
             
     except Exception as e:
-        st.warning("⚠️ Limited database access - using fallback suggestions")
+        st.warning("Limited database access - using fallback suggestions")
     
     if user_role in ['admin', 'staff', 'chef']:
-        # Staff interface with chatbot
         render_chatbot_ui(user_id, user_role)
     else:
-        # User interface with quiz
         render_user_interface(user_id)
 
 def render_chatbot_ui(user_id: str, user_role: str):
-    """Enhanced chatbot interface with Firebase integration and XP rewards"""
-    st.markdown("### 🤖 AI Assistant (Connected to Restaurant Database)")
+    st.markdown("### AI Assistant (Connected to Restaurant Database)")
     
     if 'event_chat_history' not in st.session_state:
         st.session_state.event_chat_history = []
@@ -603,30 +534,27 @@ def render_chatbot_ui(user_id: str, user_role: str):
     if 'current_event_plan' not in st.session_state:
         st.session_state.current_event_plan = None
 
-    # Display chat history
     for message in st.session_state.event_chat_history:
         if message['role'] == 'user':
             st.chat_message('user').write(message['content'])
         else:
             st.chat_message('assistant').write(message['content'])
 
-    # Quick suggestions with XP hints
-    st.markdown("**💡 Quick Suggestions (More details = More XP):**")
+    st.markdown("**Quick Suggestions (More details = More XP):**")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("🎂 Birthday Party", use_container_width=True):
+        if st.button("Birthday Party", use_container_width=True):
             st.session_state.suggested_query = "Plan a birthday party for 50 guests using our restaurant menu with vegetarian options, colorful decorations, and a fun theme suitable for all ages"
     
     with col2:
-        if st.button("💼 Corporate Event", use_container_width=True):
+        if st.button("Corporate Event", use_container_width=True):
             st.session_state.suggested_query = "Plan a corporate event for 100 guests using our restaurant specialties, formal seating arrangement, professional atmosphere, and dietary accommodations"
     
     with col3:
-        if st.button("💒 Wedding Reception", use_container_width=True):
+        if st.button("Wedding Reception", use_container_width=True):
             st.session_state.suggested_query = "Plan a wedding reception for 200 guests with our premium menu items, elegant decorations, traditional and modern fusion cuisine, and special dietary requirements"
 
-    # Chat input
     user_query = st.chat_input("Describe your event in detail (more details = more XP)...")
     
     if 'suggested_query' in st.session_state:
@@ -645,21 +573,19 @@ def render_chatbot_ui(user_id: str, user_role: str):
             with st.spinner("Creating event plan using restaurant database..."):
                 response = generate_event_plan(user_query, user_id, user_role)
                 
-                # Award XP based on prompt quality
                 quality_analysis = award_event_planning_xp(user_id, user_query, response['success'])
                 
                 if response['success']:
                     event_plan = response['plan']
                     st.session_state.current_event_plan = event_plan
                     
-                    st.markdown(f"### 🎉 {event_plan['theme']['name']}")
+                    st.markdown(f"### {event_plan['theme']['name']}")
                     st.markdown(f"*{event_plan['theme']['description']}*")
                     
-                    # Show Firebase integration status
                     if event_plan.get('firebase_menu_used', False):
-                        st.success("✅ Using items from restaurant database")
+                        st.success("Using items from restaurant database")
                     else:
-                        st.info("ℹ️ Using AI-generated suggestions")
+                        st.info("Using AI-generated suggestions")
                     
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -694,26 +620,24 @@ def render_chatbot_ui(user_id: str, user_role: str):
                     with tabs[4]:
                         st.write("**Export Options**")
                         
-                        # PDF generation with error handling
                         try:
                             pdf_bytes = create_event_pdf(event_plan)
                             
                             if pdf_bytes and len(pdf_bytes) > 0:
                                 st.download_button(
-                                    label="📄 Download PDF",
+                                    label="Download PDF",
                                     data=pdf_bytes,
                                     file_name=f"event_plan_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                                     mime="application/pdf",
                                     use_container_width=True
                                 )
-                                st.success("✅ PDF ready for download!")
+                                st.success("PDF ready for download!")
                             else:
-                                st.error("❌ Failed to generate PDF. Please try the text export instead.")
+                                st.error("Failed to generate PDF. Please try the text export instead.")
                         except Exception as e:
-                            st.error(f"❌ PDF generation failed: {str(e)}")
+                            st.error(f"PDF generation failed: {str(e)}")
                             logger.error(f"PDF generation error: {str(e)}")
                         
-                        # Text export as fallback
                         st.markdown("---")
                         st.write("**Alternative: Text Export**")
                         
@@ -737,7 +661,7 @@ MENU (FROM RESTAURANT DATABASE):
 INVITATION: {event_plan['invitation']}"""
                         
                         st.download_button(
-                            label="📝 Download Text",
+                            label="Download Text",
                             data=text_export,
                             file_name=f"event_plan_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
                             mime="text/plain",
@@ -757,8 +681,7 @@ INVITATION: {event_plan['invitation']}"""
                     })
 
 def render_user_interface(user_id: str):
-    """Simplified user interface with quiz"""
-    st.markdown("### 🎉 Event Planning Quiz")
+    st.markdown("### Event Planning Quiz")
     
     stats = get_user_stats(user_id)
     
@@ -770,8 +693,7 @@ def render_user_interface(user_id: str):
     with col3:
         st.metric("XP", stats.get('total_xp', 0))
     
-    st.info("🎯 Take quizzes to learn about event planning!")
+    st.info("Take quizzes to learn about event planning!")
     
-    # Simple quiz interface
     if st.button("Start Event Quiz", type="primary", use_container_width=True):
         st.info("Quiz feature coming soon!")
