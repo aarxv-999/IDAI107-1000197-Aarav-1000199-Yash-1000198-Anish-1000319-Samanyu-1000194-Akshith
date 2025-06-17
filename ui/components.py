@@ -1,7 +1,6 @@
 """
 UI Components for the Smart Restaurant Menu Management App.
 Contains authentication, gamification, and other UI elements.
-Updated with staff code verification system.
 """
 
 import streamlit as st
@@ -28,8 +27,6 @@ def initialize_session_state():
         st.session_state.auth_error = None
     if 'show_signup' not in st.session_state:
         st.session_state.show_signup = False
-    if 'staff_code_verified' not in st.session_state:
-        st.session_state.staff_code_verified = False
 
 def get_firestore_client():
     """Get Firestore client for authentication - using MAIN Firebase"""
@@ -71,16 +68,16 @@ def validate_email(email):
     return re.match(pattern, email) is not None
 
 def validate_password(password):
-    """Validate password strength - UPDATED: simplified requirements"""
-    if len(password) < 5:
-        return False, "Password must be at least 5 characters long"
+    """Validate password strength"""
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
     if not re.search(r'[A-Z]', password):
         return False, "Password must contain at least one uppercase letter"
+    if not re.search(r'[a-z]', password):
+        return False, "Password must contain at least one lowercase letter"
+    if not re.search(r'\d', password):
+        return False, "Password must contain at least one number"
     return True, "Password is valid"
-
-def validate_staff_code(code):
-    """Validate staff access code"""
-    return code == "staffcode123"
 
 def authenticate_user(login_identifier, password):
     """Authenticate user against MAIN Firebase using email or username"""
@@ -210,7 +207,7 @@ def register_user(email, username, password, full_name, role='user'):
         except Exception as e:
             logger.warning(f"Failed to create user stats: {str(e)}")
         
-        logger.info(f"User registered successfully: {username} ({email}) as {role}")
+        logger.info(f"User registered successfully: {username} ({email})")
         return True, "Registration successful! You can now log in."
         
     except Exception as e:
@@ -298,7 +295,6 @@ def render_login_form():
         with col2:
             if st.form_submit_button("Create Account", use_container_width=True):
                 st.session_state.show_signup = True
-                st.session_state.staff_code_verified = False  # Reset staff code verification
                 st.rerun()
         
         if login_button:
@@ -316,101 +312,64 @@ def render_login_form():
                         st.error(error)
 
 def render_signup_form():
-    """Render the signup form with staff code verification"""
+    """Render the signup form"""
     st.markdown("### Create Your Account")
     
-    # Initialize session state for staff verification
-    if 'staff_code_entered' not in st.session_state:
-        st.session_state.staff_code_entered = ""
-    if 'staff_code_valid' not in st.session_state:
-        st.session_state.staff_code_valid = False
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        full_name = st.text_input(
-            "Full Name *",
-            placeholder="Enter your full name",
-            help="Your display name in the system"
-        )
-        email = st.text_input(
-            "Email Address *",
-            placeholder="Enter your email address",
-            help="Used for login and notifications"
-        )
-    
-    with col2:
-        username = st.text_input(
-            "Username *",
-            placeholder="Choose a unique username",
-            help="Used for login and leaderboards"
-        )
-    
-    # Staff verification section
-    st.markdown("---")
-    st.markdown("#### Account Type")
-
-    is_staff = st.checkbox(
-        "Restaurant staff?",
-        help="Check this if you are a restaurant staff member (requires verification code)"
-    )
-
-    selected_role = "user"  # Default role
-    staff_code_valid = False
-
-    if is_staff:
-        # Show code input immediately after checkbox is checked
-        staff_code = st.text_input(
-            "Staff Access Code *",
+    with st.form("signup_form"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            full_name = st.text_input(
+                "Full Name *",
+                placeholder="Enter your full name",
+                help="Your display name in the system"
+            )
+            email = st.text_input(
+                "Email Address *",
+                placeholder="Enter your email address",
+                help="Used for login and notifications"
+            )
+        
+        with col2:
+            username = st.text_input(
+                "Username *",
+                placeholder="Choose a unique username",
+                help="Used for login and leaderboards"
+            )
+            role = st.selectbox(
+                "Role *",
+                ["user", "staff", "chef", "admin"],
+                help="Select your role in the restaurant system"
+            )
+        
+        password = st.text_input(
+            "Password *",
             type="password",
-            placeholder="Enter staff access code",
-            help="Contact your administrator for the staff access code",
-            key="staff_code_input"
+            placeholder="Create a strong password",
+            help="Must be at least 8 characters with uppercase, lowercase, and numbers"
         )
         
-        if staff_code:
-            if validate_staff_code(staff_code):
-                staff_code_valid = True
-                st.success("✅ Staff code verified!")
-                
-                # Show role selection immediately after valid code
-                selected_role = st.selectbox(
-                    "Select Your Role *",
-                    ["staff", "chef", "admin"],
-                    help="Choose your role in the restaurant system",
-                    key="role_selector"
-                )
-            else:
-                st.error("❌ Invalid staff code. Please contact your administrator.")
-        else:
-            st.info("🔐 Please enter your staff access code to continue")
-    else:
-        st.info("👤 You will be registered as a **Customer/User** with access to basic features.")
-    
-    st.markdown("---")
-    
-    password = st.text_input(
-        "Password *",
-        type="password",
-        placeholder="Create a strong password",
-        help="Must be at least 5 characters with one uppercase letter"
-    )
-    
-    confirm_password = st.text_input(
-        "Confirm Password *",
-        type="password",
-        placeholder="Confirm your password"
-    )
-    
-    # Terms and conditions
-    terms_accepted = st.checkbox(
-        "I agree to the Terms of Service and Privacy Policy",
-        help="You must accept the terms to create an account"
-    )
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Create Account", type="primary", use_container_width=True):
+        confirm_password = st.text_input(
+            "Confirm Password *",
+            type="password",
+            placeholder="Confirm your password"
+        )
+        
+        # Terms and conditions
+        terms_accepted = st.checkbox(
+            "I agree to the Terms of Service and Privacy Policy",
+            help="You must accept the terms to create an account"
+        )
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            signup_button = st.form_submit_button("Create Account", type="primary", use_container_width=True)
+        with col2:
+            if st.form_submit_button("Back to Login", use_container_width=True):
+                st.session_state.show_signup = False
+                st.rerun()
+        
+        if signup_button:
             # Validation
             if not all([full_name, email, username, password, confirm_password]):
                 st.error("Please fill in all required fields")
@@ -418,15 +377,12 @@ def render_signup_form():
                 st.error("Please accept the Terms of Service and Privacy Policy")
             elif password != confirm_password:
                 st.error("Passwords do not match")
-            elif is_staff and not staff_code_valid:
-                st.error("Please enter a valid staff access code")
             else:
                 with st.spinner("Creating your account..."):
-                    success, message = register_user(email, username, password, full_name, selected_role)
+                    success, message = register_user(email, username, password, full_name, role)
                     if success:
                         st.success(message)
                         st.session_state.show_signup = False
-                        st.session_state.staff_code_verified = False
                         st.balloons()
                         
                         # Auto-login after successful registration
@@ -437,73 +393,88 @@ def render_signup_form():
                             st.rerun()
                     else:
                         st.error(message)
-    with col2:
-        if st.button("Back to Login", use_container_width=True):
-            st.session_state.show_signup = False
-            st.session_state.staff_code_verified = False
-            st.rerun()
 
 def render_auth_ui():
-    """Renders the authentication UI in the sidebar."""
-
-    st.sidebar.title("Authentication")
-
-    # Authentication status
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-
-    if not st.session_state.authenticated:
-        # Username and password input
-        username = st.sidebar.text_input("Username")
-        password = st.sidebar.text_input("Password", type="password")
-
-        # Login button
-        if st.sidebar.button("Login"):
-            # Basic authentication logic (replace with your actual authentication)
-            if username == "admin" and password == "password":
-                st.session_state.authenticated = True
-                st.success("Logged in successfully!")
-                st.rerun()  # Refresh the app to show the main content
-            else:
-                st.error("Invalid username or password.")
+    """Render authentication UI in sidebar"""
+    if st.session_state.is_authenticated:
+        user = st.session_state.user
+        st.sidebar.success(f"Welcome, {user.get('full_name', user['username'])}!")
+        st.sidebar.write(f"**Role:** {user['role'].title()}")
+        st.sidebar.write(f"**Username:** @{user['username']}")
+        
+        # Account management buttons
+        col1, col2 = st.sidebar.columns(2)
+        
+        with col1:
+            if st.button("Logout", use_container_width=True):
+                st.session_state.is_authenticated = False
+                st.session_state.user = None
+                st.session_state.show_signup = False
+                st.rerun()
+        
+        with col2:
+            if st.button("Clear Data", use_container_width=True, type="secondary", help="Reset your XP, achievements, and progress"):
+                # Show confirmation dialog
+                if 'confirm_clear_data' not in st.session_state:
+                    st.session_state.confirm_clear_data = False
+                
+                if not st.session_state.confirm_clear_data:
+                    st.session_state.confirm_clear_data = True
+                    st.rerun()
+        
+        # Handle clear data confirmation
+        if st.session_state.get('confirm_clear_data', False):
+            st.sidebar.markdown("---")
+            st.sidebar.warning("⚠️ **Confirm Data Clearing**")
+            st.sidebar.write("This will reset:")
+            st.sidebar.write("• All XP and levels")
+            st.sidebar.write("• Achievements")
+            st.sidebar.write("• Quiz history")
+            st.sidebar.write("• Recipe generation stats")
+            st.sidebar.write("• User preferences & liked dishes")
+            st.sidebar.write("• AI learning data")
+            st.sidebar.write("")
+            st.sidebar.write("Your account will remain active.")
+            
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                if st.button("✅ Confirm", type="primary", use_container_width=True):
+                    success, message = clear_user_data(user['user_id'])
+                    if success:
+                        st.sidebar.success(message)
+                        st.session_state.confirm_clear_data = False
+                        # Force refresh of user stats
+                        st.rerun()
+                    else:
+                        st.sidebar.error(message)
+            
+            with col2:
+                if st.button("❌ Cancel", use_container_width=True):
+                    st.session_state.confirm_clear_data = False
+                    st.rerun()
+        
+        return True
     else:
-        # Logout button
-        if st.sidebar.button("Logout"):
-            st.session_state.authenticated = False
-            st.success("Logged out successfully!")
-            st.rerun()  # Refresh the app to show the login form
-
-        # Features section with dropdown - ONLY ONE
+        st.sidebar.markdown("### Authentication")
+        
+        # Show signup or login form based on state
+        if st.session_state.show_signup:
+            render_signup_form()
+        else:
+            render_login_form()
+        
+        # Additional info
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### Features")
+        st.sidebar.markdown("### Account Types")
+        st.sidebar.markdown("""
+        **User:** Access to basic features, quizzes, and visual menu
+        **Staff:** Can create marketing campaigns and access analytics
+        **Chef:** Can submit recipes and manage menu items
+        **Admin:** Full access to all features and management tools
+        """)
+        
+        return False
 
-        # Feature selection dropdown - FIXED to match main_app.py expectations
-        features = [
-            "Dashboard",
-            "Leftover Management",
-            "Ingredients Management", 
-            "Visual Menu Search",
-            "Gamification Hub",
-            "Promotion Generator",
-            "Event Planning ChatBot",
-            "Chef Recipe Suggestions"
-        ]
-
-        selected_feature = st.sidebar.selectbox(
-            "Choose a feature:",
-            features,
-            index=0,  # Default to Dashboard
-            key="feature_selector"
-        )
-
-        # Initialize session state to Dashboard if not set
-        if 'selected_feature' not in st.session_state:
-            st.session_state.selected_feature = "Dashboard"
-
-        # Update session state when selection changes
-        if selected_feature != st.session_state.selected_feature:
-            st.session_state.selected_feature = selected_feature
-            st.rerun()
 def auth_required(func):
     """Decorator to require authentication"""
     def wrapper(*args, **kwargs):
@@ -531,47 +502,21 @@ def display_user_stats_sidebar(user_id):
         from modules.leftover import get_user_stats
         from modules.xp_utils import get_xp_progress, calculate_level_from_xp
         
-        # Get user stats from main Firebase (same as authentication) - SAFE UNPACKING
-        user_stats_result = get_user_stats(user_id)
-        
-        # Handle different return formats safely
-        if isinstance(user_stats_result, tuple):
-            # Handle variable tuple lengths
-            values = list(user_stats_result)
-            total_xp = values[0] if len(values) > 0 else 0
-            current_level = values[1] if len(values) > 1 else 1
-            additional_stats = values[2] if len(values) > 2 else {}
-            # Ignore any additional values beyond the first 3
-        elif isinstance(user_stats_result, dict):
-            # Handle dictionary return
-            total_xp = user_stats_result.get('total_xp', 0)
-            current_level = user_stats_result.get('level', 1)
-            additional_stats = user_stats_result
-        else:
-            # Handle single value or unexpected format
-            total_xp = user_stats_result if isinstance(user_stats_result, (int, float)) else 0
-            current_level = 1
-            additional_stats = {}
-        
-        # Ensure values are valid
-        total_xp = max(0, int(total_xp)) if total_xp is not None else 0
-        current_level = max(1, int(current_level)) if current_level is not None else 1
+        # Get user stats from main Firebase (same as authentication)
+        user_stats = get_user_stats(user_id)
         
         st.sidebar.markdown("---")
         
-        # Create an expandable section for user stats - REMOVE duplicate feature selector
+        # Create an expandable section for user stats
         with st.sidebar.expander("Your Stats & Progress", expanded=False):
-            # Calculate level using progressive system if available
-            try:
-                current_level = calculate_level_from_xp(total_xp)
-                current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
-            except (ImportError, Exception) as e:
-                logger.warning(f"XP utils not available, using simple calculation: {str(e)}")
-                # Simple fallback calculation
-                current_level = max(1, int(total_xp / 100) + 1)
-                current_level_xp = total_xp % 100
-                xp_needed_for_next = 100 - current_level_xp
-                progress_percentage = (current_level_xp / 100) * 100
+            # Extract stats with safe defaults
+            total_xp = max(0, user_stats.get('total_xp', 0))
+            
+            # Calculate level using progressive system
+            current_level = calculate_level_from_xp(total_xp)
+            
+            # Get progress information
+            current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
             
             # Display metrics
             col1, col2 = st.columns(2)
@@ -581,51 +526,36 @@ def display_user_stats_sidebar(user_id):
                 st.metric("Total XP", f"{total_xp:,}")
             
             # Progress bar with new calculation
-            progress = max(0.0, min(1.0, progress_percentage / 100.0))
+            progress = progress_percentage / 100.0
+            progress = max(0.0, min(1.0, progress))  # Clamp between 0 and 1
+            
             st.progress(progress, text=f"{xp_needed_for_next} XP to Level {current_level + 1}")
             
             # Show current level XP details
             st.caption(f"Level {current_level}: {current_level_xp} XP earned")
             
-            # Additional stats if available
-            if isinstance(additional_stats, dict):
-                recipes_generated = additional_stats.get('recipes_generated', 0)
-                quizzes_completed = additional_stats.get('quizzes_completed', 0)
-                
-                if recipes_generated > 0 or quizzes_completed > 0:
-                    st.markdown("**Activity:**")
-                    if recipes_generated > 0:
-                        st.write(f"Recipes: {recipes_generated}")
-                    if quizzes_completed > 0:
-                        st.write(f"Quizzes: {quizzes_completed}")
+            # Additional stats
+            recipes_generated = user_stats.get('recipes_generated', 0)
+            quizzes_completed = user_stats.get('quizzes_completed', 0)
             
-            # Gamification Hub button - ONLY THIS BUTTON, NO FEATURE SELECTOR
+            if recipes_generated > 0 or quizzes_completed > 0:
+                st.markdown("**Activity:**")
+                if recipes_generated > 0:
+                    st.write(f"Recipes: {recipes_generated}")
+                if quizzes_completed > 0:
+                    st.write(f"Quizzes: {quizzes_completed}")
+            
+            # Gamification Hub button
             st.markdown("---")
             if st.button("Open Gamification Hub", use_container_width=True, type="primary", key="gamification_hub_btn"):
                 st.session_state.selected_feature = "Gamification Hub"
                 st.rerun()
         
-        logger.info(f"Displayed stats for user {user_id}: Level {current_level}, XP {total_xp}")
+        logger.info(f"Displayed progressive stats for user {user_id}: Level {current_level}, XP {total_xp}, Progress {progress_percentage:.1f}%")
         
     except Exception as e:
         logger.error(f"Error displaying user stats: {str(e)}")
-        # Display fallback stats
-        st.sidebar.markdown("---")
-        with st.sidebar.expander("Your Stats & Progress", expanded=False):
-            st.error("Stats temporarily unavailable")
-            
-            # Show basic fallback
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Level", "1")
-            with col2:
-                st.metric("XP", "0")
-            
-            # Still show the Gamification Hub button
-            st.markdown("---")
-            if st.button("Open Gamification Hub", use_container_width=True, type="primary", key="gamification_hub_btn_fallback"):
-                st.session_state.selected_feature = "Gamification Hub"
-                st.rerun()
+        st.sidebar.error("Error loading stats")
 
 def show_xp_notification(xp_amount, activity_type):
     """Show XP notification"""
