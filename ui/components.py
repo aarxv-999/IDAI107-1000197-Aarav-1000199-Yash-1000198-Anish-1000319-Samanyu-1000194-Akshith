@@ -354,6 +354,7 @@ def render_auth_ui():
         # Feature selection dropdown - NO GAMIFICATION HUB
         features = [
             "Dashboard",
+            "Ingredients Management",
             "Leftover Management", 
             "Chef Recipe Suggestions",
             "Cooking Quiz",
