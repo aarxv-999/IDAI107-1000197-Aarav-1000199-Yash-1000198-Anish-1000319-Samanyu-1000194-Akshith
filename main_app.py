@@ -1,40 +1,28 @@
 import streamlit as st
 st.set_page_config(page_title="Smart Restaurant Menu Management", layout="wide")
 
-from ui.components import (  # Import UI functions
+from ui.components import (
     leftover_input_csv, leftover_input_manual, leftover_input_firebase
 )
 from ui.components import (
     render_auth_ui, initialize_session_state, auth_required, get_current_user, is_user_role
 )
-from ui.components import (  # Import gamification UI functions
+from ui.components import (
     render_cooking_quiz, display_daily_challenge,
     award_recipe_generation_xp, show_xp_notification
 )
-from modules.leftover import suggest_recipes  # Import logic functions
-from modules.leftover import get_user_stats, award_recipe_xp  # Import gamification logic
+from modules.leftover import suggest_recipes
+from modules.leftover import get_user_stats, award_recipe_xp
 from firebase_init import init_firebase
-
-# Import the event planner integration
 from app_integration import integrate_event_planner, check_event_firebase_config
-
-# Import the dashboard module
 from dashboard import render_dashboard, get_feature_description
+from ui.chef_components import render_chef_recipe_suggestions
+from ui.promotion_components import render_promotion_generator
+from ui.visual_menu_components import render_visual_menu_search
 
-# Import the chef recipe components
-from modules.chef_components import render_chef_recipe_suggestions
-
-# Import the promotion generator components
-from modules.promotion_components import render_promotion_generator
-
-# Import the NEW visual menu components
-from modules.visual_menu_components import render_visual_menu_search
-
-# Import the ingredients management module (your existing file)
 try:
     from modules.ingredients_management import render_ingredient_management
 except ImportError:
-    # Fallback if the module is in a different location
     try:
         from ingredients_management import render_ingredient_management
     except ImportError:
@@ -47,16 +35,13 @@ import logging
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Updated feature access control based on new requirements
 def check_feature_access(feature_name):
-    """Check if the current user has access to a specific feature"""
     user = get_current_user()
     if not user:
         return False
     
     user_role = user['role']
     
-    # Define feature access by role - REMOVED GAMIFICATION HUB
     role_access = {
         'user': [
             'Visual Menu Search',
@@ -89,7 +74,6 @@ def check_feature_access(feature_name):
     return feature_name in role_access.get(user_role, [])
     
 def get_inaccessible_features_message(user_role):
-    """Get message about features the user cannot access"""
     all_features = {
         'Leftover Management': 'Staff, Chef, and Admin only',
         'Ingredients Management': 'Staff, Chef, and Admin only', 
@@ -99,7 +83,6 @@ def get_inaccessible_features_message(user_role):
         'Event Planning ChatBot': 'Available to all users'
     }
     
-    # Get features the current user cannot access
     inaccessible = []
     
     for feature, access_info in all_features.items():
@@ -111,13 +94,10 @@ def get_inaccessible_features_message(user_role):
     else:
         return "**You have access to all features!**"
 
-# Individual feature functions
 @auth_required
 def leftover_management():
-    """Leftover management feature with step-by-step selection"""
     st.title("Leftover Management")
 
-    # Initialize session state variables if they don't exist
     if 'leftover_method' not in st.session_state:
         st.session_state.leftover_method = None
     if 'all_leftovers' not in st.session_state:
@@ -129,7 +109,6 @@ def leftover_management():
     if 'recipe_generation_error' not in st.session_state:
         st.session_state.recipe_generation_error = None
 
-    # Step 1: Method Selection
     if st.session_state.leftover_method is None:
         st.subheader("Choose Input Method")
         st.markdown("Select how you want to input your leftover ingredients:")
@@ -154,9 +133,7 @@ def leftover_management():
                 st.rerun()
             st.markdown("Use ingredients from your inventory")
     
-    # Step 2: Input based on selected method
     else:
-        # Back button
         if st.button("← Back to Method Selection"):
             st.session_state.leftover_method = None
             st.session_state.all_leftovers = []
@@ -166,7 +143,6 @@ def leftover_management():
         
         st.subheader(f"Input Method: {st.session_state.leftover_method.title()}")
         
-        # Handle different input methods
         if st.session_state.leftover_method == "manual":
             manual_input = st.text_area(
                 "Enter ingredients (one per line or comma-separated)",
@@ -176,7 +152,6 @@ def leftover_management():
             
             if st.button("Process Ingredients", type="primary"):
                 if manual_input:
-                    # Handle both line-separated and comma-separated input
                     if '\n' in manual_input:
                         ingredients = [ing.strip().lower() for ing in manual_input.split('\n') if ing.strip()]
                     else:
@@ -231,19 +206,15 @@ def leftover_management():
                     st.error(f"Firebase error: {str(e)}")
                     logging.error(f"Firebase integration error: {str(e)}")
         
-        # Step 3: Recipe Generation (if ingredients are loaded)
         if st.session_state.all_leftovers:
             st.markdown("---")
             st.subheader("Generate Recipes")
             
-            # Display loaded ingredients
             with st.expander("Loaded Ingredients", expanded=False):
                 if st.session_state.detailed_ingredient_info:
-                    # Display Firebase ingredients with expiry info
                     for item in st.session_state.detailed_ingredient_info:
                         days_left = item['days_until_expiry']
                         
-                        # Color code based on urgency
                         if days_left <= 1:
                             st.error(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
                         elif days_left <= 3:
@@ -253,14 +224,12 @@ def leftover_management():
                         else:
                             st.info(f"**{item['name']}** - Expires: {item['expiry_date']} ({days_left} days left)")
                 else:
-                    # Display other ingredients in a compact format
                     cols = st.columns(3)
                     for i, ingredient in enumerate(st.session_state.all_leftovers):
                         col_idx = i % 3
                         with cols[col_idx]:
                             st.write(f"• {ingredient.title()}")
             
-            # Recipe generation options
             col1, col2 = st.columns(2)
             
             with col1:
@@ -275,7 +244,6 @@ def leftover_management():
                                     placeholder="E.g., vegetarian only, quick meals, kid-friendly, etc.",
                                     help="Add any specific requirements for your recipes")
             
-            # Generate recipes button
             if st.button("Generate Recipe Suggestions", type="primary", use_container_width=True):
                 try:
                     with st.spinner("Generating recipes..."):
@@ -294,24 +262,20 @@ def leftover_management():
                     st.session_state.recipe_generation_error = str(e)
                     logging.error(f"Recipe generation error: {str(e)}")
             
-            # Display recipes or error message
             if st.session_state.recipe_generation_error:
                 st.error(f"Error generating recipes: {st.session_state.recipe_generation_error}")
             elif st.session_state.recipes:
                 st.success(f"Generated {len(st.session_state.recipes)} recipe suggestions!")
                 
-                # Display recipes
                 st.subheader("Recipe Suggestions")
                 for i, recipe in enumerate(st.session_state.recipes):
                     st.write(f"{i+1}. **{recipe}**")
                 
-                # Show which ingredients were prioritized
                 if st.session_state.detailed_ingredient_info:
                     urgent_ingredients = [item['name'] for item in st.session_state.detailed_ingredient_info if item['days_until_expiry'] <= 3]
                     if urgent_ingredients:
                         st.info(f"These recipes prioritize ingredients expiring soon: {', '.join(urgent_ingredients)}")
                 
-                # Award XP for generating recipes - with error handling
                 user = get_current_user()
                 if user and user.get('user_id'):
                     try:
@@ -321,7 +285,6 @@ def leftover_management():
 
 @auth_required
 def ingredients_management():
-    """Ingredients management feature - CRUD operations for inventory"""
     if render_ingredient_management:
         render_ingredient_management()
     else:
@@ -329,36 +292,27 @@ def ingredients_management():
 
 @auth_required
 def event_planning():
-    """Event Planning ChatBot feature"""
-    # Call the integrated event planner function
     integrate_event_planner()
 
 @auth_required
 def promotion_generator():
-    """Promotion generator feature"""
     render_promotion_generator()
 
 @auth_required
 def chef_recipe_suggestions():
-    """Chef recipe suggestions feature"""
     render_chef_recipe_suggestions()
 
 @auth_required
 def visual_menu_search():
-    """Visual menu search feature - UPDATED with full functionality"""
     render_visual_menu_search()
 
 @auth_required
 def dashboard():
-    """Main dashboard feature"""
     render_dashboard()
 
-# Main app function
 def main():
-    # Initialize Firebase and session state for authentication
     initialize_session_state()
 
-    # Initialize gamification session state
     if 'show_quiz' not in st.session_state:
         st.session_state.show_quiz = False
     if 'show_general_quiz' not in st.session_state:
@@ -366,17 +320,13 @@ def main():
     if 'show_achievements' not in st.session_state:
         st.session_state.show_achievements = False
 
-    # Initialize selected feature state
     if 'selected_feature' not in st.session_state:
         st.session_state.selected_feature = "Dashboard"
 
-    # Check Event Firebase configuration
     check_event_firebase_config()
 
-    # Render authentication UI in sidebar - THIS WILL NOW SHOW ALL GAMIFICATION IN SIDEBAR
     auth_status = render_auth_ui()
 
-    # Main content
     if not st.session_state.is_authenticated:
         st.title("Smart Restaurant Menu Management System")
         st.markdown('''
@@ -395,7 +345,6 @@ def main():
         ''')
         return
 
-    # List of all available features - REMOVED GAMIFICATION HUB
     all_features = [
         "Dashboard",
         "Ingredients Management",
@@ -406,52 +355,42 @@ def main():
         "Visual Menu Search"
     ]
 
-    # Filter features based on user role
     available_features = ["Dashboard"] + [f for f in all_features[1:] if check_feature_access(f)]
 
-    # Show inaccessible features message
     user = get_current_user()
     if user:
         inaccessible_message = get_inaccessible_features_message(user['role'])
         st.sidebar.markdown("---")
         st.sidebar.markdown(inaccessible_message)
 
-    # Update session state with selected feature
     if 'selected_feature' in st.session_state:
         selected_feature = st.session_state.selected_feature
     else:
         selected_feature = "Dashboard"
 
-    # Add feature descriptions in sidebar
     feature_description = get_feature_description(selected_feature)
     if feature_description:
         st.sidebar.info(feature_description)
 
-    # UPDATED: Only show cooking quiz button when on Leftover Management page
     if selected_feature == "Leftover Management":
         st.sidebar.divider()
         if st.sidebar.button("Take Cooking Quiz", use_container_width=True, type="secondary"):
             st.session_state.show_cooking_quiz = True
 
-    # Show cooking quiz if requested
     if st.session_state.get('show_cooking_quiz', False):
         st.title("Cooking Knowledge Quiz")
         user = get_current_user()
         if user and user.get('user_id'):
-            # Sample ingredients for quiz generation
             sample_ingredients = ["chicken", "rice", "tomatoes", "onions", "garlic", "olive oil"]
             
             try:
-                # Display daily challenge
                 display_daily_challenge(user['user_id'])
                 
-                # Render the cooking quiz
                 render_cooking_quiz(sample_ingredients, user['user_id'])
             except Exception as e:
                 logging.error(f"Error displaying cooking quiz: {str(e)}")
                 st.error("Unable to load cooking quiz")
             
-            # Back button
             if st.button("← Back to Dashboard"):
                 st.session_state.show_cooking_quiz = False
                 st.rerun()
@@ -459,7 +398,6 @@ def main():
             st.warning("Please log in to take quizzes")
         return
 
-    # Display the selected feature - REMOVED GAMIFICATION HUB
     if selected_feature == "Dashboard":
         dashboard()
     elif selected_feature == "Ingredients Management":
