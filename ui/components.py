@@ -343,7 +343,7 @@ def render_auth_ui():
         st.sidebar.write(f"**Role:** {user['role'].title()}")
         st.sidebar.write(f"**Username:** @{user['username']}")
         
-        # Display user stats in sidebar - COMPREHENSIVE VERSION
+        # Display user stats in sidebar - FIXED VERSION
         if user and user.get('user_id'):
             display_user_stats_sidebar(user['user_id'])
         
@@ -438,158 +438,106 @@ def get_simple_xp_progress(total_xp):
     
     return int(current_level_xp), int(max(0, xp_needed)), int(max(0, min(100, progress_percent)))
 
-# COMPREHENSIVE SIDEBAR GAMIFICATION - ALL IN ONE PLACE
+# FIXED SIDEBAR GAMIFICATION - NO NESTED EXPANDERS
 def display_user_stats_sidebar(user_id):
-    """Display COMPLETE gamification stats in sidebar - EVERYTHING HERE"""
+    """Display gamification stats in sidebar - FIXED NO NESTED EXPANDERS"""
     try:
         from modules.leftover import get_user_stats, get_leaderboard
         user_stats = get_user_stats(user_id)
         
         st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🎮 Your Gamification Stats")
         
-        # EXPANDED GAMIFICATION SECTION - ALL FEATURES HERE
-        with st.sidebar.expander("🎮 Your Gamification Stats", expanded=False):
-            total_xp = max(0, user_stats.get('total_xp', 0))
-            
-            # Use simple calculations
-            current_level = calculate_simple_level(total_xp)
-            current_level_xp, xp_needed_for_next, progress_percentage = get_simple_xp_progress(total_xp)
-            
-            # MAIN STATS
-            st.markdown("### 📊 Your Progress")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Level", current_level)
-                st.metric("Total XP", f"{total_xp:,}")
-            with col2:
-                st.metric("Recipes", user_stats.get('recipes_generated', 0))
-                st.metric("Quizzes", user_stats.get('quizzes_completed', 0))
-            
-            # PROGRESS BAR
-            progress = progress_percentage / 100.0
-            progress = max(0.0, min(1.0, progress))
-            st.progress(progress, text=f"{xp_needed_for_next} XP to Level {current_level + 1}")
-            st.caption(f"Level {current_level}: {current_level_xp} XP earned")
-            
-            # ACHIEVEMENTS
-            st.markdown("### 🏆 Achievements")
-            achievements = []
-            if user_stats.get('recipes_generated', 0) >= 1:
-                achievements.append("🍳 Recipe Novice")
-            if user_stats.get('recipes_generated', 0) >= 10:
-                achievements.append("👨‍🍳 Recipe Expert")
-            if user_stats.get('quizzes_completed', 0) >= 1:
-                achievements.append("📚 Quiz Starter")
-            if user_stats.get('quizzes_completed', 0) >= 5:
-                achievements.append("🧠 Quiz Master")
-            if current_level >= 5:
-                achievements.append("⭐ Rising Star")
-            if current_level >= 10:
-                achievements.append("🏆 Culinary Expert")
-            if total_xp >= 1000:
-                achievements.append("💎 XP Collector")
-            
-            if achievements:
-                for achievement in achievements:
-                    st.success(achievement)
+        total_xp = max(0, user_stats.get('total_xp', 0))
+        
+        # Use simple calculations
+        current_level = calculate_simple_level(total_xp)
+        current_level_xp, xp_needed_for_next, progress_percentage = get_simple_xp_progress(total_xp)
+        
+        # MAIN STATS - COMPACT FORMAT
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            st.metric("Level", current_level)
+            st.metric("Recipes", user_stats.get('recipes_generated', 0))
+        with col2:
+            st.metric("XP", f"{total_xp:,}")
+            st.metric("Quizzes", user_stats.get('quizzes_completed', 0))
+        
+        # PROGRESS BAR
+        progress = progress_percentage / 100.0
+        progress = max(0.0, min(1.0, progress))
+        st.sidebar.progress(progress, text=f"{xp_needed_for_next} XP to Level {current_level + 1}")
+        st.sidebar.caption(f"Level {current_level}: {current_level_xp} XP earned")
+        
+        # ACHIEVEMENTS - COMPACT
+        st.sidebar.markdown("**🏆 Achievements:**")
+        achievements = []
+        if user_stats.get('recipes_generated', 0) >= 1:
+            achievements.append("🍳 Recipe Novice")
+        if user_stats.get('recipes_generated', 0) >= 10:
+            achievements.append("👨‍🍳 Recipe Expert")
+        if user_stats.get('quizzes_completed', 0) >= 1:
+            achievements.append("📚 Quiz Starter")
+        if user_stats.get('quizzes_completed', 0) >= 5:
+            achievements.append("🧠 Quiz Master")
+        if current_level >= 5:
+            achievements.append("⭐ Rising Star")
+        if current_level >= 10:
+            achievements.append("🏆 Culinary Expert")
+        if total_xp >= 1000:
+            achievements.append("💎 XP Collector")
+        
+        if achievements:
+            for achievement in achievements[:3]:  # Show only first 3
+                st.sidebar.success(achievement)
+            if len(achievements) > 3:
+                st.sidebar.info(f"+ {len(achievements) - 3} more achievements")
+        else:
+            st.sidebar.info("Complete activities to unlock achievements!")
+        
+        # LEADERBOARD - TOP 3 ONLY
+        st.sidebar.markdown("**🏅 Top Players:**")
+        try:
+            leaderboard = get_leaderboard()
+            if leaderboard:
+                top_3 = leaderboard[:3]
+                for i, player in enumerate(top_3):
+                    rank = i + 1
+                    if player.get('username') == user_stats.get('username'):
+                        st.sidebar.success(f"{rank}. **{player['username']}** - Lvl {player['level']}")
+                    else:
+                        st.sidebar.write(f"{rank}. {player['username']} - Lvl {player['level']}")
             else:
-                st.info("Complete activities to unlock achievements!")
-            
-            # LEVEL REQUIREMENTS TABLE
-            st.markdown("### 📈 Level Requirements")
-            level_data = []
-            thresholds = [0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500]
-            
-            # Show current level and next 3 levels
-            start_level = max(1, current_level - 1)
-            end_level = min(len(thresholds), current_level + 3)
-            
-            for i in range(start_level - 1, end_level):
-                level = i + 1
-                threshold = thresholds[i]
-                
-                if level == 1:
-                    xp_for_level = 0
-                else:
-                    xp_for_level = threshold - thresholds[i-1]
-                
-                status = "✅" if level <= current_level else "🔒"
-                if level == current_level + 1:
-                    status = "🎯"
-                
-                level_data.append({
-                    "Lvl": level,
-                    "XP": f"{xp_for_level:,}",
-                    "Total": f"{threshold:,}",
-                    "Status": status
-                })
-            
-            df = pd.DataFrame(level_data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
-            
-            # LEADERBOARD
-            st.markdown("### 🏅 Leaderboard")
-            try:
-                leaderboard = get_leaderboard()
-                if leaderboard:
-                    # Show top 5 only in sidebar
-                    top_5 = leaderboard[:5]
-                    for i, player in enumerate(top_5):
-                        rank = i + 1
-                        if player.get('username') == user_stats.get('username'):
-                            st.success(f"{rank}. **{player['username']}** - Lvl {player['level']} ({player['total_xp']} XP)")
-                        else:
-                            st.write(f"{rank}. {player['username']} - Lvl {player['level']} ({player['total_xp']} XP)")
-                else:
-                    st.info("No leaderboard data yet.")
-            except Exception as e:
-                logger.error(f"Error loading leaderboard: {str(e)}")
-                st.info("Leaderboard temporarily unavailable")
-            
-            # XP EARNING GUIDE
-            st.markdown("### 💡 Earn XP")
-            st.info("""
-            **Recipe Generation:**
-            • 5 XP per recipe
-            • +2 XP for priority ingredients
-            • +10 XP bonus for 5+ recipes
-            
-            **Cooking Quiz:**
-            • 2 XP per question
-            • +5 XP for perfect score
-            """)
-            
-            # DAILY CHALLENGE
-            st.markdown("### 🎯 Daily Challenge")
-            today = datetime.now().date()
-            random.seed(today.toordinal())
-            
-            challenges = [
-                "Generate 3+ vegetable recipes",
-                "Use expiring ingredients",
-                "Create vegetarian recipes",
-                "Make quick 30-min recipes",
-                "Use leftover rice/pasta"
-            ]
-            
-            daily_challenge = random.choice(challenges)
-            st.info(f"**Today:** {daily_challenge}")
-            
-            # TIPS
-            with st.expander("💡 Level Up Tips"):
-                st.markdown(f"""
-                **Current Status:**
-                - Level {current_level} with {total_xp:,} XP
-                - Need {xp_needed_for_next} XP for Level {current_level + 1}
-                
-                **Fastest XP:**
-                1. Take cooking quizzes (up to 15 XP each)
-                2. Generate multiple recipes (5+ for bonus)
-                3. Use priority ingredients (+2 XP)
-                4. Aim for perfect quiz scores (+5 XP)
-                """)
+                st.sidebar.info("No leaderboard data yet.")
+        except Exception as e:
+            logger.error(f"Error loading leaderboard: {str(e)}")
+            st.sidebar.info("Leaderboard temporarily unavailable")
         
-        logger.info(f"Displayed comprehensive stats for user {user_id}: Level {current_level}, XP {total_xp}")
+        # DAILY CHALLENGE - COMPACT
+        st.sidebar.markdown("**🎯 Daily Challenge:**")
+        today = datetime.now().date()
+        random.seed(today.toordinal())
+        
+        challenges = [
+            "Generate 3+ vegetable recipes",
+            "Use expiring ingredients",
+            "Create vegetarian recipes",
+            "Make quick 30-min recipes",
+            "Use leftover rice/pasta"
+        ]
+        
+        daily_challenge = random.choice(challenges)
+        st.sidebar.info(daily_challenge)
+        
+        # XP EARNING GUIDE - COMPACT
+        st.sidebar.markdown("**💡 Earn XP:**")
+        st.sidebar.markdown("""
+        • **Recipes:** 5 XP each (+bonuses)
+        • **Quizzes:** 2 XP per question (+5 for perfect)
+        • **Priority ingredients:** +2 XP bonus
+        """)
+        
+        logger.info(f"Displayed stats for user {user_id}: Level {current_level}, XP {total_xp}")
         
     except Exception as e:
         logger.error(f"Error displaying user stats: {str(e)}")
@@ -605,7 +553,7 @@ def display_gamification_dashboard(user_id):
     st.title("🎮 Gamification Hub")
     
     st.info("**All your gamification stats are now available in the sidebar!**")
-    st.markdown("👈 **Expand the 'Your Gamification Stats' section in the sidebar to see:**")
+    st.markdown("👈 **Check the 'Your Gamification Stats' section in the sidebar to see:**")
     
     col1, col2 = st.columns(2)
     
@@ -623,13 +571,13 @@ def display_gamification_dashboard(user_id):
     
     with col2:
         st.markdown("""
-        ✅ **Level Requirements**
-        - XP needed for each level
-        - Your current position
+        ✅ **Top Players**
+        - Leaderboard rankings
+        - Your position
         
-        ✅ **Leaderboard**
-        - Top players
-        - Your ranking
+        ✅ **Daily Challenge**
+        - Today's challenge
+        - XP earning tips
         """)
     
     st.markdown("---")
