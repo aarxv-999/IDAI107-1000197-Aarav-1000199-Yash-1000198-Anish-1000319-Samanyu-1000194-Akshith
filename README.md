@@ -36,6 +36,13 @@ FutureEats is a smart restaurant management application powered by Generative AI
 
 ## Installation Instructions
 
-1. Clone the repository
-
-  
+1. **Clone the repository**
+```bash
+git clone https://github.com/aarxv-999/IDAI107-1000197_Aarav-1000199_Yash-1000198_Anish-1000319_Samanyu-1000194_Akshith
+cd IDAI107-1000197_Aarav-1000199_Yash-1000198_Anish-1000319_Samanyu-1000194_Akshith
+```
+2. **Install Requirements**
+```bash
+pip install -r requirements.txt
+```
+3. 
