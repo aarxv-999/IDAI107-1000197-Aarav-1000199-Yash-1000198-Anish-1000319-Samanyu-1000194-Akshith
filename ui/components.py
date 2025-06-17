@@ -395,9 +395,9 @@ def is_user_role(required_role):
         return False
     return user.get('role') == required_role
 
-# FIXED: Simple XP calculation functions (fallback when xp_utils is not available)
-def simple_calculate_level_from_xp(total_xp):
-    """Simple level calculation - fallback function"""
+# COMPLETELY FIXED SIMPLE XP FUNCTIONS
+def calculate_simple_level(total_xp):
+    """Calculate level using simple progression"""
     if total_xp < 100:
         return 1
     elif total_xp < 300:
@@ -408,62 +408,51 @@ def simple_calculate_level_from_xp(total_xp):
         return 4
     elif total_xp < 1500:
         return 5
+    elif total_xp < 2100:
+        return 6
+    elif total_xp < 2800:
+        return 7
+    elif total_xp < 3600:
+        return 8
+    elif total_xp < 4500:
+        return 9
     else:
-        return min(10, 5 + (total_xp - 1500) // 500)
+        return 10 + (total_xp - 4500) // 1000
 
-def simple_get_xp_progress(total_xp, current_level):
-    """Simple XP progress calculation - fallback function"""
-    level_thresholds = [0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500, 5500]
+def get_simple_xp_progress(total_xp):
+    """Get XP progress using simple calculation - GUARANTEED 3 VALUES"""
+    level_thresholds = [0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500]
     
-    if current_level >= len(level_thresholds):
-        return total_xp, 0, 100
+    current_level = calculate_simple_level(total_xp)
     
-    current_level_start = level_thresholds[current_level - 1] if current_level > 1 else 0
-    next_level_start = level_thresholds[current_level] if current_level < len(level_thresholds) else level_thresholds[-1] + 1000
+    if current_level <= len(level_thresholds):
+        current_threshold = level_thresholds[current_level - 1] if current_level > 1 else 0
+        next_threshold = level_thresholds[current_level] if current_level < len(level_thresholds) else current_threshold + 1000
+    else:
+        current_threshold = 4500 + (current_level - 10) * 1000
+        next_threshold = current_threshold + 1000
     
-    current_level_xp = total_xp - current_level_start
-    xp_needed_for_next = max(0, next_level_start - total_xp)
+    current_level_xp = total_xp - current_threshold
+    xp_needed = next_threshold - total_xp
+    progress_percent = (current_level_xp / (next_threshold - current_threshold)) * 100
     
-    level_xp_requirement = next_level_start - current_level_start
-    progress_percentage = (current_level_xp / level_xp_requirement) * 100 if level_xp_requirement > 0 else 100
-    progress_percentage = max(0, min(100, progress_percentage))
-    
-    return current_level_xp, xp_needed_for_next, progress_percentage
+    return int(current_level_xp), int(max(0, xp_needed)), int(max(0, min(100, progress_percent)))
 
 # Gamification Components
 def display_user_stats_sidebar(user_id):
-    """Display user gamification stats in sidebar as expandable section with progressive XP system - FIXED VERSION"""
+    """Display user stats in sidebar - COMPLETELY FIXED VERSION"""
     try:
         from modules.leftover import get_user_stats
-        
-        # Get user stats from main Firebase (same as authentication)
         user_stats = get_user_stats(user_id)
         
         st.sidebar.markdown("---")
         
-        # Create an expandable section for user stats
         with st.sidebar.expander("Your Stats & Progress", expanded=False):
-            # Extract stats with safe defaults
             total_xp = max(0, user_stats.get('total_xp', 0))
             
-            # Try to import XP utils, fall back to simple calculation if not available
-            try:
-                from modules.xp_utils import get_xp_progress, calculate_level_from_xp
-                
-                # Calculate level using progressive system
-                current_level = calculate_level_from_xp(total_xp)
-                
-                # Get progress information
-                current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
-                
-                logger.info(f"Using XP utils for user {user_id}")
-                
-            except Exception as xp_error:
-                logger.warning(f"XP utils not available, using simple calculation: {str(xp_error)}")
-                
-                # Use simple fallback calculations
-                current_level = simple_calculate_level_from_xp(total_xp)
-                current_level_xp, xp_needed_for_next, progress_percentage = simple_get_xp_progress(total_xp, current_level)
+            # Use simple calculations - NO IMPORTS FROM XP_UTILS
+            current_level = calculate_simple_level(total_xp)
+            current_level_xp, xp_needed_for_next, progress_percentage = get_simple_xp_progress(total_xp)
             
             # Display metrics
             col1, col2 = st.columns(2)
@@ -472,13 +461,11 @@ def display_user_stats_sidebar(user_id):
             with col2:
                 st.metric("Total XP", f"{total_xp:,}")
             
-            # Progress bar with new calculation
+            # Progress bar
             progress = progress_percentage / 100.0
-            progress = max(0.0, min(1.0, progress))  # Clamp between 0 and 1
+            progress = max(0.0, min(1.0, progress))
             
             st.progress(progress, text=f"{xp_needed_for_next} XP to Level {current_level + 1}")
-            
-            # Show current level XP details
             st.caption(f"Level {current_level}: {current_level_xp} XP earned")
             
             # Additional stats
@@ -509,37 +496,17 @@ def show_xp_notification(xp_amount, activity_type):
     st.success(f"+{xp_amount} XP earned for {activity_type}!")
 
 def display_gamification_dashboard(user_id):
-    """Display comprehensive gamification dashboard with progressive XP system - FIXED VERSION"""
+    """Display gamification dashboard - COMPLETELY FIXED VERSION"""
     st.title("Gamification Hub")
     
     try:
         from modules.leftover import get_user_stats, get_leaderboard
-        
-        # Get user stats from main Firebase
         user_stats = get_user_stats(user_id)
         total_xp = user_stats.get('total_xp', 0)
         
-        # Try to import XP utils, fall back to simple calculation if not available
-        try:
-            from modules.xp_utils import get_xp_progress, calculate_level_from_xp, get_xp_breakdown_for_levels
-            
-            # Calculate level using progressive system
-            current_level = calculate_level_from_xp(total_xp)
-            
-            # Get progress information
-            current_level_xp, xp_needed_for_next, progress_percentage = get_xp_progress(total_xp, current_level)
-            
-            use_advanced_features = True
-            logger.info(f"Using advanced XP utils for gamification dashboard")
-            
-        except Exception as xp_error:
-            logger.warning(f"XP utils not available, using simple calculation: {str(xp_error)}")
-            
-            # Use simple fallback calculations
-            current_level = simple_calculate_level_from_xp(total_xp)
-            current_level_xp, xp_needed_for_next, progress_percentage = simple_get_xp_progress(total_xp, current_level)
-            
-            use_advanced_features = False
+        # Use simple calculations - NO IMPORTS FROM XP_UTILS AT ALL
+        current_level = calculate_simple_level(total_xp)
+        current_level_xp, xp_needed_for_next, progress_percentage = get_simple_xp_progress(total_xp)
         
         # Overview metrics
         st.subheader("Your Progress")
@@ -558,57 +525,45 @@ def display_gamification_dashboard(user_id):
         with col4:
             st.metric("Quizzes Completed", user_stats.get('quizzes_completed', 0))
         
-        # Enhanced progress visualization
+        # Progress visualization
         st.subheader("Level Progress")
         
-        # Progress bar
         progress = progress_percentage / 100.0
         st.progress(progress, text=f"Level {current_level} - {current_level_xp} XP earned")
         
-        # Detailed progress info
         col1, col2 = st.columns(2)
         with col1:
             st.info(f"**Current Level:** {current_level}\n**XP in this level:** {current_level_xp}")
         with col2:
             st.info(f"**Next Level:** {current_level + 1}\n**XP needed:** {xp_needed_for_next}")
         
-        # XP Requirements Table (only if advanced features available)
-        if use_advanced_features:
-            st.subheader("Level Requirements")
-            
-            try:
-                # Show XP breakdown for next few levels
-                max_display_level = min(current_level + 5, 15)
-                xp_breakdown = get_xp_breakdown_for_levels(max_display_level)
-                
-                # Create DataFrame for display - FIXED UNPACKING
-                breakdown_data = []
-                for breakdown_item in xp_breakdown:
-                    # Safely unpack the tuple
-                    level, xp_for_level, total_xp_req = breakdown_item
-                    
-                    status = "✅ Completed" if level <= current_level else "🔒 Locked"
-                    if level == current_level + 1:
-                        status = "🎯 Next Goal"
-                    
-                    breakdown_data.append({
-                        "Level": level,
-                        "XP for Level": f"{xp_for_level:,}",
-                        "Total XP Required": f"{total_xp_req:,}",
-                        "Status": status
-                    })
-                
-                df = pd.DataFrame(breakdown_data)
-                st.dataframe(df, use_container_width=True, hide_index=True)
-                
-            except Exception as e:
-                logger.error(f"Error displaying XP breakdown: {str(e)}")
-                st.info("XP breakdown temporarily unavailable")
-        else:
-            st.subheader("Simple Level System")
-            st.info("Using simplified level calculation. Advanced features temporarily unavailable.")
+        # Simple level requirements table
+        st.subheader("Level Requirements")
+        level_data = []
+        thresholds = [0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500]
         
-        # Achievements section
+        for i, threshold in enumerate(thresholds):
+            level = i + 1
+            if level == 1:
+                xp_for_level = 0
+            else:
+                xp_for_level = threshold - thresholds[i-1]
+            
+            status = "✅ Completed" if level <= current_level else "🔒 Locked"
+            if level == current_level + 1:
+                status = "🎯 Next Goal"
+            
+            level_data.append({
+                "Level": level,
+                "XP for Level": f"{xp_for_level:,}",
+                "Total XP Required": f"{threshold:,}",
+                "Status": status
+            })
+        
+        df = pd.DataFrame(level_data)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        # Achievements
         st.subheader("Achievements")
         
         achievements = []
@@ -640,7 +595,7 @@ def display_gamification_dashboard(user_id):
             leaderboard = get_leaderboard()
             if leaderboard:
                 df = pd.DataFrame(leaderboard)
-                df.index = df.index + 1  # Start ranking from 1
+                df.index = df.index + 1
                 st.dataframe(df, use_container_width=True)
             else:
                 st.info("No leaderboard data available yet.")
@@ -648,7 +603,7 @@ def display_gamification_dashboard(user_id):
             logger.error(f"Error loading leaderboard: {str(e)}")
             st.error("Error loading leaderboard")
         
-        # Enhanced activity suggestions
+        # XP earning info
         st.subheader("Earn More XP")
         
         col1, col2 = st.columns(2)
@@ -677,13 +632,10 @@ def display_gamification_dashboard(user_id):
             - You need {xp_needed_for_next} more XP to reach Level {current_level + 1}
             
             **Fastest Ways to Level Up:**
-            1. **Take Cooking Quizzes** - Up to 15 XP per quiz (10 base + 5 bonus for perfect score)
-            2. **Generate Multiple Recipes** - 5 XP per recipe + bonuses for bulk generation
+            1. **Take Cooking Quizzes** - Up to 15 XP per quiz
+            2. **Generate Multiple Recipes** - 5 XP per recipe + bonuses
             3. **Use Priority Ingredients** - Extra 2 XP when using expiring ingredients
-            4. **Daily Consistency** - Regular activity helps with streak bonuses
-            
-            **Level Scaling:**
-            Each level requires progressively more XP, making higher levels more prestigious!
+            4. **Daily Consistency** - Regular activity helps with progress
             """)
         
     except Exception as e:
