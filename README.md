@@ -27,7 +27,7 @@ FutureEats is a smart restaurant management application powered by Generative AI
   1. The chefs can input leftover ingredients after each day.
   2. The system suggests optimized ways to reuse them in future dishes.
   3. Helps reduce wastage and tracks the impact made.
-  4. Gamification Factor: Reducing waste over time gives chefs special badges and XP.
+  4. Gamification Factor: Reducing waste over time gives chefs special badges and XP. Additionally, a cooking quiz is also available to try to earn more XP!
 
 - **Event Manager**
   1. Staff can use an AI-powered chatbot to plan special events with themes.
