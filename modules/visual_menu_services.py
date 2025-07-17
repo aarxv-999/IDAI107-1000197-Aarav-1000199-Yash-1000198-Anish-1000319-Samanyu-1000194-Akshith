@@ -43,15 +43,11 @@ def get_main_firebase_db():
 
 def configure_vision_api():
     try:
-        cred_path = "vision_credentials.json"  # Make sure this file is uploaded
-
-        if not os.path.exists(cred_path):
-            logger.warning("Google Cloud Vision API credentials file not found")
+        if "vision_api" not in st.secrets:
+            logger.warning("Missing [vision_api] section in Streamlit secrets")
             return None
 
-        with open(cred_path) as f:
-            vision_credentials_dict = json.load(f)
-
+        vision_credentials_dict = dict(st.secrets["vision_api"])
         vision_credentials = service_account.Credentials.from_service_account_info(vision_credentials_dict)
         return vision.ImageAnnotatorClient(credentials=vision_credentials)
 
