@@ -6,7 +6,7 @@ def integrate_event_planner():
     event_planner()
 
 def check_event_firebase_config():
-    if "EVENT_FIREBASE_CONFIG" not in st.secrets:
+    if "event_firebase" not in st.secrets:
         st.error("Missing event firebase configuration.")
         return False
     return True
