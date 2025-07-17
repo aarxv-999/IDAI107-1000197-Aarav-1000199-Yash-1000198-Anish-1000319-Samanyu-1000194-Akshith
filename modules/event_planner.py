@@ -28,8 +28,7 @@ logger = logging.getLogger('event_planner')
 def init_event_firebase():
     if not firebase_admin._apps or 'event_app' not in [app.name for app in firebase_admin._apps.values()]:
         try:
-            with open("event_firebase_cred.json") as f:
-                config_dict = json.load(f)
+            config_dict = dict(st.secrets["event_firebase"]
             cred = credentials.Certificate(config_dict)
             firebase_admin.initialize_app(cred, name="event_app")
             return True
