@@ -83,31 +83,13 @@ After hosting the app on Streamlit, this is how your secrets should look inside 
 GEMINI_API_KEY = "your-gemini-api-key"
 
 [firebase]
-apiKey = "..."
-authDomain = "..."
-projectId = "..."
-storageBucket = "..."
-messagingSenderId = "..."
-appId = "..."
-databaseURL = ""
+Paste the API key converted to TOML from JSON.
 
 [event_firebase]
-apiKey = "..."
-authDomain = "..."
-projectId = "..."
-storageBucket = "..."
-messagingSenderId = "..."
-appId = "..."
-databaseURL = ""
+Paste the API key converted to TOML from JSON.
 
 [vision_api]
-apiKey = "..."
-authDomain = "..."
-projectId = "..."
-storageBucket = "..."
-messagingSenderId = "..."
-appId = "..."
-databaseURL = ""
+Paste the API key converted to TOML from JSON.
 ```
 
 4. **Run the App**
