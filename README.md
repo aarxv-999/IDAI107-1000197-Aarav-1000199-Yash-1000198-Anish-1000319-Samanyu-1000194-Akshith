@@ -5,6 +5,13 @@ FutureEats is a smart restaurant management application powered by Generative AI
 
 🔗 **Hosted App**: [https://idai107.streamlit.app/](https://idai107.streamlit.app/)
 
+Made by: </>
+1. Aarav Agarwal - 1000197
+2. Akshith Reddy Yerava - 1000194
+3. Anish Bammidi - 1000198
+4. Samanyu H - 1000319
+5. Yashvardhan Kumar - 1000199
+
 ---
 
 ## Features
@@ -129,12 +136,3 @@ We welcome contributions! Here’s how:
 2. Create a new branch for your feature.
 3. Commit your changes with clear messages.
 4. Submit a pull request and describe your enhancement.
-
----
-
-## Acknowledgments
-- WACP and AI CRS program coordinators
-- Google Gemini API
-- Firebase
-- Streamlit
-
