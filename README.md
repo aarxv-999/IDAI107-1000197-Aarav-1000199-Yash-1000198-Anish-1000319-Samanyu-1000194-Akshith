@@ -3,6 +3,8 @@
 
 FutureEats is a smart restaurant management application powered by Generative AI. Built as part of the Year 1 AI Capstone Project, it tackles inefficiencies in restaurant operations like manual menu planning, bland marketing strategies, or difficulty in promotions by automating key tasks using Gemini 1.5 Flash, Firebase, and Streamlit. The app enhances staff productivity, reduces waste, and improves customer experience with personalized, intelligent features.
 
+🔗 **Hosted App**: [https://idai107.streamlit.app/](https://idai107.streamlit.app/)
+
 ---
 
 ## Features
@@ -67,21 +69,38 @@ pip install -r requirements.txt
 
 3. **Configure Streamlit Secrets**
 
-After hosting the app at streamlit, this is how your secrets should look in the streamlit app: 
+After hosting the app on Streamlit, this is how your secrets should look inside `.streamlit/secrets.toml`:  
+(Use [https://toml-to-json.matiassingers.com/](https://toml-to-json.matiassingers.com/) or any converter to convert from Firebase JSON to TOML.)
 
 ```toml
 GEMINI_API_KEY = "your-gemini-api-key"
 
 [firebase]
-Paste the TOML file after converting it from JSON once you get your API key.
-
+apiKey = "..."
+authDomain = "..."
+projectId = "..."
+storageBucket = "..."
+messagingSenderId = "..."
+appId = "..."
+databaseURL = ""
 
 [event_firebase]
-Paste the TOML file after converting it from JSON once you get your API key.
-
+apiKey = "..."
+authDomain = "..."
+projectId = "..."
+storageBucket = "..."
+messagingSenderId = "..."
+appId = "..."
+databaseURL = ""
 
 [vision_api]
-Paste the TOML file after converting it from JSON once you get your API key.
+apiKey = "..."
+authDomain = "..."
+projectId = "..."
+storageBucket = "..."
+messagingSenderId = "..."
+appId = "..."
+databaseURL = ""
 ```
 
 4. **Run the App**
@@ -110,3 +129,12 @@ We welcome contributions! Here’s how:
 2. Create a new branch for your feature.
 3. Commit your changes with clear messages.
 4. Submit a pull request and describe your enhancement.
+
+---
+
+## Acknowledgments
+- WACP and AI CRS program coordinators
+- Google Gemini API
+- Firebase
+- Streamlit
+
