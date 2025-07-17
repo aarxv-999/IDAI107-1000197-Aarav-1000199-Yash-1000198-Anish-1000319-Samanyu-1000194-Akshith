@@ -85,8 +85,6 @@ Paste the TOML file after converting it from JSON once you get your API key.
 Paste the TOML file after converting it from JSON once you get your API key.
 ```
 
-> ⚠️ Never commit this file to GitHub. It's listed in `.gitignore` by default.
-
 4. **Run the App**
 ```bash
 streamlit run app.py
