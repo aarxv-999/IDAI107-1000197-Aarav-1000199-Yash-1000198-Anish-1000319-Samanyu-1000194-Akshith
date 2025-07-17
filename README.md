@@ -67,27 +67,7 @@ pip install -r requirements.txt
 ```
 
 3. **Add Secret Keys**
-Create the following files inside a `config/` folder:
-
-- `firebase_config.json`
-```json
-{
-  "apiKey": "YOUR_FIREBASE_API_KEY",
-  "authDomain": "your-project.firebaseapp.com",
-  "projectId": "your-project-id",
-  "storageBucket": "your-project.appspot.com",
-  "messagingSenderId": "your-id",
-  "appId": "your-app-id",
-  "databaseURL": ""
-}
-```
-
-- `gemini_config.json`
-```json
-{
-  "api_key": "YOUR_GEMINI_API_KEY"
-}
-```
+Create the config files with the API keys & secrets. A template for the secrets have been provided in the files.
 
 4. **Run the App**
 ```bash
