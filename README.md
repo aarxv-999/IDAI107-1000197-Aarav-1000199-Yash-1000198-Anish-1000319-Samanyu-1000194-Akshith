@@ -77,7 +77,7 @@ pip install -r requirements.txt
 3. **Configure Streamlit Secrets**
 
 After hosting the app on Streamlit, this is how your secrets should look inside `.streamlit/secrets.toml`:  
-(Use [https://toml-to-json.matiassingers.com/](https://toml-to-json.matiassingers.com/) or any converter to convert from Firebase JSON to TOML.)
+(Use [[https://toml-to-json.matiassingers.com/](https://transform.tools/json-to-toml)]([https://toml-to-json.matiassingers.com/](https://transform.tools/json-to-toml)) or any converter to convert from Firebase JSON to TOML.)
 
 ```toml
 GEMINI_API_KEY = "your-gemini-api-key"
