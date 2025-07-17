@@ -27,7 +27,7 @@ FutureEats is a smart restaurant management application powered by Generative AI
   1. The chefs can input leftover ingredients after each day.
   2. The system suggests optimized ways to reuse them in future dishes.
   3. Helps reduce wastage and tracks the impact made.
-  4. Gamification Factor: Reducing waste over time gives chefs special badges and XP. Additionally, a cooking quiz is also available to try to earn more XP!
+  4. Gamification Factor: Reducing waste over time gives chefs special badges and XP.
 
 - **Event Manager**
   1. Staff can use an AI-powered chatbot to plan special events with themes.
@@ -66,8 +66,26 @@ cd IDAI107-1000197_Aarav-1000199_Yash-1000198_Anish-1000319_Samanyu-1000194_Aksh
 pip install -r requirements.txt
 ```
 
-3. **Add Secret Keys**
-Create the config files with the API keys & secrets. A template for the secrets have been provided in the files.
+3. **Configure Streamlit Secrets**
+
+After hosting the app at streamlit, this is how your secrets should look in the streamlit app: 
+
+```toml
+GEMINI_API_KEY = "your-gemini-api-key"
+
+[firebase]
+Paste the TOML file after converting it from JSON once you get your API key.
+
+
+[event_firebase]
+Paste the TOML file after converting it from JSON once you get your API key.
+
+
+[vision_api]
+Paste the TOML file after converting it from JSON once you get your API key.
+```
+
+> ⚠️ Never commit this file to GitHub. It's listed in `.gitignore` by default.
 
 4. **Run the App**
 ```bash
@@ -77,7 +95,7 @@ streamlit run app.py
 ---
 
 ## Usage Instructions
-- Login to the dashboard as any of the roles (Admin, Chef, Manager, Staff, Customer). (The staff code "staffcode123" is needed to log into any role other than User. For the sake of this project, the code has been hard coded although for a future implementation we plan to make this dynamically generated for safety)
+- Login to the dashboard as any of the roles (Admin, Chef, Manager, Staff, Customer).
 - Use the sidebar to navigate to different modules:
   - AI Menu Generator
   - Leftover Tracker
@@ -95,4 +113,3 @@ We welcome contributions! Here’s how:
 2. Create a new branch for your feature.
 3. Commit your changes with clear messages.
 4. Submit a pull request and describe your enhancement.
-
