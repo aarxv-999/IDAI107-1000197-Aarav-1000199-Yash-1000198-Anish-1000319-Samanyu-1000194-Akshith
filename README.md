@@ -97,7 +97,7 @@ streamlit run app.py
 ---
 
 ## Usage Instructions
-- Login to the dashboard as any of the roles (Admin, Chef, Manager, Staff, Customer).
+- Login to the dashboard as any of the roles (Admin, Chef, Manager, Staff, Customer). (The staff code "staffcode123" is needed to log into any role other than User. For the sake of this project, the code has been hard coded although for a future implementation we plan to make this dynamically generated for safety)
 - Use the sidebar to navigate to different modules:
   - AI Menu Generator
   - Leftover Tracker
