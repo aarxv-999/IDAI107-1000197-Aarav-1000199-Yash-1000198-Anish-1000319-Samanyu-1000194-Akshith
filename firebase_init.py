@@ -5,8 +5,7 @@ import streamlit as st
 def init_firebase():
     if not firebase_admin._apps:
         try:
-            with open("firebase_cred.json") as f:
-                config_dict = dict(st.secrets["firebase"])
+            config_dict = dict(st.secrets["firebase"])
             cred = credentials.Certificate(config_dict)
             firebase_admin.initialize_app(cred)
             return True
