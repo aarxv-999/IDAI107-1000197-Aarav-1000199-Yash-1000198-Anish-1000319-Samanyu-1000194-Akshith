@@ -75,13 +75,13 @@ def get_features_for_role(user_role):
             "title": "Leftover Management", 
             "description": "Generate creative recipes from leftover ingredients to reduce waste and save costs",
             "key": "Leftover Management",
-            "roles": ['admin', 'chef', 'user']
+            "roles": ['admin', 'chef']
         },
         'promotion': {
             "title": "Promotion Generator",
             "description": "AI-powered marketing campaign generation with automatic scoring and analytics",
             "key": "Promotion Generator", 
-            "roles": ['admin', 'staff']
+            "roles": ['admin', 'staff','user']
         },
         'chef': {
             "title": "Chef Recipe Suggestions",
