@@ -21,10 +21,6 @@ def render_promotion_generator():
     staff_name = user.get('username', 'Unknown User')
     user_id = user.get('user_id')
     
-    if user_role not in ['staff', 'admin']:
-        st.warning("You don't have access to the Marketing Campaign Generator. This feature is available for Staff and Administrators only.")
-        return
-    
     db = get_promotion_firebase_db()
     if not db:
         st.error("Database connection failed. Please check your configuration.")
@@ -36,8 +32,13 @@ def render_promotion_generator():
     tabs = st.tabs(["Create Campaign", "Campaign History", "All Campaigns"])
     
     with tabs[0]:
-        render_campaign_creation(db, staff_name, user_id)
+        if user_role not in ['staff', 'admin']:
+            st.warning("Campaigns can only be created by staff members & admins.")
+        else:
+            render_campaign_creation(db,staff_name,user_id)
     with tabs[1]:
+        if user_role not in ['staff','admin']:
+            st.warning("The campaign history can only be accessed by Staff & Admin")
         render_campaign_history(db, staff_name)
     with tabs[2]:
         render_all_campaigns(db, user_id)
